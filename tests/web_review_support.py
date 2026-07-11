@@ -62,7 +62,11 @@ class WebReviewFixture:
             raise AssertionError("test browser could not authenticate")
         return client
 
-    async def csrf(self, client: httpx.AsyncClient, path: str = "/review") -> str:
+    async def csrf(
+        self,
+        client: httpx.AsyncClient,
+        path: str = "/review/advanced",
+    ) -> str:
         response = await client.get(path)
         match = re.search(r'name="csrf_token" value="([^"]+)"', response.text)
         if match is None:
