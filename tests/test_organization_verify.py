@@ -10,10 +10,85 @@ import unittest
 
 from organizer.executor import apply_move_plan, undo_operation_log
 from organizer.models import MovePlanItem
-from organizer.organization_verify import verify_organization_apply
+from organizer.organization_verify import (
+    OrganizationOperationVerificationItem,
+    verify_organization_apply,
+    verify_organization_operation,
+)
 
 
 class OrganizationApplyVerificationTests(unittest.TestCase):
+    def test_loci_operation_verification_checks_fingerprint_and_filesystem_state(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "a.txt"
+            destination = root / "Organized" / "a.txt"
+            source.write_text("content", encoding="utf-8")
+            stat = source.stat()
+            operation_log = apply_move_plan(
+                [
+                    MovePlanItem(
+                        source=source,
+                        destination=destination,
+                        reason="approved",
+                        confidence=90,
+                        operation="dry-run move",
+                        overwrite_risk=False,
+                    )
+                ],
+                root,
+            )
+            self.assertTrue(operation_log.operations[0].success)
+            item = OrganizationOperationVerificationItem(
+                change_id="O1",
+                source="a.txt",
+                destination="Organized/a.txt",
+                source_size_bytes=stat.st_size,
+                source_modified_time=stat.st_mtime,
+                result_state="moved",
+            )
+
+            passed = verify_organization_operation((item,), root)
+            destination.write_text("changed-size", encoding="utf-8")
+            changed = verify_organization_operation((item,), root)
+
+            self.assertTrue(passed.passed)
+            self.assertEqual(passed.verified_count, 1)
+            self.assertFalse(changed.passed)
+            self.assertIn("destination_size_changed:O1", changed.mismatch_codes)
+
+    def test_loci_operation_verification_rejects_lingering_source_and_symlink(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "a.txt"
+            destination = root / "Organized" / "a.txt"
+            source.write_text("content", encoding="utf-8")
+            destination.parent.mkdir()
+            target = root / "target.txt"
+            target.write_text("content", encoding="utf-8")
+            try:
+                destination.symlink_to(target)
+            except (NotImplementedError, OSError):
+                self.skipTest("Symlinks are not supported")
+            stat = source.stat()
+            outcome = verify_organization_operation(
+                (
+                    OrganizationOperationVerificationItem(
+                        change_id="O1",
+                        source="a.txt",
+                        destination="Organized/a.txt",
+                        source_size_bytes=stat.st_size,
+                        source_modified_time=stat.st_mtime,
+                        result_state="moved",
+                    ),
+                ),
+                root,
+            )
+
+            self.assertFalse(outcome.passed)
+            self.assertIn("source_still_exists:O1", outcome.mismatch_codes)
+            self.assertIn("destination_symlink:O1", outcome.mismatch_codes)
+
     def test_valid_apply_result_matches_filesystem_and_operation_log(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

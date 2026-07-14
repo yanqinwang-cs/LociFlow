@@ -1,6 +1,6 @@
 # Local Web Architecture Contract
 
-Status: accepted in Stage 11.0; implemented through the Stage 11.5.2 guided modular workflow.
+Status: accepted in Stage 11.0; implemented through the Loci Flow Integration 1.0D1 backend movement core.
 
 This document freezes the architecture that all Stage 11 web work must follow. Stages 11.2 through 11.5 establish the secure scan/review/save workflow; Stage 11.5.1 presents it through consumer responsibilities while retaining Advanced review.
 
@@ -32,6 +32,39 @@ approved plan remains in memory and exposes only a safe summary. Integration 1.0
 stops at **Ready to move — no files have moved yet**. Movement, Activity, Duplicate
 Bin execution, operation logs, verification, and Undo remain unimplemented here;
 `executor.py` is not imported by the Loci application service, store, or routes.
+
+## Loci Flow Integration 1.0D1
+
+Integration 1.0D1 adds a backend-only movement and verification boundary. The
+browser remains deliberately disconnected: no movement route exists, the disabled
+**Move files — not connected yet** control is unchanged, and Activity and Undo are
+deferred to 1.0D2. Duplicate Bin execution remains deferred to 1.0E.
+
+The immutable `ApprovedOrganizationPlan` is the sole movement authorization source.
+An application-owned process-wide coordinator issues an opaque, generation- and
+revision-bound one-use authorization and permits only one movement or future restore
+operation at a time. Unused authorizations and unexecuted approvals remain in memory
+and are invalid after process restart.
+
+Before movement, the execution service repeats source fingerprint, protection,
+root, symlink, destination, overwrite, and batch-conflict checks. It then writes a
+versioned operation intent under `AI_Review/organization_operations/`. The artifact
+contains only root-relative frozen moves and is updated atomically with a same-folder
+temporary file, file flush and `fsync`, `os.replace`, and a best-effort directory
+`fsync`.
+
+`executor.py` remains the only filesystem movement owner. Its compatible optional
+recorder persists `attempting` before each move, then `moved` or `failed` immediately
+after the attempt, while retaining the legacy raw operation log. The application
+aggregates `moved_unverified`, `verified`, `partial_movement`, `movement_failed`,
+`verification_failed`, or `interrupted` and automatically delegates read-only
+post-move checks to `organization_verify.py`.
+
+Durable nonterminal or interrupted records survive restart and block a new movement.
+Recovery inspection is read-only: it classifies an attempting item from source and
+destination presence but never resumes or reverses movement. Activity rendering,
+undo authorization, undo verification, and consumer projections remain owned by
+1.0D2.
 
 ## Product Direction
 

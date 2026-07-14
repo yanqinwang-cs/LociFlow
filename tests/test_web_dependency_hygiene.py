@@ -242,6 +242,41 @@ class WebDependencyHygieneTests(unittest.TestCase):
         self.assertNotIn("from organizer.models import moveplanitem", route)
         self.assertNotIn("from organizer.duplicates", route)
 
+    def test_d1_execution_boundary_keeps_executor_out_of_web_routes(self) -> None:
+        execution_service = (
+            REPOSITORY_ROOT
+            / "src"
+            / "organizer"
+            / "application"
+            / "execution_service.py"
+        ).read_text(encoding="utf-8")
+        executor = (
+            REPOSITORY_ROOT / "src" / "organizer" / "executor.py"
+        ).read_text(encoding="utf-8")
+        route_text = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in (WEB_ROOT / "routes").glob("*.py")
+        )
+
+        self.assertIn("from organizer.executor import", execution_service)
+        self.assertNotIn("organizer.executor", route_text)
+        self.assertNotIn("apply_move_plan", route_text)
+        self.assertNotIn("undo_operation_log", route_text)
+        self.assertIn("shutil." + "move", executor)
+        for path in (
+            REPOSITORY_ROOT / "src" / "organizer"
+        ).rglob("*.py"):
+            if path.name != "executor.py":
+                self.assertNotIn("shutil." + "move", path.read_text(encoding="utf-8"))
+
+        loci_assets = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in (WEB_ROOT / "static" / "loci_flow").glob("*.js")
+        )
+        self.assertIn("Move files — not connected yet", loci_assets)
+        self.assertNotIn("/api/organization/move", route_text)
+        self.assertNotIn("/api/activity", route_text)
+
     def test_launcher_reports_a_concise_missing_extra_error(self) -> None:
         result = subprocess.run(
             [sys.executable, "-S", "-m", "organizer.web", "--help"],

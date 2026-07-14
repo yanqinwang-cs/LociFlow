@@ -5,14 +5,53 @@ import json
 import os
 from pathlib import Path
 import shutil
+from typing import Protocol
 
 from organizer.models import MovePlanItem, MoveResult, OperationLog
+
+
+class MovementRecorder(Protocol):
+    def before_batch(self, plan_items: tuple[MovePlanItem, ...]) -> None: ...
+
+    def before_move(self, index: int, item: MovePlanItem) -> None: ...
+
+    def after_success(
+        self,
+        index: int,
+        item: MovePlanItem,
+        result: MoveResult,
+    ) -> None: ...
+
+    def after_failure(
+        self,
+        index: int,
+        item: MovePlanItem,
+        result: MoveResult,
+    ) -> None: ...
+
+    def after_batch(self, operation_log: OperationLog) -> None: ...
+
+
+class MovementRecordingError(RuntimeError):
+    def __init__(
+        self,
+        phase: str,
+        *,
+        operation_log: OperationLog | None = None,
+        filesystem_changed: bool = False,
+    ) -> None:
+        super().__init__(f"durable movement recording failed during {phase}")
+        self.phase = phase
+        self.operation_log = operation_log
+        self.filesystem_changed = filesystem_changed
 
 
 def apply_move_plan(
     plan_items: list[MovePlanItem],
     root: Path,
     log_dir_name: str = "operation_logs",
+    *,
+    recorder: MovementRecorder | None = None,
 ) -> OperationLog:
     resolved_root = root.resolve()
     validated_items = [
@@ -21,32 +60,69 @@ def apply_move_plan(
 
     operations: list[MoveResult] = []
     log_path = _next_log_path(resolved_root, log_dir_name, "operation_log")
+    if recorder is not None:
+        try:
+            recorder.before_batch(tuple(validated_items))
+        except Exception as error:
+            raise MovementRecordingError("before_batch") from error
 
-    for item in validated_items:
+    for index, item in enumerate(validated_items):
+        if recorder is not None:
+            try:
+                recorder.before_move(index, item)
+            except Exception as error:
+                raise MovementRecordingError("before_move") from error
         item.destination.parent.mkdir(parents=True, exist_ok=True)
         try:
             shutil.move(str(item.source), str(item.destination))
         except Exception as error:
-            operations.append(
-                MoveResult(
-                    source=item.source,
-                    destination=item.destination,
-                    success=False,
-                    message=f"move failed: {error}",
-                )
-            )
-            return _write_operation_log(log_path, operations)
-
-        operations.append(
-            MoveResult(
+            result = MoveResult(
                 source=item.source,
                 destination=item.destination,
-                success=True,
-                message="moved",
+                success=False,
+                message=f"move failed: {error}",
             )
-        )
+            operations.append(result)
+            if recorder is not None:
+                try:
+                    recorder.after_failure(index, item, result)
+                except Exception as recording_error:
+                    operation_log = _write_operation_log(log_path, operations)
+                    raise MovementRecordingError(
+                        "after_failure",
+                        operation_log=operation_log,
+                    ) from recording_error
+            break
 
-    return _write_operation_log(log_path, operations)
+        result = MoveResult(
+            source=item.source,
+            destination=item.destination,
+            success=True,
+            message="moved",
+        )
+        operations.append(result)
+        if recorder is not None:
+            try:
+                recorder.after_success(index, item, result)
+            except Exception as error:
+                operation_log = _write_operation_log(log_path, operations)
+                raise MovementRecordingError(
+                    "after_success",
+                    operation_log=operation_log,
+                    filesystem_changed=True,
+                ) from error
+
+    operation_log = _write_operation_log(log_path, operations)
+    if recorder is not None:
+        try:
+            recorder.after_batch(operation_log)
+        except Exception as error:
+            raise MovementRecordingError(
+                "after_batch",
+                operation_log=operation_log,
+                filesystem_changed=any(item.success for item in operations),
+            ) from error
+    return operation_log
 
 
 def undo_operation_log(log_path: Path, root: Path) -> OperationLog:
