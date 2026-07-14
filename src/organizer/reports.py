@@ -87,9 +87,14 @@ def build_scan_report(
     max_depth: int | None = None,
     refine_groups: bool = False,
     llm_client: object | None = None,
+    *,
+    metadata_items: list[FileMetadata] | tuple[FileMetadata, ...] | None = None,
 ) -> dict[str, Any]:
     resolved_root = root.resolve()
-    metadata_items = scan_directory(resolved_root, max_depth=max_depth)
+    if metadata_items is None:
+        metadata_items = scan_directory(resolved_root, max_depth=max_depth)
+    else:
+        metadata_items = list(metadata_items)
     file_items = [item for item in metadata_items if not item.is_dir]
     organization_rules = load_organization_rules(resolved_root)
 

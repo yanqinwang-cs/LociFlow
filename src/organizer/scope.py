@@ -1,4 +1,5 @@
 from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
 
 from organizer.models import FileMetadata
@@ -154,6 +155,22 @@ WEB_PROJECT_DIRECTORY_NAMES = {
     "public",
     "node_modules",
 }
+SUBMISSION_DIRECTORY_NAMES = {"submission", "submissions"}
+SHARED_DIRECTORY_NAMES = {"shared", "shared files", "shared_files"}
+
+PROJECT_PROTECTION_REASON = "project_folder_protected"
+SUBMISSION_PROTECTION_REASON = "submission_folder_protected"
+SHARED_PROTECTION_REASON = "shared_folder_protected"
+PROJECT_PROTECTION_STANDARD_ID = "builtin-protect-project-folders"
+SUBMISSION_PROTECTION_STANDARD_ID = "builtin-protect-submission-folders"
+SHARED_PROTECTION_STANDARD_ID = "builtin-protect-shared-folders"
+
+
+@dataclass(frozen=True)
+class ActionableEligibility:
+    allowed: bool
+    reason_code: str | None = None
+    standard_id: str | None = None
 
 
 def is_protected_context_path(relative_path: Path) -> bool:
@@ -178,20 +195,58 @@ def is_actionable_plan_eligible(
     metadata: FileMetadata,
     all_metadata: Sequence[FileMetadata],
 ) -> bool:
+    return evaluate_actionable_plan_eligibility(metadata, all_metadata).allowed
+
+
+def evaluate_actionable_plan_eligibility(
+    metadata: FileMetadata,
+    all_metadata: Sequence[FileMetadata],
+) -> ActionableEligibility:
     if metadata.is_dir or metadata.path.is_symlink() or not metadata.path.is_file():
-        return False
-    return is_actionable_source_path(metadata.relative_path, all_metadata)
+        return ActionableEligibility(allowed=False)
+    return evaluate_actionable_source_path(metadata.relative_path, all_metadata)
 
 
 def is_actionable_source_path(
     relative_path: Path,
     all_metadata: Sequence[FileMetadata],
 ) -> bool:
-    return (
-        not is_protected_context_path(relative_path)
-        and not is_project_context_path(relative_path, all_metadata)
-        and not is_generated_or_project_output_context_path(relative_path, all_metadata)
-    )
+    return evaluate_actionable_source_path(relative_path, all_metadata).allowed
+
+
+def evaluate_actionable_source_path(
+    relative_path: Path,
+    all_metadata: Sequence[FileMetadata],
+) -> ActionableEligibility:
+    if _is_under_named_folder(relative_path, SUBMISSION_DIRECTORY_NAMES):
+        return ActionableEligibility(
+            allowed=False,
+            reason_code=SUBMISSION_PROTECTION_REASON,
+            standard_id=SUBMISSION_PROTECTION_STANDARD_ID,
+        )
+    if _is_under_named_folder(relative_path, SHARED_DIRECTORY_NAMES):
+        return ActionableEligibility(
+            allowed=False,
+            reason_code=SHARED_PROTECTION_REASON,
+            standard_id=SHARED_PROTECTION_STANDARD_ID,
+        )
+    if is_protected_context_path(relative_path):
+        if _is_builtin_project_protection(relative_path):
+            return ActionableEligibility(
+                allowed=False,
+                reason_code=PROJECT_PROTECTION_REASON,
+                standard_id=PROJECT_PROTECTION_STANDARD_ID,
+            )
+        return ActionableEligibility(allowed=False)
+    if is_project_context_path(relative_path, all_metadata):
+        return ActionableEligibility(
+            allowed=False,
+            reason_code=PROJECT_PROTECTION_REASON,
+            standard_id=PROJECT_PROTECTION_STANDARD_ID,
+        )
+    if is_generated_or_project_output_context_path(relative_path, all_metadata):
+        return ActionableEligibility(allowed=False)
+    return ActionableEligibility(allowed=True)
 
 
 def is_actionable_destination_path(
@@ -389,3 +444,16 @@ def _is_same_or_under(path: Path, possible_parent: Path) -> bool:
 
 def _normalize_relative_path(path: Path) -> Path:
     return Path(".") if path.as_posix() in {"", "."} else path
+
+
+def _is_under_named_folder(relative_path: Path, names: set[str]) -> bool:
+    return any(part.casefold() in names for part in relative_path.parts[:-1])
+
+
+def _is_builtin_project_protection(relative_path: Path) -> bool:
+    parts = relative_path.parts
+    if not parts:
+        return False
+    if parts[0] in {"AI_Review", "Organized"}:
+        return False
+    return True

@@ -13,7 +13,7 @@ from organizer.application.view_models import (
     ReviewSaveResult,
 )
 from organizer.application.view_models import ScanApplicationResult
-from organizer.models import ReviewedPlanItem
+from organizer.models import FileMetadata, ReviewedPlanItem
 from organizer.review_session import (
     DECISION_APPROVED,
     DECISION_REJECTED,
@@ -101,6 +101,7 @@ def create_review_session(
         review_state=state,
         persist_review_state=True,
         review_state_ignored=ignore_review_state,
+        metadata_items=tuple(metadata_items),
     )
 
 
@@ -120,6 +121,7 @@ def create_review_session_from_scan_result(
         review_state=state,
         persist_review_state=True,
         review_state_ignored=False,
+        metadata_items=result.metadata_items,
     )
 
 
@@ -252,6 +254,14 @@ def get_review_item_metadata(
     item_id: str,
 ) -> ReviewItemMetadata:
     item = get_review_item(session, item_id)
+    source_relative = _source_relative_path(item, session.root)
+    for metadata in session.metadata_items:
+        if metadata.relative_path == source_relative:
+            return ReviewItemMetadata(
+                item=item,
+                size_bytes=metadata.size_bytes,
+                modified_time=metadata.modified_time,
+            )
     source = item.plan_item.source
     try:
         if source.is_symlink():
@@ -528,6 +538,7 @@ def _new_session(
     review_state: ReviewState | None,
     persist_review_state: bool,
     review_state_ignored: bool,
+    metadata_items: tuple[FileMetadata, ...] = (),
 ) -> ReviewApplicationSession:
     item_tuple = tuple(items)
     return ReviewApplicationSession(
@@ -542,7 +553,15 @@ def _new_session(
         saved_decisions=tuple(
             sorted((item.id, item.decision) for item in item_tuple)
         ),
+        metadata_items=tuple(metadata_items),
     )
+
+
+def _source_relative_path(item: ReviewedPlanItem, root: Path) -> Path:
+    try:
+        return item.plan_item.source.relative_to(root)
+    except ValueError:
+        return Path("__outside_scan_root__")
 
 
 def _validated_module(module: ReviewModule) -> ReviewModule:

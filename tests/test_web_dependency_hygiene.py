@@ -180,6 +180,35 @@ class WebDependencyHygieneTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_read_only_organization_boundary_has_no_web_executor_or_rescan_dependency(self) -> None:
+        service = (
+            REPOSITORY_ROOT
+            / "src"
+            / "organizer"
+            / "application"
+            / "organization_slice_service.py"
+        ).read_text(encoding="utf-8")
+        route = (
+            WEB_ROOT / "routes" / "organization_api.py"
+        ).read_text(encoding="utf-8")
+
+        for forbidden in (
+            "organizer.web",
+            "organizer.executor",
+            "scan_directory",
+            ".stat(",
+            "os.stat",
+        ):
+            self.assertNotIn(forbidden, service)
+        for forbidden in (
+            "organizer.executor",
+            "organizer.scanner",
+            "organizer.planner",
+            "organizer.grouping",
+            "organizer.reports",
+        ):
+            self.assertNotIn(forbidden, route)
+
     def test_launcher_reports_a_concise_missing_extra_error(self) -> None:
         result = subprocess.run(
             [sys.executable, "-S", "-m", "organizer.web", "--help"],

@@ -4,6 +4,13 @@ import unittest
 
 from organizer.scanner import scan_directory
 from organizer.scope import (
+    PROJECT_PROTECTION_REASON,
+    PROJECT_PROTECTION_STANDARD_ID,
+    SHARED_PROTECTION_REASON,
+    SHARED_PROTECTION_STANDARD_ID,
+    SUBMISSION_PROTECTION_REASON,
+    SUBMISSION_PROTECTION_STANDARD_ID,
+    evaluate_actionable_plan_eligibility,
     is_actionable_plan_eligible,
     is_generated_asset_context_path,
     is_project_context_path,
@@ -68,6 +75,64 @@ class ProjectContextPathTests(unittest.TestCase):
             notes = [item for item in metadata if item.relative_path == Path("notes.txt")][0]
 
             self.assertTrue(is_actionable_plan_eligible(notes, metadata))
+
+    def test_structured_project_protection_preserves_boolean_api(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            project = root / "project"
+            project.mkdir()
+            (project / "package.json").write_text("{}", encoding="utf-8")
+            (project / "notes.txt").write_text("notes", encoding="utf-8")
+            metadata = scan_directory(root)
+            notes = next(
+                item for item in metadata if item.relative_path == Path("project/notes.txt")
+            )
+
+            evaluation = evaluate_actionable_plan_eligibility(notes, metadata)
+
+            self.assertFalse(evaluation.allowed)
+            self.assertEqual(evaluation.reason_code, PROJECT_PROTECTION_REASON)
+            self.assertEqual(evaluation.standard_id, PROJECT_PROTECTION_STANDARD_ID)
+            self.assertEqual(is_actionable_plan_eligible(notes, metadata), evaluation.allowed)
+
+    def test_submission_and_shared_protections_emit_stable_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for relative_path in ("Submissions/work.pdf", "Shared/notes.txt"):
+                path = root / relative_path
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("x", encoding="utf-8")
+            metadata = scan_directory(root)
+            by_path = {item.relative_path.as_posix(): item for item in metadata}
+
+            submission = evaluate_actionable_plan_eligibility(
+                by_path["Submissions/work.pdf"], metadata
+            )
+            shared = evaluate_actionable_plan_eligibility(
+                by_path["Shared/notes.txt"], metadata
+            )
+
+            self.assertEqual(
+                (submission.allowed, submission.reason_code, submission.standard_id),
+                (False, SUBMISSION_PROTECTION_REASON, SUBMISSION_PROTECTION_STANDARD_ID),
+            )
+            self.assertEqual(
+                (shared.allowed, shared.reason_code, shared.standard_id),
+                (False, SHARED_PROTECTION_REASON, SHARED_PROTECTION_STANDARD_ID),
+            )
+
+    def test_allowed_file_has_no_protection_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "notes.txt").write_text("notes", encoding="utf-8")
+            metadata = scan_directory(root)
+            notes = next(item for item in metadata if item.name == "notes.txt")
+
+            evaluation = evaluate_actionable_plan_eligibility(notes, metadata)
+
+            self.assertTrue(evaluation.allowed)
+            self.assertIsNone(evaluation.reason_code)
+            self.assertIsNone(evaluation.standard_id)
 
 
 class GeneratedAndProjectOutputContextTests(unittest.TestCase):

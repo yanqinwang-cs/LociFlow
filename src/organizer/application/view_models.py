@@ -5,7 +5,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
-from organizer.models import ReviewedPlanItem
+from organizer.models import FileMetadata, ReviewedPlanItem
 from organizer.review_session import ReviewViewState
 from organizer.review_state import ReviewState
 
@@ -32,6 +32,7 @@ class ScanApplicationResult:
     report: dict[str, Any]
     summary: ScanSummary
     warnings: tuple[str, ...]
+    metadata_items: tuple[FileMetadata, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -46,6 +47,7 @@ class ReviewApplicationSession:
     review_state_ignored: bool
     saved_decisions: tuple[tuple[str, str], ...]
     module_saved_paths: tuple[tuple[ReviewModule, Path], ...] = ()
+    metadata_items: tuple[FileMetadata, ...] = ()
 
     @property
     def dirty(self) -> bool:

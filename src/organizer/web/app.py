@@ -15,6 +15,7 @@ from starlette.templating import Jinja2Templates
 from organizer.web.config import WebAppConfig
 from organizer.web.routes.home import create_home_router
 from organizer.web.routes.consumer import create_consumer_router
+from organizer.web.routes.organization_api import create_organization_api_router
 from organizer.web.routes.review import create_review_router
 from organizer.web.review_explorer import ReviewExplorerStore
 from organizer.web.scan_jobs import ScanJobController
@@ -62,6 +63,7 @@ def create_app(config: WebAppConfig) -> FastAPI:
     app.state.review_explorer = ReviewExplorerStore(config.root)
     app.include_router(create_home_router(templates))
     app.include_router(create_consumer_router(templates))
+    app.include_router(create_organization_api_router())
     app.include_router(create_review_router(templates))
     app.mount(
         "/static",

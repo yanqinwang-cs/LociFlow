@@ -6,6 +6,7 @@ from typing import Any
 from organizer.application.view_models import ScanApplicationResult, ScanSummary
 from organizer.ollama_client import OllamaClient
 from organizer.reports import build_scan_report, write_report
+from organizer.scanner import scan_directory
 
 
 def scan_root(
@@ -15,11 +16,13 @@ def scan_root(
     refine_groups: bool = False,
     llm_client: OllamaClient | None = None,
 ) -> ScanApplicationResult:
+    metadata_items = tuple(scan_directory(root, max_depth=max_depth))
     report = build_scan_report(
         root,
         max_depth=max_depth,
         refine_groups=refine_groups,
         llm_client=llm_client,
+        metadata_items=metadata_items,
     )
     resolved_root = root.resolve()
     summary_data = _mapping(report.get("summary"), "report summary")
@@ -47,6 +50,7 @@ def scan_root(
             ),
         ),
         warnings=warnings,
+        metadata_items=metadata_items,
     )
 
 

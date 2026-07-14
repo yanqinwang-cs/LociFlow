@@ -186,6 +186,10 @@ class WebAppTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(methods_by_path["/"], {"GET"})
         self.assertEqual(methods_by_path["/scan"], {"POST"})
         self.assertEqual(methods_by_path["/scan/status"], {"GET"})
+        self.assertEqual(
+            methods_by_path["/api/organization/current"],
+            {"GET"},
+        )
         for path in (
             "/duplicates",
             "/organize",

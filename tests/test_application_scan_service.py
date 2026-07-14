@@ -7,6 +7,7 @@ from unittest import mock
 from organizer.application.scan_service import scan_root, write_scan_report
 from organizer.ollama_client import OllamaClient
 from organizer.reports import build_scan_report
+from organizer.scanner import scan_directory
 
 
 class ScanServiceTests(unittest.TestCase):
@@ -42,6 +43,11 @@ class ScanServiceTests(unittest.TestCase):
                 result.report["summary"]["organization_suggestion_count"],
             )
             self.assertEqual(result.warnings, tuple(result.report["warnings"]))
+            self.assertTrue(result.metadata_items)
+            self.assertEqual(
+                tuple(item.relative_path.as_posix() for item in result.metadata_items),
+                (".", "a.txt", "b.txt", "backup copy.txt"),
+            )
             self.assertFalse((root / "AI_Review" / "operation_logs").exists())
 
     def test_service_wraps_existing_report_object_without_a_second_format(self) -> None:
@@ -60,7 +66,24 @@ class ScanServiceTests(unittest.TestCase):
                 max_depth=2,
                 refine_groups=False,
                 llm_client=None,
+                metadata_items=result.metadata_items,
             )
+
+    def test_application_scan_performs_one_scanner_pass(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "notes.txt").write_text("notes", encoding="utf-8")
+            with mock.patch(
+                "organizer.application.scan_service.scan_directory",
+                wraps=scan_directory,
+            ) as scanner, mock.patch(
+                "organizer.reports.scan_directory",
+                side_effect=AssertionError("report builder must reuse scan metadata"),
+            ):
+                result = scan_root(root)
+
+            scanner.assert_called_once_with(root, max_depth=None)
+            self.assertTrue(result.metadata_items)
 
     def test_empty_folder_and_rule_warnings_are_preserved(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -109,13 +132,14 @@ class ScanServiceTests(unittest.TestCase):
                 "organizer.application.scan_service.build_scan_report",
                 return_value=report,
             ) as builder:
-                scan_root(root, refine_groups=True, llm_client=client)
+                result = scan_root(root, refine_groups=True, llm_client=client)
 
             builder.assert_called_once_with(
                 root,
                 max_depth=None,
                 refine_groups=True,
                 llm_client=client,
+                metadata_items=result.metadata_items,
             )
 
 
