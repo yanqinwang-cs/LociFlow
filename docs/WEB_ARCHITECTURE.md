@@ -1,6 +1,6 @@
 # Local Web Architecture Contract
 
-Status: accepted in Stage 11.0; implemented through the Loci Flow Integration 1.0D1 backend movement core.
+Status: accepted in Stage 11.0; implemented through Loci Flow Integration 1.0D2A Activity and durable Undo.
 
 This document freezes the architecture that all Stage 11 web work must follow. Stages 11.2 through 11.5 establish the secure scan/review/save workflow; Stage 11.5.1 presents it through consumer responsibilities while retaining Advanced review.
 
@@ -65,6 +65,44 @@ Recovery inspection is read-only: it classifies an attempting item from source a
 destination presence but never resumes or reverses movement. Activity rendering,
 undo authorization, undo verification, and consumer projections remain owned by
 1.0D2.
+
+## Loci Flow Integration 1.0D2A
+
+Integration 1.0D2A projects consumer Activity directly from typed durable movement
+records and separately linked typed Undo records. It creates no Activity database or
+browser history copy. Completed, partial, failed, verification-failed, and interrupted
+records therefore survive process restart and are ordered by parsed completion, start,
+or creation time rather than UUID filenames.
+
+Only the latest meaningful, fully verified movement can expose normal Undo. A linked
+Undo attempt permanently removes that eligibility in this stage, and later successful,
+partial, ambiguous, or nonterminal movement blocks historical Undo. Live eligibility
+requires every moved destination to remain a regular non-symlink file under the fixed
+root, every original location to remain absent and safe, and the current size and
+modified time to match the fingerprint D1 verified after movement. A same-size edit
+with an intentionally restored timestamp is outside this initial detection boundary.
+
+Undo preview creates a one-use in-memory authorization bound to the authenticated
+browser session, exact operation UUID, and configured-root identity. Movement and Undo
+share the same process-wide coordinator lock. The application service writes a typed
+prepared record under `AI_Review/organization_undos/`, validates the server-resolved
+legacy operation log against the D1 pairs, consumes authorization, and delegates to
+`executor.undo_operation_log()`.
+
+`executor.py` remains the only restoration owner. Its optional Undo recorder persists
+`attempting` before each restore and `restored` or `failed` immediately afterward while
+preserving legacy undo-result logs. The application aggregates complete, partial,
+failed, or interrupted state and delegates read-only post-Undo checks to
+`organization_verify.py`. Successful verification requires the original file and
+fingerprint to be restored and the moved destination to be absent.
+
+The authenticated no-store Activity API and strict CSRF/same-origin Undo POST routes
+expose only opaque IDs, safe counts, statuses, and root-relative details. The browser
+never submits filesystem or log paths. The Loci Flow Activity page displays durable
+movement and restore records with collapsed details and explicit Undo confirmation.
+The **Move files — not connected yet** control remains disabled; no public movement
+route exists. D2B owns browser movement enablement, and Duplicate Bin execution and
+restoration remain deferred to 1.0E.
 
 ## Product Direction
 

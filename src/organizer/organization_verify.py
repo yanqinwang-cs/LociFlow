@@ -49,8 +49,95 @@ class OrganizationOperationVerificationOutcome:
     mismatch_codes: tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class OrganizationUndoVerificationItem:
+    change_id: str
+    restore_target: str
+    moved_from: str
+    baseline_size_bytes: int
+    baseline_modified_time: float
+    result_state: str
+
+
+@dataclass(frozen=True)
+class OrganizationUndoVerificationOutcome:
+    status: str
+    passed: bool
+    verified_count: int
+    mismatch_codes: tuple[str, ...]
+
+
 class VerificationInputError(ValueError):
     pass
+
+
+def verify_organization_undo(
+    items: tuple[OrganizationUndoVerificationItem, ...],
+    expected_pairs: tuple[tuple[str, str], ...],
+    root: Path,
+) -> OrganizationUndoVerificationOutcome:
+    """Verify durable organization restores without changing the filesystem."""
+
+    resolved_root = root.resolve()
+    if not resolved_root.is_dir():
+        raise ValueError(f"organization root is not a directory: {root}")
+    restored = tuple(item for item in items if item.result_state == "restored")
+    mismatches: list[str] = []
+    verified_count = 0
+    if tuple((item.restore_target, item.moved_from) for item in items) != expected_pairs:
+        mismatches.append("authorized_restore_pairs_changed")
+
+    for item in restored:
+        item_passed = True
+        try:
+            target_text = _operation_relative_path(
+                item.restore_target, resolved_root, "restore_target"
+            )
+            moved_from_text = _operation_relative_path(
+                item.moved_from, resolved_root, "moved_from"
+            )
+        except (OSError, ValueError, VerificationInputError):
+            mismatches.append(f"unsafe_restore_path:{item.change_id}")
+            continue
+        target = resolved_root / target_text
+        moved_from = resolved_root / moved_from_text
+        if target.is_symlink():
+            mismatches.append(f"restored_source_symlink:{item.change_id}")
+            item_passed = False
+        else:
+            try:
+                resolved_target = target.resolve(strict=True)
+                validate_under_root(resolved_target, resolved_root)
+            except (FileNotFoundError, OSError, ValueError):
+                mismatches.append(f"restored_source_missing_or_unsafe:{item.change_id}")
+                item_passed = False
+            else:
+                if not resolved_target.is_file():
+                    mismatches.append(f"restored_source_not_file:{item.change_id}")
+                    item_passed = False
+                else:
+                    stat = resolved_target.stat()
+                    if stat.st_size != item.baseline_size_bytes:
+                        mismatches.append(f"restored_source_size_changed:{item.change_id}")
+                        item_passed = False
+                    if stat.st_mtime != item.baseline_modified_time:
+                        mismatches.append(
+                            f"restored_source_modified_time_changed:{item.change_id}"
+                        )
+                        item_passed = False
+        if os.path.lexists(moved_from):
+            mismatches.append(f"moved_destination_still_exists:{item.change_id}")
+            item_passed = False
+        if item_passed:
+            verified_count += 1
+
+    unique = tuple(sorted(set(mismatches)))
+    return OrganizationUndoVerificationOutcome(
+        status="passed" if not unique and verified_count == len(restored) else "mismatches",
+        passed=not unique and verified_count == len(restored),
+        verified_count=verified_count,
+        mismatch_codes=unique,
+    )
 
 
 def verify_organization_operation(

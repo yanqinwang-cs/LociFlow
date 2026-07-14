@@ -14,6 +14,7 @@ from starlette.templating import Jinja2Templates
 
 from organizer.web.config import WebAppConfig
 from organizer.web.routes.home import create_home_router
+from organizer.web.routes.activity_api import create_activity_api_router
 from organizer.web.routes.consumer import create_consumer_router
 from organizer.web.routes.loci_flow import create_loci_flow_router
 from organizer.web.routes.organization_api import create_organization_api_router
@@ -21,6 +22,9 @@ from organizer.web.routes.review import create_review_router
 from organizer.web.review_explorer import ReviewExplorerStore
 from organizer.web.organization_decision_store import OrganizationDecisionStore
 from organizer.web.scan_jobs import ScanJobController
+from organizer.application.execution_coordinator import OrganizationExecutionCoordinator
+from organizer.application.organization_operation_repository import OrganizationOperationRepository
+from organizer.application.organization_undo_repository import OrganizationUndoRepository
 from organizer.web.security import (
     LaunchTokenGate,
     SecurityHeadersMiddleware,
@@ -64,10 +68,14 @@ def create_app(config: WebAppConfig) -> FastAPI:
     app.state.scan_jobs = ScanJobController(config.root)
     app.state.review_explorer = ReviewExplorerStore(config.root)
     app.state.organization_decisions = OrganizationDecisionStore()
+    app.state.organization_execution = OrganizationExecutionCoordinator()
+    app.state.organization_operations = OrganizationOperationRepository(config.root)
+    app.state.organization_undos = OrganizationUndoRepository(config.root)
     app.include_router(create_home_router(templates))
     app.include_router(create_consumer_router(templates))
     app.include_router(create_loci_flow_router(templates))
     app.include_router(create_organization_api_router())
+    app.include_router(create_activity_api_router())
     app.include_router(create_review_router(templates))
     app.mount(
         "/static",

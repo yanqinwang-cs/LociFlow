@@ -199,6 +199,16 @@ class WebAppTests(unittest.IsolatedAsyncioTestCase):
             methods_by_path["/api/organization/approval"],
             {"POST"},
         )
+        self.assertEqual(methods_by_path["/api/activity"], {"GET"})
+        self.assertEqual(
+            methods_by_path["/api/activity/{operation_id}/undo/preview"],
+            {"POST"},
+        )
+        self.assertEqual(
+            methods_by_path["/api/activity/{operation_id}/undo"],
+            {"POST"},
+        )
+        self.assertNotIn("/api/organization/move", methods_by_path)
         for path in (
             "/duplicates",
             "/organize",

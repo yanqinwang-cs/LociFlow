@@ -330,8 +330,10 @@ def _relative_path(value: object, root: Path, label: str) -> str:
     path = Path(text)
     if path.is_absolute() or any(part in {"", ".", ".."} for part in path.parts):
         raise ValueError(f"{label} must be a safe relative path")
-    resolved = (root / path).resolve(strict=False)
-    validate_under_root(resolved, root)
+    # Artifact paths are validated lexically here so durable records remain
+    # readable even when the live filesystem later contains a hostile symlink.
+    # Execution and eligibility owners perform the current-filesystem checks.
+    del root
     return path.as_posix()
 
 

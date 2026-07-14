@@ -1,13 +1,17 @@
 import {
   acceptRecommendedChanges,
   approveOrganizationPlan,
+  executeActivityUndo,
+  fetchActivity,
   fetchOrganizationSlice,
   OrganizationApiError,
+  previewActivityUndo,
   updateOrganizationDecision,
 } from "./api.js";
 import {
   formatDate,
   renderApproval,
+  renderActivity,
   renderHome,
   renderLoadState,
   renderOrganize,
@@ -30,6 +34,12 @@ const state = {
   showApprovedSummary: false,
   mutationError: "",
   duplicateDrafts: new Map(),
+  activityStatus: "idle",
+  activity: [],
+  expandedActivityIds: new Set(),
+  activityBusy: false,
+  undoPreview: null,
+  activityError: "",
 };
 
 let errorCode = "";
@@ -107,7 +117,17 @@ function syncShell() {
 
 function render() {
   syncShell();
-  app.setAttribute("aria-busy", state.loadStatus === "loading" || state.busy ? "true" : "false");
+  app.setAttribute("aria-busy", state.loadStatus === "loading" || state.busy || state.activityBusy ? "true" : "false");
+  if (state.route === "activity") {
+    app.replaceChildren(renderActivity(state.activity, {
+      status: state.activityStatus,
+      expandedIds: state.expandedActivityIds,
+      busy: state.activityBusy,
+      preview: state.undoPreview,
+      errorMessage: state.activityError,
+    }));
+    return;
+  }
   if (state.loadStatus !== "ready" || !state.organizationSlice) {
     app.replaceChildren(renderLoadState(state.loadStatus, errorCode));
     return;
@@ -126,6 +146,67 @@ function render() {
     }));
   } else if (state.route === "settings") app.replaceChildren(renderSettings(state.theme));
   else app.replaceChildren(renderUnintegrated(state.route));
+}
+
+async function loadActivity({ announce: shouldAnnounce = false } = {}) {
+  state.activityStatus = "loading";
+  state.activityError = "";
+  render();
+  try {
+    const result = await fetchActivity();
+    state.activity = result.activity;
+    state.activityStatus = "ready";
+    state.expandedActivityIds = new Set(
+      [...state.expandedActivityIds].filter((id) => state.activity.some((entry) => entry.id === id)),
+    );
+    if (shouldAnnounce) announce("Activity loaded.");
+  } catch (error) {
+    state.activity = [];
+    state.activityStatus = "error";
+    state.activityError = error instanceof Error ? error.message : "Activity is unavailable.";
+    if (shouldAnnounce) announce("Activity is unavailable.");
+  }
+  render();
+}
+
+async function openUndoPreview(operationId) {
+  if (state.activityBusy) return;
+  state.activityBusy = true;
+  state.activityError = "";
+  render();
+  try {
+    state.undoPreview = await previewActivityUndo(operationId);
+  } catch (error) {
+    state.activityError = error instanceof Error ? error.message : "Undo is unavailable.";
+    await loadActivity();
+    announce("Undo is unavailable for this move.");
+  } finally {
+    state.activityBusy = false;
+    render();
+    if (state.undoPreview) window.requestAnimationFrame(() => document.querySelector("[data-action='confirm-undo']")?.focus());
+  }
+}
+
+async function confirmUndo() {
+  if (state.activityBusy || !state.undoPreview) return;
+  state.activityBusy = true;
+  state.activityError = "";
+  render();
+  try {
+    await executeActivityUndo({
+      operationId: state.undoPreview.operation_id,
+      confirmationToken: state.undoPreview.confirmation_token,
+    });
+    state.undoPreview = null;
+    await loadActivity();
+    announce("File move undone. Activity has been updated.");
+  } catch (error) {
+    state.activityError = error instanceof Error ? error.message : "Undo could not be completed.";
+    announce("Undo could not be completed.");
+  } finally {
+    state.activityBusy = false;
+    render();
+  }
 }
 
 async function loadOrganization({ announce: shouldAnnounce = true } = {}) {
@@ -218,6 +299,24 @@ document.addEventListener("click", (event) => {
       announce(`${state.theme === "dark" ? "Dark" : "Light"} theme enabled.`);
     } else if (action === "continue-organizing") continueOrganizing();
     else if (action === "retry-load") loadOrganization();
+    else if (action === "retry-activity") loadActivity({ announce: true });
+    else if (action === "toggle-activity") {
+      const id = control.dataset.activityId;
+      if (state.expandedActivityIds.has(id)) state.expandedActivityIds.delete(id);
+      else state.expandedActivityIds.add(id);
+      render();
+    } else if (action === "expand-all-activity") {
+      state.expandedActivityIds = new Set(state.activity.map((entry) => entry.id));
+      render();
+    } else if (action === "collapse-all-activity") {
+      state.expandedActivityIds.clear();
+      render();
+    } else if (action === "preview-undo") openUndoPreview(control.dataset.operationId);
+    else if (action === "cancel-undo") {
+      state.undoPreview = null;
+      state.activityError = "";
+      render();
+    } else if (action === "confirm-undo") confirmUndo();
     else if (action === "recommendation-decision") {
       mutate(() => updateOrganizationDecision({
         ...requestContext(), kind: "recommendation",
@@ -288,6 +387,7 @@ window.addEventListener("hashchange", () => {
   state.route = routeFromHash();
   state.approvalOpen = false;
   render();
+  if (state.route === "activity") loadActivity();
   if (state.route === "organize" && state.selectedItemId) focusSelected();
   schedulePoll();
   document.querySelector("#main-content")?.focus();
@@ -297,3 +397,4 @@ window.addEventListener("beforeunload", clearPoll);
 state.route = routeFromHash();
 render();
 loadOrganization();
+if (state.route === "activity") loadActivity();

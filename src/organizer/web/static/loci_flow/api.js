@@ -1,6 +1,8 @@
 export const ORGANIZATION_ENDPOINT = "/api/organization/current";
 export const ORGANIZATION_DECISIONS_ENDPOINT = "/api/organization/decisions";
 export const ORGANIZATION_APPROVAL_ENDPOINT = "/api/organization/approval";
+export const ACTIVITY_ENDPOINT = "/api/activity";
+export const UNDO_CONFIRMATION = "UNDO FILE MOVE";
 
 export class OrganizationApiError extends Error {
   constructor(code, message, status = 0) {
@@ -171,6 +173,59 @@ export function validateOrganizationSlice(data) {
   return data;
 }
 
+const ACTIVITY_TYPES = new Set(["organization", "restore"]);
+const ACTIVITY_STATUSES = new Set([
+  "prepared", "moving", "moved_unverified", "verified", "partial_movement",
+  "movement_failed", "verification_failed", "interrupted", "recovery_required",
+  "undoing", "restored_unverified", "restored", "partial_undo", "undo_failed",
+  "undo_verification_failed",
+]);
+
+function validateActivityDetail(detail, field, type) {
+  assert(isObject(detail) && isText(detail.status), `${field} is invalid`);
+  const paths = type === "organization" ? ["source", "destination"] : ["restored_to", "moved_from"];
+  for (const path of paths) assert(isSafeRelativePath(detail[path]), `${field}.${path} must be root-relative`);
+}
+
+function validateActivityEntry(entry, field) {
+  assert(isObject(entry), `${field} must be an object`);
+  assert(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(entry.id), `${field}.id must be an opaque UUID`);
+  assert(ACTIVITY_TYPES.has(entry.type), `${field}.type is unsupported`);
+  assert(isText(entry.title) && ACTIVITY_STATUSES.has(entry.status), `${field} status is invalid`);
+  validateTimestamp(entry.started_at, `${field}.started_at`, true);
+  validateTimestamp(entry.completed_at, `${field}.completed_at`, true);
+  for (const count of ["files_expected", "files_moved", "files_restored", "files_failed", "files_unattempted"]) {
+    assert(isCount(entry[count]), `${field}.${count} must be a non-negative integer`);
+  }
+  assert(isText(entry.verification_status), `${field}.verification_status is required`);
+  assert(typeof entry.undoable === "boolean", `${field}.undoable must be boolean`);
+  assert(entry.related_operation_id === null || isText(entry.related_operation_id), `${field}.related_operation_id is invalid`);
+  assert(Array.isArray(entry.details), `${field}.details must be an array`);
+  entry.details.forEach((detail, index) => validateActivityDetail(detail, `${field}.details[${index}]`, entry.type));
+}
+
+export function validateActivityList(data) {
+  assert(isObject(data) && Array.isArray(data.activity), "activity response must contain an array");
+  data.activity.forEach((entry, index) => validateActivityEntry(entry, `activity[${index}]`));
+  assert(data.activity.filter((entry) => entry.undoable).length <= 1, "only one Activity entry may be undoable");
+  return data;
+}
+
+export function validateUndoPreview(data) {
+  assert(isObject(data) && isText(data.operation_id), "Undo preview operation is required");
+  assert(isCount(data.files_to_restore) && data.files_to_restore > 0, "Undo preview count is invalid");
+  assert(data.confirmation === UNDO_CONFIRMATION, "Undo confirmation is invalid");
+  assert(isText(data.confirmation_token), "Undo confirmation token is required");
+  return data;
+}
+
+function validateUndoOutcome(data) {
+  assert(isObject(data) && isObject(data.undo) && isObject(data.activity), "Undo response is invalid");
+  validateActivityEntry(data.activity, "activity");
+  assert(isText(data.undo.undo_id) && data.undo.undo_id === data.activity.id, "Undo response IDs are inconsistent");
+  return data;
+}
+
 export async function fetchOrganizationSlice(fetchImpl = globalThis.fetch) {
   let response;
   try {
@@ -232,7 +287,7 @@ async function submitForm(endpoint, fields, fetchImpl) {
       response.status,
     );
   }
-  return validateOrganizationSlice(payload);
+  return payload;
 }
 
 export function updateOrganizationDecision(request, fetchImpl = globalThis.fetch, csrfToken = csrfTokenFromDom()) {
@@ -252,7 +307,7 @@ export function updateOrganizationDecision(request, fetchImpl = globalThis.fetch
   } else {
     throw new OrganizationApiError("invalid_option", "That organization action is unsupported.");
   }
-  return submitForm(ORGANIZATION_DECISIONS_ENDPOINT, fields, fetchImpl);
+  return submitForm(ORGANIZATION_DECISIONS_ENDPOINT, fields, fetchImpl).then(validateOrganizationSlice);
 }
 
 export function acceptRecommendedChanges(request, fetchImpl = globalThis.fetch, csrfToken = csrfTokenFromDom()) {
@@ -263,7 +318,7 @@ export function acceptRecommendedChanges(request, fetchImpl = globalThis.fetch, 
     kind: "bulk_recommendations",
     decision: "accept",
     expected_change_ids: JSON.stringify(request.expectedChangeIds),
-  }, fetchImpl);
+  }, fetchImpl).then(validateOrganizationSlice);
 }
 
 export function approveOrganizationPlan(request, fetchImpl = globalThis.fetch, csrfToken = csrfTokenFromDom()) {
@@ -271,5 +326,43 @@ export function approveOrganizationPlan(request, fetchImpl = globalThis.fetch, c
     csrf_token: csrfToken,
     scan_generation: request.scanGeneration,
     expected_revision: request.expectedRevision,
-  }, fetchImpl);
+  }, fetchImpl).then(validateOrganizationSlice);
+}
+
+export async function fetchActivity(fetchImpl = globalThis.fetch) {
+  let response;
+  try {
+    response = await fetchImpl(ACTIVITY_ENDPOINT, {
+      method: "GET",
+      credentials: "same-origin",
+      headers: { Accept: "application/json" },
+    });
+  } catch (_error) {
+    throw new OrganizationApiError("network_error", "Loci Flow could not reach Activity.");
+  }
+  let payload;
+  try {
+    payload = await response.json();
+  } catch (_error) {
+    throw new OrganizationApiError("contract_error", "bootAI returned unreadable Activity.", response.status);
+  }
+  if (!response.ok) {
+    const error = isObject(payload.error) ? payload.error : {};
+    throw new OrganizationApiError(isText(error.code) ? error.code : "activity_unavailable", isText(error.message) ? error.message : "Activity is unavailable.", response.status);
+  }
+  return validateActivityList(payload);
+}
+
+export function previewActivityUndo(operationId, fetchImpl = globalThis.fetch, csrfToken = csrfTokenFromDom()) {
+  return submitForm(`/api/activity/${encodeURIComponent(operationId)}/undo/preview`, {
+    csrf_token: csrfToken,
+  }, fetchImpl).then(validateUndoPreview);
+}
+
+export function executeActivityUndo(request, fetchImpl = globalThis.fetch, csrfToken = csrfTokenFromDom()) {
+  return submitForm(`/api/activity/${encodeURIComponent(request.operationId)}/undo`, {
+    csrf_token: csrfToken,
+    confirmation_token: request.confirmationToken,
+    confirmation: UNDO_CONFIRMATION,
+  }, fetchImpl).then(validateUndoOutcome);
 }

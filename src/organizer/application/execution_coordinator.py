@@ -13,6 +13,11 @@ from organizer.application.organization_operation_models import (
     AUTHORIZATION_CONSUMED,
     MovementAuthorization,
 )
+from organizer.application.organization_undo_models import (
+    UNDO_AUTHORIZATION_AVAILABLE,
+    UNDO_AUTHORIZATION_CONSUMED,
+    UndoAuthorization,
+)
 
 
 class OrganizationExecutionCoordinator:
@@ -22,6 +27,7 @@ class OrganizationExecutionCoordinator:
         self._execution_lock = Lock()
         self._authorization_lock = Lock()
         self._authorizations: dict[str, MovementAuthorization] = {}
+        self._undo_authorizations: dict[str, UndoAuthorization] = {}
 
     def issue_authorization(
         self,
@@ -48,6 +54,51 @@ class OrganizationExecutionCoordinator:
 
     def release(self) -> None:
         self._execution_lock.release()
+
+    def issue_undo_authorization(
+        self,
+        *,
+        browser_session_id: str,
+        configured_root_identity: str,
+        operation_id: str,
+        issued_at: str | None = None,
+    ) -> UndoAuthorization:
+        authorization = UndoAuthorization(
+            authorization_id=str(uuid.uuid4()),
+            browser_session_id=browser_session_id,
+            configured_root_identity=configured_root_identity,
+            operation_id=operation_id,
+            issued_at=issued_at or _utc_timestamp(),
+            consumed_at=None,
+            status=UNDO_AUTHORIZATION_AVAILABLE,
+        )
+        with self._authorization_lock:
+            self._undo_authorizations[authorization.authorization_id] = authorization
+        return authorization
+
+    def undo_authorization_snapshot(
+        self,
+        authorization_id: str,
+    ) -> UndoAuthorization | None:
+        with self._authorization_lock:
+            return self._undo_authorizations.get(authorization_id)
+
+    def consume_undo_authorization(
+        self,
+        authorization_id: str,
+        *,
+        consumed_at: str | None = None,
+    ) -> bool:
+        with self._authorization_lock:
+            current = self._undo_authorizations.get(authorization_id)
+            if current is None or current.status != UNDO_AUTHORIZATION_AVAILABLE:
+                return False
+            self._undo_authorizations[authorization_id] = replace(
+                current,
+                status=UNDO_AUTHORIZATION_CONSUMED,
+                consumed_at=consumed_at or _utc_timestamp(),
+            )
+            return True
 
     def authorization_snapshot(self, authorization_id: str) -> MovementAuthorization | None:
         with self._authorization_lock:

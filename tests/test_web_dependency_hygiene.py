@@ -154,7 +154,7 @@ class WebDependencyHygieneTests(unittest.TestCase):
             "organizer.reports",
         ):
             self.assertNotIn(forbidden, combined)
-        for forbidden in ("organizer.executor", "restore", "sqlite"):
+        for forbidden in ("organizer.executor", "sqlite"):
             self.assertNotIn(forbidden, all_web_code)
         self.assertIn("organizer.application.scan_service", all_web_code)
         self.assertIn("organizer.application.review_service", combined)
@@ -275,7 +275,8 @@ class WebDependencyHygieneTests(unittest.TestCase):
         )
         self.assertIn("Move files — not connected yet", loci_assets)
         self.assertNotIn("/api/organization/move", route_text)
-        self.assertNotIn("/api/activity", route_text)
+        self.assertIn("/api/activity", route_text)
+        self.assertIn("organizer.application.undo_service", route_text)
 
     def test_launcher_reports_a_concise_missing_extra_error(self) -> None:
         result = subprocess.run(

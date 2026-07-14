@@ -32,6 +32,28 @@ class MovementRecorder(Protocol):
     def after_batch(self, operation_log: OperationLog) -> None: ...
 
 
+class UndoRecorder(Protocol):
+    def before_batch(self, items: tuple[MoveResult, ...]) -> None: ...
+
+    def before_restore(self, index: int, item: MoveResult) -> None: ...
+
+    def after_success(
+        self,
+        index: int,
+        item: MoveResult,
+        result: MoveResult,
+    ) -> None: ...
+
+    def after_failure(
+        self,
+        index: int,
+        item: MoveResult,
+        result: MoveResult,
+    ) -> None: ...
+
+    def after_batch(self, operation_log: OperationLog) -> None: ...
+
+
 class MovementRecordingError(RuntimeError):
     def __init__(
         self,
@@ -41,6 +63,20 @@ class MovementRecordingError(RuntimeError):
         filesystem_changed: bool = False,
     ) -> None:
         super().__init__(f"durable movement recording failed during {phase}")
+        self.phase = phase
+        self.operation_log = operation_log
+        self.filesystem_changed = filesystem_changed
+
+
+class UndoRecordingError(RuntimeError):
+    def __init__(
+        self,
+        phase: str,
+        *,
+        operation_log: OperationLog | None = None,
+        filesystem_changed: bool = False,
+    ) -> None:
+        super().__init__(f"durable undo recording failed during {phase}")
         self.phase = phase
         self.operation_log = operation_log
         self.filesystem_changed = filesystem_changed
@@ -125,9 +161,18 @@ def apply_move_plan(
     return operation_log
 
 
-def undo_operation_log(log_path: Path, root: Path) -> OperationLog:
+def undo_operation_log(
+    log_path: Path,
+    root: Path,
+    *,
+    recorder: UndoRecorder | None = None,
+) -> OperationLog:
     resolved_root = root.resolve()
+    if log_path.is_symlink():
+        raise ValueError(f"operation log is a symlink: {log_path}")
     resolved_log_path = _validate_existing_path_under_root(log_path, resolved_root)
+    if not resolved_log_path.is_file():
+        raise ValueError(f"operation log is not a regular file: {log_path}")
 
     with resolved_log_path.open("r", encoding="utf-8") as file:
         log_data = json.load(file)
@@ -141,26 +186,45 @@ def undo_operation_log(log_path: Path, root: Path) -> OperationLog:
 
     undo_results: list[MoveResult] = []
     result_log_path = _next_log_path(resolved_root, "operation_logs", "undo_result_log")
+    if recorder is not None:
+        try:
+            recorder.before_batch(tuple(successful_results))
+        except Exception as error:
+            raise UndoRecordingError("before_batch") from error
 
-    for result in successful_results:
+    for index, result in enumerate(successful_results):
+        if recorder is not None:
+            try:
+                recorder.before_restore(index, result)
+            except Exception as error:
+                operation_log = _write_operation_log(result_log_path, undo_results)
+                raise UndoRecordingError(
+                    "before_restore",
+                    operation_log=operation_log,
+                    filesystem_changed=any(item.success for item in undo_results),
+                ) from error
         if os.path.lexists(result.source):
-            undo_results.append(
-                MoveResult(
-                    source=result.destination,
-                    destination=result.source,
-                    success=False,
-                    message="original source path already exists",
-                )
+            undo_result = MoveResult(
+                source=result.destination,
+                destination=result.source,
+                success=False,
+                message="original source path already exists",
+            )
+            undo_results.append(undo_result)
+            _record_undo_failure(
+                recorder, index, result, undo_result, result_log_path, undo_results
             )
             continue
         if result.destination.is_symlink() or not result.destination.is_file():
-            undo_results.append(
-                MoveResult(
-                    source=result.destination,
-                    destination=result.source,
-                    success=False,
-                    message="logged destination is not a regular file",
-                )
+            undo_result = MoveResult(
+                source=result.destination,
+                destination=result.source,
+                success=False,
+                message="logged destination is not a regular file",
+            )
+            undo_results.append(undo_result)
+            _record_undo_failure(
+                recorder, index, result, undo_result, result_log_path, undo_results
             )
             continue
 
@@ -169,26 +233,68 @@ def undo_operation_log(log_path: Path, root: Path) -> OperationLog:
         try:
             shutil.move(str(result.destination), str(result.source))
         except Exception as error:
-            undo_results.append(
-                MoveResult(
-                    source=result.destination,
-                    destination=result.source,
-                    success=False,
-                    message=f"undo failed: {error}",
-                )
+            undo_result = MoveResult(
+                source=result.destination,
+                destination=result.source,
+                success=False,
+                message=f"undo failed: {error}",
+            )
+            undo_results.append(undo_result)
+            _record_undo_failure(
+                recorder, index, result, undo_result, result_log_path, undo_results
             )
             continue
 
-        undo_results.append(
-            MoveResult(
-                source=result.destination,
-                destination=result.source,
-                success=True,
-                message="restored",
-            )
+        undo_result = MoveResult(
+            source=result.destination,
+            destination=result.source,
+            success=True,
+            message="restored",
         )
+        undo_results.append(undo_result)
+        if recorder is not None:
+            try:
+                recorder.after_success(index, result, undo_result)
+            except Exception as error:
+                operation_log = _write_operation_log(result_log_path, undo_results)
+                raise UndoRecordingError(
+                    "after_success",
+                    operation_log=operation_log,
+                    filesystem_changed=True,
+                ) from error
 
-    return _write_operation_log(result_log_path, undo_results)
+    operation_log = _write_operation_log(result_log_path, undo_results)
+    if recorder is not None:
+        try:
+            recorder.after_batch(operation_log)
+        except Exception as error:
+            raise UndoRecordingError(
+                "after_batch",
+                operation_log=operation_log,
+                filesystem_changed=any(item.success for item in undo_results),
+            ) from error
+    return operation_log
+
+
+def _record_undo_failure(
+    recorder: UndoRecorder | None,
+    index: int,
+    item: MoveResult,
+    result: MoveResult,
+    log_path: Path,
+    results: list[MoveResult],
+) -> None:
+    if recorder is None:
+        return
+    try:
+        recorder.after_failure(index, item, result)
+    except Exception as error:
+        operation_log = _write_operation_log(log_path, results)
+        raise UndoRecordingError(
+            "after_failure",
+            operation_log=operation_log,
+            filesystem_changed=any(current.success for current in results),
+        ) from error
 
 
 def _validate_plan_item(item: MovePlanItem, root: Path) -> MovePlanItem:
@@ -290,12 +396,24 @@ def _load_move_results(log_data: object) -> list[MoveResult]:
     for operation in operations:
         if not isinstance(operation, dict):
             raise ValueError("operation entry must contain an object")
+        if set(operation) != {"source", "destination", "success", "message"}:
+            raise ValueError("operation entry fields are invalid")
+        source = operation["source"]
+        destination = operation["destination"]
+        success = operation["success"]
+        message = operation["message"]
+        if not isinstance(source, str) or not isinstance(destination, str):
+            raise ValueError("operation paths must be strings")
+        if not isinstance(success, bool):
+            raise ValueError("operation success must be boolean")
+        if not isinstance(message, str):
+            raise ValueError("operation message must be a string")
         results.append(
             MoveResult(
-                source=Path(str(operation["source"])),
-                destination=Path(str(operation["destination"])),
-                success=bool(operation["success"]),
-                message=str(operation["message"]),
+                source=Path(source),
+                destination=Path(destination),
+                success=success,
+                message=message,
             )
         )
     return results

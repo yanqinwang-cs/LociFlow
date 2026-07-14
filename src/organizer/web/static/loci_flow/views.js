@@ -402,9 +402,121 @@ export function renderReady(slice, showSummary = false) {
   ]);
 }
 
+const ACTIVITY_STATUS_LABELS = Object.freeze({
+  verified: "Completed",
+  partial_movement: "Partly completed",
+  movement_failed: "Failed",
+  verification_failed: "Could not confirm",
+  restored: "Restored",
+  partial_undo: "Partly completed",
+  undo_failed: "Failed",
+  undo_verification_failed: "Could not confirm",
+  prepared: "Needs attention",
+  moving: "Needs attention",
+  moved_unverified: "Needs attention",
+  undoing: "Needs attention",
+  restored_unverified: "Needs attention",
+  interrupted: "Needs attention",
+  recovery_required: "Needs attention",
+});
+
+function activitySummary(entry) {
+  if (entry.type === "restore") {
+    const parts = [`${entry.files_restored} ${entry.files_restored === 1 ? "file" : "files"} restored`];
+    if (entry.files_failed) parts.push(`${entry.files_failed} failed`);
+    if (entry.files_unattempted) parts.push(`${entry.files_unattempted} not attempted`);
+    return parts.join(" · ");
+  }
+  const parts = [`${entry.files_moved} ${entry.files_moved === 1 ? "file" : "files"} moved`];
+  if (entry.files_failed) parts.push(`${entry.files_failed} failed`);
+  if (entry.files_unattempted) parts.push(`${entry.files_unattempted} not attempted`);
+  return parts.join(" · ");
+}
+
+function activityDetailList(entry) {
+  if (!entry.details.length) return el("p", { className: "activity-none", text: "No file details recorded." });
+  return el("ul", { className: "activity-detail-list" }, entry.details.map((detail) => {
+    const from = entry.type === "restore" ? detail.moved_from : detail.source;
+    const to = entry.type === "restore" ? detail.restored_to : detail.destination;
+    return el("li", {}, [
+      el("span", { text: from }),
+      el("span", { className: "activity-arrow", text: "→", attrs: { "aria-hidden": "true" } }),
+      el("span", { text: to }),
+      el("strong", { text: detail.status }),
+    ]);
+  }));
+}
+
+function activityRow(entry, expanded, busy) {
+  const actions = [
+    el("button", {
+      className: "button compact",
+      text: expanded ? "Hide details" : "Details",
+      attrs: { type: "button", "aria-expanded": expanded },
+      dataset: { action: "toggle-activity", activityId: entry.id },
+    }),
+  ];
+  if (entry.undoable) actions.push(el("button", {
+    className: "button primary compact",
+    text: busy ? "Checking…" : "Undo move",
+    attrs: { type: "button", disabled: busy },
+    dataset: { action: "preview-undo", operationId: entry.id },
+  }));
+  return el("article", { className: "card activity-row" }, [
+    el("header", {}, [
+      el("div", {}, [
+        el("h2", { text: entry.title }),
+        el("p", { text: activitySummary(entry) }),
+        el("span", { className: "activity-time", text: `${ACTIVITY_STATUS_LABELS[entry.status] || "Needs attention"} · ${formatDate(entry.completed_at || entry.started_at)}` }),
+      ]),
+      el("div", { className: "activity-actions" }, actions),
+    ]),
+    expanded ? el("div", { className: "activity-details" }, [activityDetailList(entry)]) : null,
+  ]);
+}
+
+function undoDialog(preview, busy, errorMessage) {
+  if (!preview) return null;
+  return el("div", { className: "dialog-backdrop" }, [
+    el("section", { className: "card undo-dialog", attrs: { role: "dialog", "aria-modal": "true", "aria-labelledby": "undo-dialog-title" } }, [
+      el("h2", { text: "Undo this move?", attrs: { id: "undo-dialog-title" } }),
+      el("p", { text: `${preview.files_to_restore} ${preview.files_to_restore === 1 ? "file" : "files"} will return to ${preview.files_to_restore === 1 ? "its" : "their"} previous folders.` }),
+      errorMessage ? el("p", { className: "inline-error", text: errorMessage, attrs: { role: "alert" } }) : null,
+      el("div", { className: "approval-actions" }, [
+        el("button", { className: "button", text: "Cancel", attrs: { type: "button", disabled: busy }, dataset: { action: "cancel-undo" } }),
+        el("button", { className: "button primary", text: busy ? "Restoring…" : "Undo move", attrs: { type: "button", disabled: busy }, dataset: { action: "confirm-undo" } }),
+      ]),
+    ]),
+  ]);
+}
+
+export function renderActivity(activity, ui = {}) {
+  const state = { status: "ready", expandedIds: new Set(), busy: false, preview: null, errorMessage: "", ...ui };
+  const controls = el("div", { className: "activity-actions" }, [
+    el("button", { className: "button compact", text: "Expand all", attrs: { type: "button", disabled: !activity.length }, dataset: { action: "expand-all-activity" } }),
+    el("button", { className: "button compact", text: "Collapse all", attrs: { type: "button", disabled: !activity.length }, dataset: { action: "collapse-all-activity" } }),
+  ]);
+  let content;
+  if (state.status === "loading" || state.status === "idle") content = el("p", { className: "loading", text: "Loading Activity…" });
+  else if (state.status === "error") content = el("section", { className: "error-state" }, [
+    el("h2", { text: "Activity could not be loaded." }),
+    el("p", { text: state.errorMessage || "Try loading Activity again." }),
+    el("button", { className: "button", text: "Try again", attrs: { type: "button" }, dataset: { action: "retry-activity" } }),
+  ]);
+  else if (!activity.length) content = el("section", { className: "empty-state" }, [
+    el("h2", { text: "No file moves recorded." }),
+    el("p", { text: "Completed organization moves and restores will appear here." }),
+  ]);
+  else content = el("section", { className: "activity-list", attrs: { "aria-label": "File movement Activity" } }, activity.map((entry) => activityRow(entry, state.expandedIds.has(entry.id), state.busy)));
+  return el("div", {}, [
+    pageHeader("Durable history", "Activity", "File moves and verified restores for this bootAI root.", controls),
+    content,
+    undoDialog(state.preview, state.busy, state.errorMessage),
+  ]);
+}
+
 const NON_INTEGRATED = Object.freeze({
   "duplicate-bin": ["Duplicate Bin", "Duplicate Bin movement is not part of this read-only stage. Exact-copy choices appear under Organize."],
-  activity: ["Activity", "Organization history is not available in Integration 1.0C. No file moves are recorded."],
   standards: ["Standards", "Active protections are applied by the backend before this UI receives the plan. Standards editing is not connected here."],
 });
 
@@ -413,7 +525,7 @@ export function renderUnintegrated(route) {
   return el("div", {}, [
     pageHeader("Integration boundary", title, "This destination is preserved from the accepted prototype."),
     el("section", { className: "not-integrated" }, [
-      el("h2", { text: route === "duplicate-bin" ? "Duplicate Bin is not connected yet." : route === "activity" ? "No file moves recorded." : "Standards editing is not connected yet." }),
+      el("h2", { text: route === "duplicate-bin" ? "Duplicate Bin is not connected yet." : "Standards editing is not connected yet." }),
       el("p", { text: copy }),
       el("a", { className: "button", text: "Return to Organize", attrs: { href: "#/organize" } }),
     ]),

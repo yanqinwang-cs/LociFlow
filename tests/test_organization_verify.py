@@ -12,12 +12,43 @@ from organizer.executor import apply_move_plan, undo_operation_log
 from organizer.models import MovePlanItem
 from organizer.organization_verify import (
     OrganizationOperationVerificationItem,
+    OrganizationUndoVerificationItem,
     verify_organization_apply,
     verify_organization_operation,
+    verify_organization_undo,
 )
 
 
 class OrganizationApplyVerificationTests(unittest.TestCase):
+    def test_loci_undo_verification_checks_pair_fingerprint_and_absent_destination(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            restored = root / "Inbox" / "a.txt"
+            restored.parent.mkdir(parents=True)
+            restored.write_bytes(b"data")
+            os.utime(restored, (100.0, 100.0))
+            item = OrganizationUndoVerificationItem(
+                change_id="O1",
+                restore_target="Inbox/a.txt",
+                moved_from="Documents/a.txt",
+                baseline_size_bytes=4,
+                baseline_modified_time=100.0,
+                result_state="restored",
+            )
+            passed = verify_organization_undo(
+                (item,), (("Inbox/a.txt", "Documents/a.txt"),), root
+            )
+            self.assertTrue(passed.passed)
+            self.assertEqual(passed.verified_count, 1)
+
+            (root / "Documents").mkdir()
+            (root / "Documents/a.txt").write_text("unexpected", encoding="utf-8")
+            failed = verify_organization_undo(
+                (item,), (("Inbox/a.txt", "Documents/a.txt"),), root
+            )
+            self.assertFalse(failed.passed)
+            self.assertIn("moved_destination_still_exists:O1", failed.mismatch_codes)
+
     def test_loci_operation_verification_checks_fingerprint_and_filesystem_state(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
