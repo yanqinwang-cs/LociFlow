@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" role="img" aria-labelledby="title">
+  <title id="title">Loci Flow</title>
+  <path d="M8 7v25h13M17 32V8h15M17 19h11" fill="none" stroke="currentColor" stroke-width="3.25" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M7 28c6-1 7-9 13-9 6 0 6 8 13 8" fill="none" stroke="#5b5bd6" stroke-width="2.5" stroke-linecap="round"/>
+  <circle cx="7" cy="28" r="3" fill="#5b5bd6"/>
+  <circle cx="33" cy="27" r="3" fill="#5b5bd6"/>
+</svg>

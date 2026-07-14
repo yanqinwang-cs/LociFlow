@@ -1,0 +1,487 @@
+{
+  "version": "ux-1.1-final-correction-pass",
+  "meta": {
+    "currentFolder": "Sample Downloads",
+    "lastChecked": "Today, 6:52 PM",
+    "lastOrganized": "12 July, 4:18 PM",
+    "nextCheck": "Not scheduled",
+    "lastMoveSummary": "12 files moved on 12 July"
+  },
+  "organizationStyles": {
+    "cautious": {
+      "label": "Cautious",
+      "summary": "Safe changes only",
+      "explanation": "Only makes changes with a clear destination. Creates very few new folders."
+    },
+    "standard": {
+      "label": "Standard",
+      "summary": "Normal organization",
+      "explanation": "Organizes clear files and asks about changes that need a choice."
+    },
+    "proactive": {
+      "label": "Proactive",
+      "summary": "In-depth organization",
+      "explanation": "Builds a more complete folder structure and asks about more changes."
+    }
+  },
+  "baseChanges": [
+    {
+      "id": "move-tutorial",
+      "type": "move",
+      "name": "Tutorial 06.pdf",
+      "kind": "PDF",
+      "icon": "pdf",
+      "size": "284 KB",
+      "currentFolder": ["Teaching", "2026", "CS2030S", "Loose Files"],
+      "newFolder": ["Teaching", "2026", "CS2030S", "Resources"],
+      "changeText": "Move to Resources",
+      "reason": "The course name and tutorial number match the Resources folder.",
+      "standardId": "sort-course-files",
+      "recommended": true
+    },
+    {
+      "id": "move-rubric",
+      "type": "move",
+      "name": "grading-rubric.xlsx",
+      "kind": "Spreadsheet",
+      "icon": "spreadsheet",
+      "size": "96 KB",
+      "currentFolder": ["Teaching", "2026", "CS2030S", "Loose Files"],
+      "newFolder": ["Teaching", "2026", "CS2030S", "Resources"],
+      "changeText": "Move to Resources",
+      "reason": "The file belongs with the other course resources.",
+      "standardId": "sort-course-files",
+      "recommended": true
+    },
+    {
+      "id": "move-aisha-lab",
+      "type": "move",
+      "name": "Aisha_Lab03.py",
+      "kind": "Source code",
+      "icon": "code",
+      "size": "18 KB",
+      "currentFolder": ["Teaching", "2026", "CS2030S", "Submissions"],
+      "newFolder": ["Teaching", "2026", "Students", "Aisha", "Labs"],
+      "changeText": "Move to Aisha › Labs",
+      "reason": "The person's name and lab number are clear in the file name.",
+      "standardId": "sort-student-files",
+      "recommended": true
+    },
+    {
+      "id": "move-ben-project",
+      "type": "move",
+      "name": "Ben_project.zip",
+      "kind": "ZIP archive",
+      "icon": "archive",
+      "size": "2.3 MB",
+      "currentFolder": ["Teaching", "2026", "Loose Files"],
+      "newFolder": ["Teaching", "2026", "Students", "Ben", "Projects"],
+      "changeText": "Move to Ben › Projects",
+      "reason": "The person's name is clear, but the project folder needs your choice.",
+      "recommended": false
+    },
+    {
+      "id": "move-roster",
+      "type": "move",
+      "name": "team-roster.csv",
+      "kind": "CSV spreadsheet",
+      "icon": "spreadsheet",
+      "size": "42 KB",
+      "currentFolder": ["Teaching", "2026", "Loose Files"],
+      "newFolder": ["Teaching", "2026", "Shared"],
+      "changeText": "Move to Shared",
+      "reason": "The roster is used by the whole teaching team.",
+      "recommended": true
+    },
+    {
+      "id": "move-slides",
+      "type": "move",
+      "name": "Week 06 Slides.pptx",
+      "kind": "Presentation",
+      "icon": "presentation",
+      "size": "4.8 MB",
+      "currentFolder": ["Teaching", "2026", "CS2030S", "Loose Files"],
+      "newFolder": ["Teaching", "2026", "CS2030S", "Lectures"],
+      "changeText": "Move to Lectures",
+      "reason": "The week number matches the lecture materials.",
+      "standardId": "sort-course-files",
+      "recommended": true
+    },
+    {
+      "id": "move-project-notes",
+      "type": "move",
+      "name": "Elarian-notes.md",
+      "kind": "Markdown",
+      "icon": "markdown",
+      "size": "31 KB",
+      "currentFolder": ["Sample Downloads", "Loose Files"],
+      "newFolder": ["Projects", "Elarian", "Notes"],
+      "changeText": "Move to Elarian › Notes",
+      "reason": "The project name matches the existing Elarian folder.",
+      "recommended": true
+    },
+    {
+      "id": "move-course-image",
+      "type": "move",
+      "name": "CS2030S-diagram.png",
+      "kind": "Image",
+      "icon": "image",
+      "size": "612 KB",
+      "currentFolder": ["Sample Downloads", "Loose Files"],
+      "newFolder": ["Teaching", "2026", "CS2030S", "Resources"],
+      "changeText": "Move to Resources",
+      "reason": "The course code matches the Resources folder.",
+      "standardId": "sort-course-files",
+      "recommended": true
+    },
+    {
+      "id": "rename-lecture-notes",
+      "type": "rename",
+      "name": "lecture notes final.docx",
+      "kind": "Word document",
+      "icon": "document",
+      "size": "118 KB",
+      "currentFolder": ["Teaching", "2026", "CS2030S", "Lectures"],
+      "newFolder": ["Teaching", "2026", "CS2030S", "Lectures"],
+      "newName": "Lecture Notes — Week 6.docx",
+      "changeText": "Rename to Lecture Notes — Week 6.docx",
+      "reason": "The new name matches the other weekly lecture notes.",
+      "recommended": true
+    },
+    {
+      "id": "rename-outline",
+      "type": "rename",
+      "name": "course_outline_v2.txt",
+      "kind": "Text document",
+      "icon": "txt",
+      "size": "14 KB",
+      "currentFolder": ["Teaching", "2026", "CS2030S"],
+      "newFolder": ["Teaching", "2026", "CS2030S"],
+      "newName": "Course Outline.txt",
+      "changeText": "Rename to Course Outline.txt",
+      "reason": "The shorter name matches the current course folder.",
+      "recommended": true
+    },
+    {
+      "id": "folder-aisha-labs",
+      "type": "create_folder",
+      "name": "Students › Aisha › Labs",
+      "kind": "Folder",
+      "icon": "folder",
+      "size": "—",
+      "currentFolder": ["Teaching", "2026", "Students", "Aisha"],
+      "newFolder": ["Teaching", "2026", "Students", "Aisha", "Labs"],
+      "changeText": "Create folder",
+      "reason": "A Labs folder keeps Aisha's lab files together.",
+      "standardId": "sort-student-files",
+      "recommended": true
+    },
+    {
+      "id": "folder-elarian-notes",
+      "type": "create_folder",
+      "name": "Elarian › Notes",
+      "kind": "Folder",
+      "icon": "folder",
+      "size": "—",
+      "currentFolder": ["Projects", "Elarian"],
+      "newFolder": ["Projects", "Elarian", "Notes"],
+      "changeText": "Create folder",
+      "reason": "A Notes folder keeps project notes together.",
+      "recommended": true
+    },
+    {
+      "id": "duplicate-brand-pack",
+      "type": "duplicate",
+      "name": "brand-pack.zip",
+      "kind": "ZIP archive",
+      "icon": "archive",
+      "size": "1.4 MB",
+      "currentFolder": ["Projects", "Elarian", "Assets"],
+      "newFolder": ["Duplicate Bin"],
+      "changeText": "3 identical copies",
+      "reason": "Two extra copies can be moved out of the way.",
+      "copiesToBin": 2,
+      "recommended": false
+    },
+    {
+      "id": "duplicate-course-outline",
+      "type": "duplicate",
+      "name": "course-outline.pdf",
+      "kind": "PDF",
+      "icon": "pdf",
+      "size": "248 KB",
+      "currentFolder": ["Teaching", "2026", "Shared"],
+      "newFolder": ["Duplicate Bin"],
+      "changeText": "2 identical copies",
+      "reason": "One extra copy can be moved out of the way.",
+      "copiesToBin": 1,
+      "recommended": false
+    },
+    {
+      "id": "move-submission",
+      "type": "move",
+      "name": "submission.pdf",
+      "kind": "PDF",
+      "icon": "pdf",
+      "size": "248 KB",
+      "currentFolder": ["Teaching", "2026", "CS2030S", "Submissions"],
+      "newFolder": ["Teaching", "2026", "Students", "Mei", "Labs"],
+      "changeText": "Move to Mei › Labs",
+      "reason": "The generic file name does not safely identify its owner without a choice.",
+      "standardId": "keep-submissions",
+      "recommended": false
+    }
+  ],
+  "standardAdds": [
+    {
+      "id": "move-mei-reflection",
+      "type": "move",
+      "name": "Mei_reflection.docx",
+      "kind": "Word document",
+      "icon": "document",
+      "size": "92 KB",
+      "currentFolder": ["Teaching", "2026", "Loose Files"],
+      "newFolder": ["Teaching", "2026", "Students", "Mei", "Reflections"],
+      "changeText": "Move to Mei › Reflections",
+      "reason": "The person's name and file purpose are clear.",
+      "recommended": true
+    },
+    {
+      "id": "move-aisha-notes",
+      "type": "move",
+      "name": "Aisha_notes.pdf",
+      "kind": "PDF",
+      "icon": "pdf",
+      "size": "164 KB",
+      "currentFolder": ["Teaching", "2026", "Loose Files"],
+      "newFolder": ["Teaching", "2026", "Students", "Aisha", "Notes"],
+      "changeText": "Move to Aisha › Notes",
+      "reason": "The person's name is clear; choose whether Notes is useful.",
+      "recommended": false
+    },
+    {
+      "id": "folder-mei-reflections",
+      "type": "create_folder",
+      "name": "Students › Mei › Reflections",
+      "kind": "Folder",
+      "icon": "folder",
+      "size": "—",
+      "currentFolder": ["Teaching", "2026", "Students", "Mei"],
+      "newFolder": ["Teaching", "2026", "Students", "Mei", "Reflections"],
+      "changeText": "Create folder",
+      "reason": "A dedicated folder keeps reflection files together.",
+      "recommended": true
+    }
+  ],
+  "proactiveAdds": [
+    {
+      "id": "rename-project-brief",
+      "type": "rename",
+      "name": "project brief FINAL.docx",
+      "kind": "Word document",
+      "icon": "document",
+      "size": "126 KB",
+      "currentFolder": ["Projects", "Elarian"],
+      "newFolder": ["Projects", "Elarian"],
+      "newName": "Elarian Project Brief.docx",
+      "changeText": "Rename to Elarian Project Brief.docx",
+      "reason": "The new name is shorter and matches the project.",
+      "recommended": true
+    },
+    {
+      "id": "move-old-archive",
+      "type": "move",
+      "name": "teaching-2025.zip",
+      "kind": "ZIP archive",
+      "icon": "archive",
+      "size": "8.2 MB",
+      "currentFolder": ["Sample Downloads", "Loose Files"],
+      "newFolder": ["Teaching", "2025", "Archive"],
+      "changeText": "Move to 2025 › Archive",
+      "reason": "The year is clear, but the archive folder needs your choice.",
+      "recommended": false
+    },
+    {
+      "id": "folder-shared-archive",
+      "type": "create_folder",
+      "name": "Shared › Archive",
+      "kind": "Folder",
+      "icon": "folder",
+      "size": "—",
+      "currentFolder": ["Teaching", "2026", "Shared"],
+      "newFolder": ["Teaching", "2026", "Shared", "Archive"],
+      "changeText": "Create folder",
+      "reason": "An Archive folder separates older shared material.",
+      "recommended": true
+    },
+    {
+      "id": "duplicate-tutorial-answers",
+      "type": "duplicate",
+      "name": "tutorial-answers.pdf",
+      "kind": "PDF",
+      "icon": "pdf",
+      "size": "88 KB",
+      "currentFolder": ["Teaching", "2026", "CS2030S", "Resources"],
+      "newFolder": ["Duplicate Bin"],
+      "changeText": "2 identical copies",
+      "reason": "One extra copy can be moved out of the way.",
+      "copiesToBin": 1,
+      "recommended": false
+    }
+  ],
+  "duplicateBinItems": [
+    {
+      "id": "bin-course-outline-old",
+      "name": "course-outline.pdf",
+      "icon": "pdf",
+      "kind": "PDF",
+      "size": "248 KB",
+      "originalFolder": ["Teaching", "2026", "Shared"],
+      "dateMoved": "12 July, 4:18 PM"
+    },
+    {
+      "id": "bin-brand-pack-old",
+      "name": "brand-pack.zip",
+      "icon": "archive",
+      "kind": "ZIP archive",
+      "size": "1.4 MB",
+      "originalFolder": ["Projects", "Elarian", "Assets"],
+      "dateMoved": "12 July, 4:18 PM"
+    },
+    {
+      "id": "bin-tutorial-answers-old",
+      "name": "tutorial-answers.pdf",
+      "icon": "pdf",
+      "kind": "PDF",
+      "size": "88 KB",
+      "originalFolder": ["Teaching", "2026", "CS2030S", "Resources"],
+      "dateMoved": "12 July, 4:18 PM"
+    }
+  ],
+  "standards": [
+    {
+      "id": "keep-submissions",
+      "name": "Keep Submissions unchanged",
+      "appliesTo": ["Teaching", "2026", "CS2030S", "Submissions"],
+      "description": "Files in Submissions stay where they are.",
+      "effect": "keep_unchanged",
+      "active": true
+    },
+    {
+      "id": "sort-student-files",
+      "name": "Sort student files by person",
+      "appliesTo": ["Teaching", "2026"],
+      "description": "Use each person's name to keep their files together.",
+      "active": true
+    },
+    {
+      "id": "keep-file-names",
+      "name": "Keep current file names",
+      "appliesTo": ["Sample Downloads"],
+      "description": "Do not change file names in this folder.",
+      "active": true
+    },
+    {
+      "id": "sort-course-files",
+      "name": "Sort course files by course code",
+      "appliesTo": ["Teaching", "2026"],
+      "description": "Use course codes to place teaching files.",
+      "active": true
+    }
+  ],
+  "activityMoves": [
+    {
+      "id": "move-july-12",
+      "title": "Organized 12 files",
+      "summary": "8 moved · 2 names changed · 1 folder created · 1 copy moved to Duplicate Bin",
+      "status": "Completed",
+      "time": "12 July, 4:18 PM",
+      "type": "organization_move",
+      "completedAt": "12 July, 4:18 PM",
+      "undoable": false,
+      "details": {
+        "filesMoved": ["Tutorial 05.pdf", "Week 05 Slides.pptx", "Aisha_Lab02.py", "team-list.csv", "Elarian brief.docx", "course image.png", "notes.txt", "reading.pdf"],
+        "namesChanged": ["Course Notes — Week 5.docx", "Project Brief.docx"],
+        "foldersCreated": ["Teaching › 2026 › Students › Aisha › Labs"],
+        "copiesMoved": ["course-outline.pdf"],
+        "filesRestored": [],
+        "problems": []
+      }
+    }
+  ],
+  "interpretations": {
+    "codingProjects": {
+      "intent": "Keep my coding projects together and rename only standalone files without breaking imports.",
+      "suggestions": [
+        {
+          "id": "suggest-code-projects",
+          "name": "Keep code projects together",
+          "description": "Keep files that belong to the same code project in one project folder.",
+          "appliesTo": ["Projects"]
+        },
+        {
+          "id": "suggest-referenced-names",
+          "name": "Protect referenced file names",
+          "description": "Keep names unchanged when another project file may refer to them.",
+          "appliesTo": ["Projects"]
+        },
+        {
+          "id": "suggest-python-only",
+          "name": "Rename standalone Python files only",
+          "description": "Only suggest a clearer name for Python files outside a project dependency graph.",
+          "appliesTo": ["Sample Downloads"]
+        },
+        {
+          "id": "suggest-entry-points",
+          "name": "Keep dependency and entry-point files unchanged",
+          "description": "Do not rename dependency manifests, imported modules, or entry-point files.",
+          "appliesTo": ["Projects"]
+        }
+      ]
+    },
+    "nameAmbiguity": {
+      "intent": "Organize files by name",
+      "question": "What kind of name do you mean?",
+      "choices": [
+        {
+          "label": "Person name",
+          "suggestions": [{"id": "suggest-person-name", "name": "Group files by person name", "description": "Use a clear person name in a filename to keep that person's files together.", "appliesTo": ["Teaching", "2026"]}]
+        },
+        {
+          "label": "Project code",
+          "suggestions": [{"id": "suggest-project-code", "name": "Group files by project code", "description": "Use a clear project code to place matching files together.", "appliesTo": ["Projects"]}]
+        },
+        {
+          "label": "Course code",
+          "suggestions": [{"id": "suggest-course-code", "name": "Group files by course code", "description": "Use a clear course code to place teaching files together.", "appliesTo": ["Teaching", "2026"]}]
+        },
+        {
+          "label": "Common filename prefix",
+          "suggestions": [{"id": "suggest-prefix", "name": "Group files by common filename prefix", "description": "Use a repeated filename prefix only when it identifies the same subject.", "appliesTo": ["Sample Downloads"]}]
+        }
+      ]
+    },
+    "unsafeRemoval": {
+      "intent": "Remove files I probably do not need",
+      "alternatives": [
+        "Find exact duplicate copies",
+        "Organize files into folders",
+        "Keep selected folders unchanged"
+      ]
+    }
+  },
+  "settings": {
+    "theme": "light",
+    "notifications": {
+      "organizationReady": true,
+      "moveCompleted": true,
+      "moveFailed": true
+    }
+  },
+  "folderChoices": [
+    ["Sample Downloads"],
+    ["Teaching", "2026"],
+    ["Teaching", "2026", "CS2030S"],
+    ["Projects", "Elarian"]
+  ]
+}

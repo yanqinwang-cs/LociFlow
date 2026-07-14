@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Loci Flow organization prototype using sample files only.">
+    <meta name="color-scheme" content="light dark">
+    <title>Home · Loci Flow</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to main content</a>
+    <div class="prototype-notice" role="note">
+      <span class="prototype-badge">Prototype</span>
+      <span>Sample files only. Your files are not changed.</span>
+    </div>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Loci Flow">
+        <a class="brand" href="#/home" aria-label="Loci Flow Home">
+          <img class="brand-mark" src="assets/loci-flow-mark.svg" alt="">
+          <span><strong>Loci Flow</strong><small>File organization</small></span>
+        </a>
+        <nav class="primary-nav" aria-label="Primary navigation">
+          <a href="#/home" data-route="home"><span class="nav-icon" aria-hidden="true">H</span><span>Home</span></a>
+          <a href="#/organize" data-route="organize"><span class="nav-icon" aria-hidden="true">O</span><span>Organize</span><span class="nav-count" data-organize-count>15</span></a>
+          <a href="#/duplicate-bin" data-route="duplicate-bin"><span class="nav-icon" aria-hidden="true">B</span><span>Duplicate Bin</span><span class="nav-count" data-bin-count>3</span></a>
+          <a href="#/activity" data-route="activity"><span class="nav-icon" aria-hidden="true">A</span><span>Activity</span></a>
+          <a href="#/standards" data-route="standards"><span class="nav-icon" aria-hidden="true">S</span><span>Standards</span></a>
+          <a href="#/settings" data-route="settings"><span class="nav-icon" aria-hidden="true">T</span><span>Settings</span></a>
+        </nav>
+        <footer class="sidebar-footer">
+          <strong>Sample workspace</strong>
+          <span>Everything resets when the page reloads.</span>
+        </footer>
+      </aside>
+      <div class="workspace">
+        <header class="global-toolbar">
+          <div class="history-controls" aria-label="Navigation history">
+            <button type="button" class="icon-button" data-action="history-back" aria-label="Go back" title="Go back">←</button>
+            <button type="button" class="icon-button" data-action="history-forward" aria-label="Go forward" title="Go forward">→</button>
+          </div>
+          <div class="folder-title"><strong>Sample Downloads</strong><span>Checked today at 6:52 PM</span></div>
+          <div class="toolbar-spacer"></div>
+          <fieldset class="toolbar-theme" aria-label="Appearance">
+            <button type="button" data-action="set-theme" data-theme-value="light" aria-pressed="true">Light</button>
+            <button type="button" data-action="set-theme" data-theme-value="dark" aria-pressed="false">Dark</button>
+          </fieldset>
+          <span class="sample-label">Sample only</span>
+        </header>
+        <main id="main-content" tabindex="-1">
+          <div id="app" aria-busy="true"><p class="loading">Opening the sample…</p></div>
+        </main>
+      </div>
+    </div>
+    <dialog id="dialog" aria-labelledby="dialog-title" aria-describedby="dialog-description">
+      <div class="dialog-frame">
+        <header class="dialog-header">
+          <div><p id="dialog-eyebrow" class="eyebrow"></p><h2 id="dialog-title">Confirm</h2><p id="dialog-description"></p></div>
+          <button type="button" class="icon-button" data-action="close-dialog" aria-label="Close dialog" title="Close">×</button>
+        </header>
+        <div id="dialog-content" class="dialog-content"></div>
+        <footer id="dialog-actions" class="dialog-actions"></footer>
+      </div>
+    </dialog>
+    <div id="status-live" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></div>
+    <script type="module" src="app.js"></script>
+  </body>
+</html>
