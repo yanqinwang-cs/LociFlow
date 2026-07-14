@@ -193,6 +193,14 @@ The web layer may own routes, forms, HTTP request validation, signed sessions, C
 
 ## Browser Request Contract
 
+### Loci Flow Integration 1.0B
+
+`GET /loci-flow` is a separate authenticated, no-store HTML shell that preserves the existing consumer interface. Its Home and Organize views fetch only the same-origin authenticated `GET /api/organization/current` application-service contract. The immutable launch-time root remains server-owned; the browser sends no root, path, style, or decision parameters and has no fixture fallback.
+
+This integration displays real scope and freshness, recommendations, choices, items kept by Standards, file metadata, and the backend-provided movement tree. Duplicate Bin, Activity, and Standards editing are explicitly not integrated. The shell submits no organization decisions and cannot move files. Its visual baseline is the unchanged standalone fixture prototype under `prototype/loci-flow-ux-1-1-focused-policy-controls/`, which is not served at runtime.
+
+The next Loci Flow integration stage may add temporary decisions and approval without movement. Executor, apply, operation-log, undo, browser root selection, and persistent organization controls remain outside this boundary.
+
 The browser submits stable, session-scoped identifiers and allowed actions. The backend maps those identifiers to server-held state and revalidates the corresponding paths.
 
 Conceptually accepted:

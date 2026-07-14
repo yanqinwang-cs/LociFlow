@@ -184,6 +184,7 @@ class WebAppTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(methods_by_path["/healthz"], {"GET"})
         self.assertEqual(methods_by_path["/launch/{token}"], {"GET"})
         self.assertEqual(methods_by_path["/"], {"GET"})
+        self.assertEqual(methods_by_path["/loci-flow"], {"GET"})
         self.assertEqual(methods_by_path["/scan"], {"POST"})
         self.assertEqual(methods_by_path["/scan/status"], {"GET"})
         self.assertEqual(

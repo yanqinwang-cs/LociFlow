@@ -74,6 +74,9 @@ class WebDependencyHygieneTests(unittest.TestCase):
                 "static/THIRD_PARTY_NOTICES.txt",
                 "static/css/*.css",
                 "static/js/*.js",
+                "static/loci_flow/*.css",
+                "static/loci_flow/*.js",
+                "static/loci_flow/assets/*.svg",
                 "static/vendor/*.css",
                 "static/vendor/*.js",
             },
@@ -108,6 +111,8 @@ class WebDependencyHygieneTests(unittest.TestCase):
             *sorted((WEB_ROOT / "templates").glob("*.html")),
             WEB_ROOT / "static" / "css" / "bootai.css",
             WEB_ROOT / "static" / "js" / "bootai.js",
+            WEB_ROOT / "static" / "loci_flow" / "styles.css",
+            *sorted((WEB_ROOT / "static" / "loci_flow").glob("*.js")),
         ]
         combined = "\n".join(
             path.read_text(encoding="utf-8") for path in authored_assets
