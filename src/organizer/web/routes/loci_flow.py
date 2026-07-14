@@ -6,7 +6,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 from starlette.templating import Jinja2Templates
 
-from organizer.web.security import is_authenticated
+from organizer.web.security import csrf_token_for_session, is_authenticated
 
 
 _SESSION_UNAVAILABLE = (
@@ -30,7 +30,7 @@ def create_loci_flow_router(templates: Jinja2Templates) -> APIRouter:
         response = templates.TemplateResponse(
             request=request,
             name="loci_flow.html",
-            context={},
+            context={"csrf_token": csrf_token_for_session(request.session)},
         )
         response.headers["Cache-Control"] = "no-store"
         return response

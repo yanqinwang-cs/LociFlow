@@ -214,6 +214,34 @@ class WebDependencyHygieneTests(unittest.TestCase):
         ):
             self.assertNotIn(forbidden, route)
 
+    def test_organization_decision_boundary_is_executor_and_persistence_free(self) -> None:
+        decision_service = (
+            REPOSITORY_ROOT
+            / "src"
+            / "organizer"
+            / "application"
+            / "organization_decision_service.py"
+        ).read_text(encoding="utf-8").lower()
+        store = (
+            WEB_ROOT / "organization_decision_store.py"
+        ).read_text(encoding="utf-8").lower()
+        route = (
+            WEB_ROOT / "routes" / "organization_api.py"
+        ).read_text(encoding="utf-8").lower()
+        combined = "\n".join((decision_service, store, route))
+        for forbidden in (
+            "organizer.executor",
+            "apply_move_plan",
+            "undo_operation_log",
+            "organization_apply",
+            "operation_log",
+            "sqlite",
+            "localstorage",
+        ):
+            self.assertNotIn(forbidden, combined)
+        self.assertNotIn("from organizer.models import moveplanitem", route)
+        self.assertNotIn("from organizer.duplicates", route)
+
     def test_launcher_reports_a_concise_missing_extra_error(self) -> None:
         result = subprocess.run(
             [sys.executable, "-S", "-m", "organizer.web", "--help"],

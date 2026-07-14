@@ -19,6 +19,7 @@ from organizer.web.routes.loci_flow import create_loci_flow_router
 from organizer.web.routes.organization_api import create_organization_api_router
 from organizer.web.routes.review import create_review_router
 from organizer.web.review_explorer import ReviewExplorerStore
+from organizer.web.organization_decision_store import OrganizationDecisionStore
 from organizer.web.scan_jobs import ScanJobController
 from organizer.web.security import (
     LaunchTokenGate,
@@ -62,6 +63,7 @@ def create_app(config: WebAppConfig) -> FastAPI:
     app.state.launch_token_gate = LaunchTokenGate(config.launch_token)
     app.state.scan_jobs = ScanJobController(config.root)
     app.state.review_explorer = ReviewExplorerStore(config.root)
+    app.state.organization_decisions = OrganizationDecisionStore()
     app.include_router(create_home_router(templates))
     app.include_router(create_consumer_router(templates))
     app.include_router(create_loci_flow_router(templates))

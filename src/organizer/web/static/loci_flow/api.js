@@ -1,4 +1,6 @@
 export const ORGANIZATION_ENDPOINT = "/api/organization/current";
+export const ORGANIZATION_DECISIONS_ENDPOINT = "/api/organization/decisions";
+export const ORGANIZATION_APPROVAL_ENDPOINT = "/api/organization/approval";
 
 export class OrganizationApiError extends Error {
   constructor(code, message, status = 0) {
@@ -71,6 +73,36 @@ function validateSummary(summary, expected, recommendedPaths) {
   });
 }
 
+function validateReview(review, generation) {
+  assert(isObject(review), "review must be an object");
+  assert(["in_progress", "ready_for_approval", "ready_to_move"].includes(review.status), "review.status is invalid");
+  assert(review.scan_generation === generation, "review.scan_generation is inconsistent");
+  assert(isCount(review.decision_revision), "review.decision_revision is invalid");
+  assert(Array.isArray(review.recommendations) && Array.isArray(review.choices), "review decisions must be arrays");
+  review.recommendations.forEach((item, index) => {
+    assert(isObject(item) && isText(item.change_id), `review.recommendations[${index}] is invalid`);
+    assert(["undecided", "accept", "keep"].includes(item.decision), `review.recommendations[${index}].decision is invalid`);
+  });
+  review.choices.forEach((item, index) => {
+    assert(isObject(item) && isText(item.choice_id), `review.choices[${index}] is invalid`);
+    assert(item.option_id === null || isText(item.option_id), `review.choices[${index}].option_id is invalid`);
+    assert(Array.isArray(item.selected_copy_ids) && item.selected_copy_ids.every(isText), `review.choices[${index}].selected_copy_ids is invalid`);
+  });
+  const summary = review.summary;
+  assert(isObject(summary), "review.summary must be an object");
+  for (const field of [
+    "pending_recommendations", "pending_choices", "accepted_moves", "kept_recommendations",
+    "duplicate_copies_for_future_bin", "choices_remaining", "files_to_move",
+    "names_to_change", "folders_to_create",
+  ]) assert(isCount(summary[field]), `review.summary.${field} is invalid`);
+  assert(typeof summary.ready_for_approval === "boolean", "review.summary.ready_for_approval is invalid");
+  assert(review.approval === null || isObject(review.approval), "review.approval is invalid");
+  if (review.status === "ready_to_move") {
+    assert(isObject(review.approval), "ready review requires approval");
+    validateTimestamp(review.approval.approved_at, "review.approval.approved_at");
+  }
+}
+
 export function validateOrganizationSlice(data) {
   assert(isObject(data), "organization response must be an object");
   assert(isObject(data.scope) && isText(data.scope.display_name), "scope.display_name is required");
@@ -135,6 +167,7 @@ export function validateOrganizationSlice(data) {
     choices: data.choices_needed.length,
     kept: data.kept_by_standards.length,
   }, new Set(data.recommended_changes.map((change) => change.item.relative_path)));
+  if (Object.hasOwn(data, "review")) validateReview(data.review, data.freshness.scan_generation);
   return data;
 }
 
@@ -163,4 +196,80 @@ export async function fetchOrganizationSlice(fetchImpl = globalThis.fetch) {
     throw new OrganizationApiError(code, message, response.status);
   }
   return validateOrganizationSlice(payload);
+}
+
+function csrfTokenFromDom() {
+  const token = globalThis.document?.querySelector('meta[name="csrf-token"]')?.content;
+  if (!isText(token)) throw new OrganizationApiError("authentication_required", "The bootAI session token is unavailable.");
+  return token;
+}
+
+async function submitForm(endpoint, fields, fetchImpl) {
+  const body = new URLSearchParams();
+  for (const [name, value] of Object.entries(fields)) body.set(name, String(value));
+  let response;
+  try {
+    response = await fetchImpl(endpoint, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { Accept: "application/json", "Content-Type": "application/x-www-form-urlencoded" },
+      body,
+    });
+  } catch (_error) {
+    throw new OrganizationApiError("network_error", "Loci Flow could not reach bootAI.");
+  }
+  let payload;
+  try {
+    payload = await response.json();
+  } catch (_error) {
+    throw new OrganizationApiError("contract_error", "bootAI returned an unreadable organization response.", response.status);
+  }
+  if (!response.ok) {
+    const error = isObject(payload.error) ? payload.error : {};
+    throw new OrganizationApiError(
+      isText(error.code) ? error.code : "organization_unavailable",
+      isText(error.message) ? error.message : "The organization request was not accepted.",
+      response.status,
+    );
+  }
+  return validateOrganizationSlice(payload);
+}
+
+export function updateOrganizationDecision(request, fetchImpl = globalThis.fetch, csrfToken = csrfTokenFromDom()) {
+  const fields = {
+    csrf_token: csrfToken,
+    scan_generation: request.scanGeneration,
+    expected_revision: request.expectedRevision,
+    kind: request.kind,
+  };
+  if (request.kind === "recommendation") {
+    fields.change_id = request.changeId;
+    fields.decision = request.decision;
+  } else if (request.kind === "choice") {
+    fields.choice_id = request.choiceId;
+    fields.option_id = request.optionId;
+    if (request.optionId === "choose-for-bin") fields.copy_ids = JSON.stringify(request.copyIds);
+  } else {
+    throw new OrganizationApiError("invalid_option", "That organization action is unsupported.");
+  }
+  return submitForm(ORGANIZATION_DECISIONS_ENDPOINT, fields, fetchImpl);
+}
+
+export function acceptRecommendedChanges(request, fetchImpl = globalThis.fetch, csrfToken = csrfTokenFromDom()) {
+  return submitForm(ORGANIZATION_DECISIONS_ENDPOINT, {
+    csrf_token: csrfToken,
+    scan_generation: request.scanGeneration,
+    expected_revision: request.expectedRevision,
+    kind: "bulk_recommendations",
+    decision: "accept",
+    expected_change_ids: JSON.stringify(request.expectedChangeIds),
+  }, fetchImpl);
+}
+
+export function approveOrganizationPlan(request, fetchImpl = globalThis.fetch, csrfToken = csrfTokenFromDom()) {
+  return submitForm(ORGANIZATION_APPROVAL_ENDPOINT, {
+    csrf_token: csrfToken,
+    scan_generation: request.scanGeneration,
+    expected_revision: request.expectedRevision,
+  }, fetchImpl);
 }

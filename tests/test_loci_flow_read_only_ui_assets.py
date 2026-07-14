@@ -44,7 +44,7 @@ class LociFlowReadOnlyUiAssetTests(unittest.TestCase):
         self.assertNotIn("<script>", template)
         self.assertNotIn("style=", template)
 
-    def test_frontend_is_dom_safe_and_has_no_fixture_or_mutation_boundary(self) -> None:
+    def test_frontend_is_dom_safe_and_uses_only_focused_mutation_boundary(self) -> None:
         javascript = "\n".join(
             path.read_text(encoding="utf-8") for path in sorted(LOCI.glob("*.js"))
         )
@@ -53,13 +53,16 @@ class LociFlowReadOnlyUiAssetTests(unittest.TestCase):
             "innerhtml", "insertadjacenthtml", "fixtures.json", "localstorage",
             "sessionstorage", "indexeddb", "xmlhttprequest", "websocket",
             "eventsource", "serviceworker", "document.cookie", "sha-256", "sha256",
-            "accept all", "test move", "apply changes", "approve changes",
+            "test move", "apply changes",
         ):
             self.assertNotIn(forbidden, lower)
         self.assertEqual(javascript.count('fetchImpl(ORGANIZATION_ENDPOINT'), 1)
-        self.assertNotIn('method: "POST"', javascript)
+        self.assertEqual(javascript.count('method: "POST"'), 1)
         self.assertNotIn('method: "PUT"', javascript)
         self.assertNotIn('method: "DELETE"', javascript)
+        self.assertIn('new URLSearchParams()', javascript)
+        self.assertIn('/api/organization/decisions', javascript)
+        self.assertIn('/api/organization/approval', javascript)
         self.assertIn('source: "backend_read_only"', javascript)
         self.assertIn("textContent", javascript)
         self.assertIn("replaceChildren", javascript)

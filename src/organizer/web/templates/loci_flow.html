@@ -3,7 +3,8 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="description" content="Loci Flow read-only organization view.">
+    <meta name="description" content="Loci Flow temporary organization review.">
+    <meta name="csrf-token" content="{{ csrf_token }}">
     <meta name="color-scheme" content="light dark">
     <title>Home · Loci Flow</title>
     <link
@@ -18,8 +19,8 @@
   <body>
     <a class="skip-link" href="#main-content">Skip to main content</a>
     <div class="read-only-notice" role="note">
-      <span class="read-only-badge">Read-only</span>
-      <span>Inspect organization results. Approval and file movement are unavailable.</span>
+      <span class="read-only-badge">Read-only movement</span>
+      <span>Review and approve the plan. No files can move in this stage.</span>
     </div>
     <div class="app-shell">
       <aside class="sidebar" aria-label="Loci Flow">
@@ -40,7 +41,7 @@
           <a href="#/settings" data-route="settings"><span class="nav-icon" aria-hidden="true">T</span><span>Settings</span></a>
         </nav>
         <footer class="sidebar-footer">
-          <strong>Read-only integration</strong>
+          <strong>Temporary decisions</strong>
           <span>The folder is fixed when bootAI starts.</span>
           <a href="/">Open existing scan workflow</a>
         </footer>
@@ -60,7 +61,7 @@
             <button type="button" data-action="set-theme" data-theme-value="light" aria-pressed="true">Light</button>
             <button type="button" data-action="set-theme" data-theme-value="dark" aria-pressed="false">Dark</button>
           </fieldset>
-          <span class="source-label">Backend read-only</span>
+          <span class="source-label">Backend read-only + decisions</span>
         </header>
         <main id="main-content" tabindex="-1">
           <div id="app" aria-busy="true">

@@ -37,7 +37,9 @@ function el(tag, options = {}, children = []) {
   const node = document.createElement(tag);
   if (options.className) node.className = options.className;
   if (options.text !== undefined) node.textContent = String(options.text);
-  for (const [name, value] of Object.entries(options.attrs || {})) node.setAttribute(name, String(value));
+  for (const [name, value] of Object.entries(options.attrs || {})) {
+    if (value !== null && value !== false) node.setAttribute(name, value === true ? "" : String(value));
+  }
   for (const [name, value] of Object.entries(options.dataset || {})) node.dataset[name] = String(value);
   for (const child of Array.isArray(children) ? children : [children]) if (child) node.append(child);
   return node;
@@ -124,26 +126,26 @@ function summaryList(summary) {
 }
 
 export function renderHome(slice) {
-  const totalChanges = slice.summary.recommended_changes + slice.summary.choices_needed;
+  const totalChanges = slice.review?.summary.choices_remaining ?? slice.summary.recommended_changes + slice.summary.choices_needed;
   const continueButton = totalChanges
     ? el("button", { className: "button primary", text: "Continue organizing", attrs: { type: "button" }, dataset: { action: "continue-organizing" } })
     : el("a", { className: "button primary", text: "Check again", attrs: { href: "/" } });
   return el("div", {}, [
-    pageHeader("Read-only organization", totalChanges ? `${totalChanges} changes are waiting` : "Everything is organized", "Live results from bootAI’s deterministic scan and planning boundary."),
+    pageHeader("Organization review", totalChanges ? `${totalChanges} choices are waiting` : "Review is complete", "Live results and temporary decisions from bootAI’s deterministic boundary."),
     stageStrip(totalChanges ? 1 : -1),
     scopeCard(slice),
     el("section", { className: "metric-grid", attrs: { "aria-label": "Organization totals" } }, [
       metric("Recommended changes", slice.summary.recommended_changes, "recommended"),
       metric("Choices needed", slice.summary.choices_needed, "choice"),
       metric("Kept by Standards", slice.summary.kept_by_standards, "protected"),
-      metric("Files to move", slice.summary.files_to_move),
+      metric("Files to move", slice.review?.summary.files_to_move ?? slice.summary.files_to_move),
     ]),
     el("div", { className: "home-grid" }, [
       el("section", { className: "card card-body next-step" }, [
         el("div", {}, [
           el("div", { className: "eyebrow", text: totalChanges ? "Ready to inspect" : "Up to date" }),
           el("h2", { text: totalChanges ? "See the plan before anything changes" : "Everything is organized" }),
-          el("p", { text: totalChanges ? "Recommendations, choices, and protected files remain read-only in this integration." : "You can still inspect the complete read-only result." }),
+          el("p", { text: totalChanges ? "Recommendations and choices can be reviewed without moving files." : "You can inspect the complete approved or reviewed result." }),
         ]),
         continueButton,
       ]),
@@ -163,8 +165,20 @@ function snapshotForChoice(choice) {
   return choice.item || choice.copies[0];
 }
 
-function changeRow(entry, type, selectedId) {
+function reviewRecommendation(slice, changeId) {
+  return slice.review?.recommendations.find((item) => item.change_id === changeId) || { decision: "undecided" };
+}
+
+function reviewChoice(slice, choiceId) {
+  return slice.review?.choices.find((item) => item.choice_id === choiceId) || { option_id: null, selected_copy_ids: [] };
+}
+
+function changeRow(entry, type, selectedId, slice, ui) {
   const item = type === "choice" ? snapshotForChoice(entry) : entry.item;
+  const review = type === "recommended" ? reviewRecommendation(slice, entry.id) : reviewChoice(slice, entry.id);
+  const status = type === "recommended"
+    ? review.decision === "accept" ? "Accepted" : review.decision === "keep" ? "Kept here" : "Recommended"
+    : review.option_id ? "Choice saved" : "Choice needed";
   const subtitle = type === "recommended"
     ? `Move · ${formatBytes(item.size_bytes)} · ${item.current_folder} → ${entry.destination_folder}`
     : `${KIND_LABELS[item.kind] || KIND_LABELS.document} · ${formatBytes(item.size_bytes)} · ${reasonLabel(entry.reason_code)}`;
@@ -175,13 +189,44 @@ function changeRow(entry, type, selectedId) {
   }, [
     icon(item.kind),
     el("span", { className: "row-copy" }, [el("strong", { text: item.name }), el("span", { text: subtitle })]),
-    el("span", { className: `row-status ${type}`, text: type === "recommended" ? "Recommended" : "Choice needed" }),
+    el("span", { className: `row-status ${type}`, text: status }),
   ]);
-  if (type === "choice") {
-    const options = el("ul", { className: "option-list", attrs: { "aria-label": "Available read-only options" } }, entry.options.map((option) => el("li", { text: optionLabel(option) })));
-    return el("div", {}, [button, options]);
+  if (type === "recommended") {
+    const actions = el("div", { className: "row-actions", attrs: { "aria-label": `Decision for ${item.name}` } }, [
+      el("button", { className: "button compact", text: "Accept", attrs: { type: "button", disabled: ui.busy || slice.review.status === "ready_to_move" }, dataset: { action: "recommendation-decision", changeId: entry.id, decision: "accept" } }),
+      el("button", { className: "button compact", text: "Keep here", attrs: { type: "button", disabled: ui.busy || slice.review.status === "ready_to_move" }, dataset: { action: "recommendation-decision", changeId: entry.id, decision: "keep" } }),
+    ]);
+    return el("div", { className: "decision-row" }, [button, actions]);
   }
-  return button;
+  const options = el("div", { className: "option-actions", attrs: { "aria-label": `Options for ${item.name}` } }, entry.options.map((option) => {
+    const action = option.id === "choose-for-bin" ? "start-duplicate-choice" : "choice-option";
+    return el("button", {
+      className: `button compact${review.option_id === option.id ? " selected-option" : ""}`,
+      text: optionLabel(option),
+      attrs: { type: "button", "aria-pressed": review.option_id === option.id ? "true" : "false", disabled: ui.busy || slice.review.status === "ready_to_move" },
+      dataset: { action, choiceId: entry.id, optionId: option.id },
+    });
+  }));
+  const children = [button, options];
+  if (entry.choice_type === "exact_duplicate" && ui.duplicateDrafts?.has(entry.id)) {
+    const selected = ui.duplicateDrafts.get(entry.id);
+    const copies = el("fieldset", { className: "copy-picker" }, [
+      el("legend", { text: "Choose copies for future Duplicate Bin" }),
+      ...entry.copies.map((copy) => el("label", {}, [
+        el("input", { attrs: { type: "checkbox", value: copy.id, checked: selected.has(copy.id) ? "checked" : null }, dataset: { action: "toggle-duplicate-copy", choiceId: entry.id, copyId: copy.id } }),
+        el("span", { text: `${copy.name} · ${copy.current_folder}` }),
+      ])),
+      el("p", { className: "inline-note", text: "Select at least one copy and leave at least one unselected." }),
+      el("button", {
+        className: "button primary compact",
+        text: "Save duplicate choice",
+        attrs: { type: "button", disabled: selected.size < 1 || selected.size >= entry.copies.length || ui.busy },
+        dataset: { action: "save-duplicate-choice", choiceId: entry.id },
+      }),
+    ]);
+    children.push(copies);
+  }
+  return el("div", { className: "decision-row" }, children);
 }
 
 function keptRow(kept, selectedId) {
@@ -256,7 +301,7 @@ function detailsCard(slice, selectedId) {
     el("div", { className: "card-header" }, [el("div", {}, [el("h2", { text: "Change details" }), el("p", { text: "Read-only backend metadata" })])]),
     el("div", { className: "card-body" }, [
       el("dl", { className: "detail-grid" }, details.map(([term, value]) => el("div", { className: "detail-item" }, [el("dt", { text: term }), el("dd", { text: value })]))),
-      el("p", { className: "inline-note", text: "No decision is saved and no file is moved from this screen." }),
+      el("p", { className: "inline-note", text: "Decisions are temporary. No file is moved from this screen." }),
     ]),
   ]);
 }
@@ -277,14 +322,26 @@ function movementTree(slice) {
   ]);
 }
 
-export function renderOrganize(slice, selectedId) {
-  const recommendedRows = slice.recommended_changes.map((entry) => changeRow(entry, "recommended", selectedId));
-  const choiceRows = slice.choices_needed.map((entry) => changeRow(entry, "choice", selectedId));
+export function renderOrganize(slice, selectedId, ui = {}) {
+  const state = { busy: false, duplicateDrafts: new Map(), ...ui };
+  const recommendedRows = slice.recommended_changes.map((entry) => changeRow(entry, "recommended", selectedId, slice, state));
+  const choiceRows = slice.choices_needed.map((entry) => changeRow(entry, "choice", selectedId, slice, state));
   const keptRows = slice.kept_by_standards.map((entry) => keptRow(entry, selectedId));
+  const pendingIds = slice.review.recommendations.filter((item) => item.decision === "undecided").map((item) => item.change_id);
+  const bulk = el("button", {
+    className: "button primary",
+    text: "Accept all recommended changes",
+    attrs: { type: "button", disabled: !pendingIds.length || state.busy || slice.review.status === "ready_to_move" },
+    dataset: { action: "accept-all-recommended" },
+  });
+  const approve = slice.review.summary.ready_for_approval
+    ? el("button", { className: "button primary", text: "Review and approve", attrs: { type: "button", disabled: state.busy }, dataset: { action: "open-approval" } })
+    : null;
   return el("div", {}, [
-    pageHeader("Read-only", "Organize", "You can inspect changes, but cannot approve them yet."),
+    pageHeader("Temporary decisions", "Organize", "Choose what should happen. No files move while you review.", bulk),
     stageStrip(1),
     el("p", { className: "inline-note", text: "Organization styles are not connected yet." }),
+    state.errorMessage ? el("div", { className: "inline-error", text: state.errorMessage, attrs: { role: "alert" } }) : null,
     el("div", { className: "organize-layout" }, [
       el("div", { className: "change-stack" }, [
         sectionCard("Recommended changes", "Clear moves identified by the planner", slice.summary.recommended_changes, recommendedRows, "No recommended changes in this scan."),
@@ -293,12 +350,61 @@ export function renderOrganize(slice, selectedId) {
       ]),
       el("aside", { className: "details-column", attrs: { "aria-label": "Organization details" } }, [detailsCard(slice, selectedId), movementTree(slice)]),
     ]),
+    el("section", { className: "card card-body approval-callout" }, [
+      el("div", {}, [
+        el("div", { className: "eyebrow", text: slice.review.summary.ready_for_approval ? "Ready for final review" : "Choices remaining" }),
+        el("h2", { text: slice.review.summary.ready_for_approval ? "Review the complete plan" : `${slice.review.summary.choices_remaining} decisions still needed` }),
+        el("p", { text: "Approval performs a fresh backend safety check. No files have moved yet." }),
+      ]),
+      approve,
+    ]),
+  ]);
+}
+
+export function renderApproval(slice, busy = false, errorMessage = "") {
+  const summary = slice.review.summary;
+  return el("div", {}, [
+    pageHeader("Final review", "Ready to organize", "Confirm the backend-derived summary before approval."),
+    stageStrip(2),
+    errorMessage ? el("div", { className: "inline-error", text: errorMessage, attrs: { role: "alert" } }) : null,
+    el("section", { className: "card approval-panel" }, [
+      el("h2", { text: `${summary.files_to_move} files will move` }),
+      el("p", { text: `${summary.duplicate_copies_for_future_bin} duplicate copies are marked for Duplicate Bin.` }),
+      el("p", { className: "inline-note", text: "No files have moved yet." }),
+      el("div", { className: "approval-actions" }, [
+        el("button", { className: "button", text: "Back to changes", attrs: { type: "button", disabled: busy }, dataset: { action: "close-approval" } }),
+        el("button", { className: "button primary", text: busy ? "Checking…" : "Approve", attrs: { type: "button", disabled: busy }, dataset: { action: "approve-organization" } }),
+      ]),
+    ]),
+  ]);
+}
+
+export function renderReady(slice, showSummary = false) {
+  const summary = slice.review.approval.summary;
+  return el("div", {}, [
+    pageHeader("Approved plan", "Ready to move", "The organization has been checked and approved."),
+    stageStrip(3),
+    el("section", { className: "card approval-panel" }, [
+      el("h2", { text: "No files have moved yet." }),
+      el("p", { text: `${summary.files_to_move} files are approved to move. ${summary.duplicate_copies_for_future_bin} duplicate copies are marked for future Duplicate Bin handling.` }),
+      showSummary ? el("dl", { className: "detail-grid" }, [
+        ["Files to move", summary.files_to_move],
+        ["Duplicate copies marked", summary.duplicate_copies_for_future_bin],
+        ["Names to change", summary.names_to_change],
+        ["Folders to create", summary.folders_to_create],
+      ].map(([term, value]) => el("div", { className: "detail-item" }, [el("dt", { text: term }), el("dd", { text: value })]))) : null,
+      el("div", { className: "approval-actions" }, [
+        el("a", { className: "button", text: "Back to Home", attrs: { href: "#/home" } }),
+        el("button", { className: "button", text: showSummary ? "Hide approved summary" : "View approved summary", attrs: { type: "button" }, dataset: { action: "toggle-approved-summary" } }),
+        el("button", { className: "button primary", text: "Move files — not connected yet", attrs: { type: "button", disabled: "disabled", "aria-disabled": "true" } }),
+      ]),
+    ]),
   ]);
 }
 
 const NON_INTEGRATED = Object.freeze({
   "duplicate-bin": ["Duplicate Bin", "Duplicate Bin movement is not part of this read-only stage. Exact-copy choices appear under Organize."],
-  activity: ["Activity", "Organization history is not available in Integration 1.0B. No file moves are recorded."],
+  activity: ["Activity", "Organization history is not available in Integration 1.0C. No file moves are recorded."],
   standards: ["Standards", "Active protections are applied by the backend before this UI receives the plan. Standards editing is not connected here."],
 });
 
@@ -319,7 +425,7 @@ export function renderSettings(theme) {
     pageHeader("Local display", "Settings", "Only appearance is available. It changes this page in memory and does not alter backend state."),
     el("div", { className: "settings-grid" }, [
       el("section", { className: "card settings-card" }, [el("h2", { text: "Appearance" }), el("p", { text: `Current theme: ${theme}. Use the Light and Dark controls in the toolbar.` })]),
-      el("section", { className: "card settings-card" }, [el("h2", { text: "Organization controls" }), el("p", { text: "Scope changes, Standards editing, approvals, and movement are intentionally unavailable." })]),
+      el("section", { className: "card settings-card" }, [el("h2", { text: "Organization controls" }), el("p", { text: "Scope changes, Standards editing, and movement are intentionally unavailable. Approval stops at Ready to move." })]),
     ]),
   ]);
 }
@@ -334,6 +440,12 @@ export function renderLoadState(status, errorCode = "") {
     contract_error: ["Organization response could not be displayed", "The response did not match the committed read-only contract."],
     network_error: ["bootAI could not be reached", "Check that the local web application is still running."],
     organization_unavailable: ["Organization information is unavailable", "This scan could not produce the read-only organization view."],
+    scan_generation_mismatch: ["Files have changed", "Check the folder again before continuing."],
+    decision_revision_mismatch: ["Organization choices were updated elsewhere.", "Reload choices before continuing."],
+    source_changed: ["A file changed after it was checked.", "Reload organization before approving."],
+    overwrite_detected: ["A destination file now exists.", "Reload organization before approving."],
+    unsafe_destination: ["A destination is no longer available.", "Reload organization before approving."],
+    duplicate_group_changed: ["Duplicate copies changed after they were checked.", "Reload organization before approving."],
   };
   const code = errorCode || status;
   const [title, copy] = states[code] || ["Organization information could not be loaded.", "Try loading the current read-only result again."];

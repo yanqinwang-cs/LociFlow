@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
+from types import MappingProxyType
 from typing import Any
 
 from organizer.application.file_kinds import consumer_file_kind
@@ -19,7 +21,7 @@ from organizer.application.organization_slice_models import (
     RecommendedChange,
 )
 from organizer.application.view_models import ScanApplicationResult
-from organizer.models import FileMetadata
+from organizer.models import FileMetadata, MovePlanItem
 from organizer.organization_review import build_organization_review
 from organizer.scope import (
     PROJECT_PROTECTION_STANDARD_ID,
@@ -44,6 +46,51 @@ class _SafeMove:
     destination: str
     destination_folder: str
     risk_level: str
+    reason: str
+    confidence: int
+    overwrite_risk: bool
+
+
+@dataclass(frozen=True)
+class InternalMoveCandidate:
+    public_id: str
+    file_id: str
+    source_metadata: FileMetadata
+    move_item: MovePlanItem
+    risk_level: str
+    protection: ActionableEligibility
+
+
+@dataclass(frozen=True)
+class InternalDestinationChoice:
+    public_id: str
+    file_id: str
+    source_metadata: FileMetadata
+    options: tuple[tuple[str, MovePlanItem | None], ...]
+    protection: ActionableEligibility
+
+
+@dataclass(frozen=True)
+class InternalDuplicateChoice:
+    public_id: str
+    sha256: str
+    size_bytes: int
+    files: tuple[FileMetadata, ...]
+    copy_ids: tuple[str, ...]
+    option_ids: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class InternalOrganizationProjection:
+    public_slice: OrganizationSlice
+    scan_generation: str
+    root: Path
+    recommendations_by_id: Mapping[str, InternalMoveCandidate]
+    destination_choices_by_id: Mapping[str, InternalDestinationChoice]
+    duplicate_choices_by_id: Mapping[str, InternalDuplicateChoice]
+    protected_item_ids: frozenset[str]
+    source_metadata_by_item_id: Mapping[str, FileMetadata]
+    metadata_items: tuple[FileMetadata, ...]
 
 
 def build_read_only_organization_slice(
@@ -53,6 +100,20 @@ def build_read_only_organization_slice(
     completed_at: datetime,
 ) -> OrganizationSlice:
     """Project one completed deterministic scan without rescanning or restating files."""
+    return build_internal_organization_projection(
+        scan_result=scan_result,
+        scan_generation=scan_generation,
+        completed_at=completed_at,
+    ).public_slice
+
+
+def build_internal_organization_projection(
+    *,
+    scan_result: ScanApplicationResult,
+    scan_generation: str,
+    completed_at: datetime,
+) -> InternalOrganizationProjection:
+    """Build the public slice and its server-only candidate map in one pass."""
     if not scan_generation:
         raise ValueError("scan generation is required")
     if completed_at.tzinfo is None:
@@ -91,10 +152,11 @@ def build_read_only_organization_slice(
     }
 
     kept = _kept_by_standards(evaluations, snapshots)
-    duplicate_choices, duplicate_paths = _duplicate_choices(
+    duplicate_choices, duplicate_paths, internal_duplicates = _duplicate_choices(
         scan_result.report,
         evaluations,
         snapshots,
+        metadata_by_path,
     )
     safe_moves = _safe_organization_moves(
         scan_result.report,
@@ -105,9 +167,17 @@ def build_read_only_organization_slice(
         evaluations=evaluations,
         duplicate_paths=duplicate_paths,
     )
-    recommended, destination_choices = _classify_organization_moves(
+    (
+        recommended,
+        destination_choices,
+        internal_recommendations,
+        internal_destination_choices,
+    ) = _classify_organization_moves(
         safe_moves,
         snapshots,
+        metadata_by_path=metadata_by_path,
+        evaluations=evaluations,
+        root=scan_result.root,
     )
     choices = tuple((*destination_choices, *duplicate_choices))
     movement_tree = _movement_tree(recommended)
@@ -124,7 +194,7 @@ def build_read_only_organization_slice(
         ),
         movement_tree=movement_tree,
     )
-    return OrganizationSlice(
+    public_slice = OrganizationSlice(
         scope_display_name=scan_result.root.name or "Selected folder",
         scan_generation=scan_generation,
         last_checked_at=completed_at.isoformat(),
@@ -132,6 +202,22 @@ def build_read_only_organization_slice(
         choices_needed=choices,
         kept_by_standards=kept,
         summary=summary,
+    )
+    return InternalOrganizationProjection(
+        public_slice=public_slice,
+        scan_generation=scan_generation,
+        root=scan_result.root,
+        recommendations_by_id=MappingProxyType(internal_recommendations),
+        destination_choices_by_id=MappingProxyType(internal_destination_choices),
+        duplicate_choices_by_id=MappingProxyType(internal_duplicates),
+        protected_item_ids=frozenset(kept_item.item.id for kept_item in kept),
+        source_metadata_by_item_id=MappingProxyType(
+            {
+                snapshots[path].id: metadata
+                for path, metadata in metadata_by_path.items()
+            }
+        ),
+        metadata_items=tuple(metadata_items),
     )
 
 
@@ -189,11 +275,18 @@ def _duplicate_choices(
     report: dict[str, Any],
     evaluations: dict[str, ActionableEligibility],
     snapshots: dict[str, ConsumerFileSnapshot],
-) -> tuple[tuple[ChoiceNeeded, ...], frozenset[str]]:
+    metadata_by_path: dict[str, FileMetadata],
+) -> tuple[
+    tuple[ChoiceNeeded, ...],
+    frozenset[str],
+    dict[str, InternalDuplicateChoice],
+]:
     raw_groups = report.get("duplicates")
     if not isinstance(raw_groups, list):
         raise ValueError("scan report duplicates must be a list")
-    copy_groups: list[tuple[ConsumerFileSnapshot, ...]] = []
+    copy_groups: list[
+        tuple[tuple[ConsumerFileSnapshot, ...], str, int, tuple[FileMetadata, ...]]
+    ] = []
     duplicate_paths: set[str] = set()
     for raw_group in raw_groups:
         if not isinstance(raw_group, dict):
@@ -211,11 +304,20 @@ def _duplicate_choices(
         )
         if len(eligible_paths) < 2:
             continue
+        sha256 = raw_group.get("sha256")
+        size_bytes = raw_group.get("size_bytes")
+        if not isinstance(sha256, str) or not sha256:
+            raise ValueError("scan report duplicate hash must be a string")
+        if type(size_bytes) is not int or size_bytes < 0:
+            raise ValueError("scan report duplicate size must be a non-negative integer")
         copies = tuple(snapshots[path] for path in eligible_paths)
-        copy_groups.append(copies)
+        files_tuple = tuple(metadata_by_path[path] for path in eligible_paths)
+        copy_groups.append((copies, sha256, size_bytes, files_tuple))
         duplicate_paths.update(eligible_paths)
 
-    copy_groups.sort(key=lambda copies: tuple(copy.relative_path for copy in copies))
+    copy_groups.sort(
+        key=lambda row: tuple(copy.relative_path for copy in row[0])
+    )
     choices = tuple(
         ChoiceNeeded(
             id=f"D{index}",
@@ -231,9 +333,26 @@ def _duplicate_choices(
                 ),
             ),
         )
-        for index, copies in enumerate(copy_groups, start=1)
+        for index, (copies, _sha256, _size_bytes, _files) in enumerate(
+            copy_groups,
+            start=1,
+        )
     )
-    return choices, frozenset(duplicate_paths)
+    internal = {
+        f"D{index}": InternalDuplicateChoice(
+            public_id=f"D{index}",
+            sha256=sha256,
+            size_bytes=size_bytes,
+            files=files,
+            copy_ids=tuple(copy.id for copy in copies),
+            option_ids=("keep-all", "choose-for-bin"),
+        )
+        for index, (copies, sha256, size_bytes, files) in enumerate(
+            copy_groups,
+            start=1,
+        )
+    }
+    return choices, frozenset(duplicate_paths), internal
 
 
 def _safe_organization_moves(
@@ -274,12 +393,21 @@ def _safe_organization_moves(
         risk_level = raw_item.get("risk_level")
         if risk_level not in {"low", "medium", "high"}:
             continue
+        reason = raw_item.get("reason")
+        confidence = raw_item.get("confidence")
+        if not isinstance(reason, str) or not reason:
+            continue
+        if type(confidence) is not int or not 0 <= confidence <= 100:
+            continue
         moves.append(
             _SafeMove(
                 source=source,
                 destination=destination,
                 destination_folder=destination_folder,
                 risk_level=risk_level,
+                reason=reason,
+                confidence=confidence,
+                overwrite_risk=False,
             )
         )
     return tuple(sorted(set(moves), key=lambda move: (move.source, move.destination)))
@@ -288,7 +416,16 @@ def _safe_organization_moves(
 def _classify_organization_moves(
     safe_moves: tuple[_SafeMove, ...],
     snapshots: dict[str, ConsumerFileSnapshot],
-) -> tuple[tuple[RecommendedChange, ...], tuple[ChoiceNeeded, ...]]:
+    *,
+    metadata_by_path: dict[str, FileMetadata],
+    evaluations: dict[str, ActionableEligibility],
+    root: Path,
+) -> tuple[
+    tuple[RecommendedChange, ...],
+    tuple[ChoiceNeeded, ...],
+    dict[str, InternalMoveCandidate],
+    dict[str, InternalDestinationChoice],
+]:
     by_source: dict[str, list[_SafeMove]] = defaultdict(list)
     for move in safe_moves:
         by_source[move.source].append(move)
@@ -337,7 +474,59 @@ def _classify_organization_moves(
         )
         for index, (snapshot, moves, reason_code) in enumerate(choice_rows, start=1)
     )
-    return recommended, choices
+    internal_recommendations = {
+        f"O{index}": InternalMoveCandidate(
+            public_id=f"O{index}",
+            file_id=snapshot.id,
+            source_metadata=metadata_by_path[move.source],
+            move_item=_move_plan_item(move, metadata_by_path[move.source], root),
+            risk_level=move.risk_level,
+            protection=evaluations[move.source],
+        )
+        for index, (snapshot, move) in enumerate(recommended_rows, start=1)
+    }
+    internal_choices = {
+        f"C{index}": InternalDestinationChoice(
+            public_id=f"C{index}",
+            file_id=snapshot.id,
+            source_metadata=metadata_by_path[moves[0].source],
+            options=tuple(
+                [
+                    (
+                        f"destination-{option_index}",
+                        _move_plan_item(
+                            move,
+                            metadata_by_path[move.source],
+                            root,
+                        ),
+                    )
+                    for option_index, move in enumerate(moves, start=1)
+                ]
+                + [("keep", None)]
+            ),
+            protection=evaluations[moves[0].source],
+        )
+        for index, (snapshot, moves, _reason_code) in enumerate(
+            choice_rows,
+            start=1,
+        )
+    }
+    return recommended, choices, internal_recommendations, internal_choices
+
+
+def _move_plan_item(
+    move: _SafeMove,
+    source_metadata: FileMetadata,
+    root: Path,
+) -> MovePlanItem:
+    return MovePlanItem(
+        source=source_metadata.path,
+        destination=root / move.destination,
+        reason=move.reason,
+        confidence=move.confidence,
+        operation="dry-run move",
+        overwrite_risk=move.overwrite_risk,
+    )
 
 
 def _movement_tree(

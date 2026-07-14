@@ -286,6 +286,16 @@ main { min-height: calc(100vh - 92px); }
 .change-stack { display: grid; gap: 18px; }
 .section-count { min-width: 24px; padding: 2px 7px; border-radius: 999px; background: var(--surface-muted); text-align: center; font-size: 11px; }
 .row-list { display: grid; }
+.decision-row { padding-bottom: 10px; }
+.decision-row + .decision-row { border-top: 1px solid var(--border); }
+.decision-row .change-row { border-bottom: 0; }
+.row-actions, .option-actions, .approval-actions { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 16px; }
+.button.compact { min-height: 34px; padding: 6px 11px; font-size: .84rem; }
+.button.selected-option { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-strong); }
+.copy-picker { margin: 12px 16px 0; padding: 14px; border: 1px solid var(--border); border-radius: 8px; }
+.copy-picker legend { padding: 0 6px; font-weight: 700; }
+.copy-picker label { display: flex; gap: 9px; align-items: center; padding: 7px 0; }
+.copy-picker input { inline-size: 18px; block-size: 18px; accent-color: var(--accent); }
 .change-row {
   display: grid;
   grid-template-columns: 34px minmax(0, 1fr) auto;
@@ -347,6 +357,10 @@ main { min-height: calc(100vh - 92px); }
 .error-code { display: inline-block; margin-top: 10px; padding: 3px 8px; border-radius: 5px; background: var(--danger-soft); color: var(--danger); font-size: 11px; }
 .inline-note { margin: 0 0 18px; padding: 11px 13px; border-left: 3px solid var(--accent); background: var(--accent-soft); color: var(--accent-strong); font-size: 12px; }
 .detail-grid + .inline-note { margin: 18px 0 0; }
+.approval-callout { margin-top: 18px; display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+.approval-panel { max-width: 720px; margin: 28px auto; padding: 28px; }
+.approval-panel .approval-actions { padding: 18px 0 0; }
+.inline-error { margin: 12px 0; padding: 12px 14px; color: var(--danger); background: var(--danger-soft); border: 1px solid var(--danger); border-radius: 8px; }
 
 .settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 15px; }
 .settings-card { padding: 20px; }
@@ -388,6 +402,7 @@ main { min-height: calc(100vh - 92px); }
   .page-header { flex-direction: column; }
   .stage-strip { grid-template-columns: repeat(2, 1fr); }
   .settings-grid { grid-template-columns: 1fr; }
+  .approval-callout { align-items: stretch; flex-direction: column; }
 }
 
 @media (prefers-reduced-motion: reduce) {

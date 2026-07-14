@@ -6,6 +6,33 @@ This document freezes the architecture that all Stage 11 web work must follow. S
 
 The companion [web threat model](WEB_THREAT_MODEL.md) defines the mandatory security controls. The architecture decisions are also recorded in [ADR 0001](adr/0001-local-web-stack.md), [ADR 0002](adr/0002-web-security-boundary.md), and [ADR 0003](adr/0003-application-service-layer.md).
 
+## Loci Flow Integration 1.0C
+
+Loci Flow temporary organization decisions are held server-side, in process, and
+are keyed by the authenticated opaque session ID and completed scan generation.
+They are never stored in the signed cookie or persisted to disk. A process restart
+therefore discards both decisions and any Ready-to-move state.
+
+The deterministic organization projection produces its unchanged consumer JSON and
+an immutable server-only candidate map in the same pass. Recommendation, choice,
+option, and duplicate-copy IDs resolve only through that map. Destination paths and
+duplicate hashes are never accepted from or exposed to the browser. Bulk acceptance
+submits the exact currently pending recommendation IDs rather than an open-ended
+accept-all flag.
+
+Each successful decision request advances one decision revision. Every mutation and
+approval supplies the scan generation and expected revision, preventing stale tabs or
+old ordinal IDs from silently changing a newer plan. GET restores in-process decisions
+and an approved Ready state for the authenticated session.
+
+Final approval is an executor-free application operation. It confirms decision
+completeness and performs live source metadata, root, symlink, destination overwrite,
+protection, move-conflict, and duplicate-identity checks. The resulting immutable
+approved plan remains in memory and exposes only a safe summary. Integration 1.0C
+stops at **Ready to move — no files have moved yet**. Movement, Activity, Duplicate
+Bin execution, operation logs, verification, and Undo remain unimplemented here;
+`executor.py` is not imported by the Loci application service, store, or routes.
+
 ## Product Direction
 
 The local web application is bootAI's intended primary interface for ordinary users. It is for nontechnical users who need help finding files, understanding duplicate groups, remembering where files belong, reviewing organization suggestions, recovering from mistaken moves, and identifying potential storage-recovery candidates.
