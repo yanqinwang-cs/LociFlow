@@ -12,8 +12,8 @@ function button(label, action, options = {}) {
   return `<button type="button" class="${classes}" data-action="${action}" ${options.attrs || ""} ${options.disabled ? "disabled" : ""}>${escapeHtml(label)}</button>`;
 }
 
-function pageHeader(title, subtitle, actions = "") {
-  return `<header class="page-header"><div><p class="eyebrow">Sample Downloads</p><h1>${escapeHtml(title)}</h1><p>${escapeHtml(subtitle)}</p></div>${actions ? `<div class="page-actions">${actions}</div>` : ""}</header>`;
+function pageHeader(title, subtitle, actions = "", eyebrow = "Sample Downloads") {
+  return `<header class="page-header"><div><p class="eyebrow">${escapeHtml(eyebrow)}</p><h1>${escapeHtml(title)}</h1><p>${escapeHtml(subtitle)}</p></div>${actions ? `<div class="page-actions">${actions}</div>` : ""}</header>`;
 }
 
 function stages(state) {
@@ -27,7 +27,44 @@ function stages(state) {
   return `<ol class="stages" aria-label="Organization steps">${labels.map(([stage, label], index) => `<li class="${state.workflowStage === stage ? "current" : ""}"><span>${index + 1}</span>${label}</li>`).join("")}</ol>`;
 }
 
+function contractStage(workflow) {
+  if (workflow.stage === "ready_to_move") return "moving";
+  if (workflow.stage === "stale") return workflow.staleKind === "revision" ? "organizing" : "checking";
+  return workflow.stage;
+}
+
+function contractPrimaryAction(workflow) {
+  const attrs = workflow.stage === "ready_to_move"
+    ? 'aria-describedby="move-not-connected-help" title="Movement is not connected in this stage."'
+    : "";
+  return `${button(workflow.primaryAction.label, workflow.primaryAction.action, {
+    primary: true,
+    disabled: !workflow.primaryAction.enabled,
+    attrs,
+  })}${workflow.stage === "ready_to_move" ? '<small id="move-not-connected-help">No files have moved yet.</small>' : ""}`;
+}
+
+function renderContractHome(model) {
+  const { workflow, freshness, scope } = model;
+  const status = workflow.status;
+  const organizationAction = workflow.primaryAction.action === "none"
+    ? button(workflow.primaryAction.label, "none", { disabled: true })
+    : button(workflow.primaryAction.label, workflow.primaryAction.action);
+  const binCount = model.duplicateBin.connected ? model.duplicateBin.items.length : 0;
+  const duplicateLabel = model.duplicateBin.connected
+    ? `${binCount} ${binCount === 1 ? "file" : "files"}`
+    : "Not connected yet";
+  return `${pageHeader("Home", "A clear starting point for the active folder.", contractPrimaryAction(workflow), scope.displayName)}${stages({ workflowStage: contractStage(workflow) })}
+    <section class="home-status card" aria-labelledby="file-status-heading"><div><p class="eyebrow">Current state</p><h2 id="file-status-heading">File status</h2><strong class="home-main-status">${escapeHtml(status)}</strong>${workflow.message ? `<p>${escapeHtml(workflow.message)}</p>` : ""}</div><dl class="status-grid"><div><dt>Last checked</dt><dd>${escapeHtml(freshness.lastCheckedLabel)}</dd></div><div><dt>Last organized</dt><dd>${escapeHtml(freshness.lastOrganizedLabel)}</dd></div><div><dt>Next check</dt><dd>${escapeHtml(freshness.nextCheckLabel)}</dd></div><div><dt>Current folder</dt><dd>${escapeHtml(scope.displayName)}</dd></div></dl></section>
+    <section class="home-summaries" aria-label="Folder summary">
+      <article class="summary-card"><span class="summary-icon" aria-hidden="true">01</span><div><h2>Organization</h2><strong>${escapeHtml(status)}</strong></div>${organizationAction}</article>
+      <article class="summary-card"><span class="summary-icon" aria-hidden="true">02</span><div><h2>Duplicate Bin</h2><strong>${escapeHtml(duplicateLabel)}</strong></div>${button("Open Duplicate Bin", "open-duplicate-bin", { disabled: !model.duplicateBin.connected })}</article>
+      <article class="summary-card"><span class="summary-icon" aria-hidden="true">03</span><div><h2>Last file move</h2><strong>No files have moved yet.</strong></div>${button("View Activity", "open-activity", { disabled: !model.activity.connected })}</article>
+    </section>`;
+}
+
 export function renderHome(store) {
+  if (store?.mode === "production_fixture") return renderContractHome(store);
   const state = store.getState();
   const waiting = state.changes.filter((change) => change.decision === "pending").length;
   const completed = state.workflowCompleted && state.workflowStage === "idle";
@@ -137,7 +174,118 @@ function workflowResult(store) {
   return `<section class="workflow-result card" role="status"><p class="eyebrow">Verify</p><h2>Test move verified</h2><div class="verification-counts"><strong>${counts.movedFiles} ${counts.movedFiles === 1 ? "file" : "files"} moved</strong><span>${counts.renamedFiles} ${counts.renamedFiles === 1 ? "name" : "names"} changed</span><span>${counts.createdFolders} ${counts.createdFolders === 1 ? "folder" : "folders"} created</span><span>${counts.duplicateBinFiles} ${counts.duplicateBinFiles === 1 ? "copy" : "copies"} moved to Duplicate Bin</span></div><p>No real files were changed.</p><div>${button("Done", "complete-workflow", { primary: true })}${button("View Activity", "open-activity")}</div></section>`;
 }
 
+function contractStyleControl(model) {
+  const style = model.organization.style;
+  return `<section class="style-control card" aria-labelledby="style-heading"><div><p class="eyebrow">${escapeHtml(style.eyebrow)}</p><h2 id="style-heading">Organization style</h2></div><fieldset class="segmented style-options" aria-label="Organization style">${Object.entries(style.options).map(([key, option]) => `<button type="button" data-action="set-style" data-style="${key}" aria-pressed="${style.selected === key}"><strong>${escapeHtml(option.label)}</strong><span>${escapeHtml(option.summary)}</span></button>`).join("")}</fieldset><p class="style-help">${escapeHtml(style.options[style.selected].explanation)}</p></section>`;
+}
+
+function contractRecommendationAction(item) {
+  if (item.decision === "accept") return ["Accepted", "accept", true];
+  if (item.decision === "keep") return ["Kept here", "keep", true];
+  return ["Accept", "accept", false];
+}
+
+function contractChangeRow(item, model, choice = false) {
+  const selected = model.organization.selectedItem?.id === item.id;
+  let label;
+  let action;
+  let attrs;
+  let disabled = false;
+  if (choice) {
+    const saved = Boolean(item.confirmed);
+    label = saved ? "Choice saved" : item.choiceType === "duplicate" ? "Review copies" : "Choose folder";
+    action = item.choiceType === "duplicate" ? "open-duplicate-choice" : "open-destination-choice";
+    attrs = `data-item-id="${item.id}"`;
+  } else {
+    [label, action, disabled] = contractRecommendationAction(item);
+    action = "decide-contract-recommendation";
+    attrs = `data-item-id="${item.id}" data-decision="accept"`;
+  }
+  const description = choice
+    ? item.choiceType === "duplicate" ? `${item.identicalCopyCount} identical copies` : "Choose a destination"
+    : item.changeText;
+  return `<div class="change-row ${selected ? "selected" : ""}" data-change-row="${item.id}" role="listitem">
+    <label class="row-check"><input type="checkbox" disabled ${selected ? "checked" : ""}><span class="visually-hidden">Select ${escapeHtml(item.name)}</span></label>
+    ${fileIcon(item.icon, item.kind)}
+    <button type="button" class="change-name" data-action="activate-contract-item" data-item-id="${item.id}">${escapeHtml(item.name)}</button>
+    <span class="change-description">${escapeHtml(description)}</span>
+    <span class="change-size">${escapeHtml(item.size)}</span>
+    <button type="button" class="row-action" data-action="${action}" ${attrs} ${disabled ? "disabled" : ""}>${escapeHtml(label)}</button>
+  </div>`;
+}
+
+function contractChangesPanel(model) {
+  const recommendations = model.organization.recommendations;
+  const choices = model.organization.choicesNeeded;
+  const pendingRecommendations = recommendations.filter((item) => item.decision === "undecided");
+  const pendingChoices = choices.filter((item) => !item.confirmed);
+  return `<div class="decision-sections" id="changes-to-confirm" tabindex="-1">
+    <section class="changes-panel card" aria-labelledby="recommended-heading"><header class="section-header"><div><p class="eyebrow">Safe to accept together</p><h2 id="recommended-heading">Recommended changes</h2></div>${button(`Accept all recommended changes${pendingRecommendations.length ? ` (${pendingRecommendations.length})` : ""}`, "accept-contract-recommended", { primary: true, disabled: !pendingRecommendations.length })}</header><div class="change-list recommended-list" role="list" aria-label="Recommended changes">${recommendations.length ? recommendations.map((item) => contractChangeRow(item, model)).join("") : '<div class="empty-list"><strong>No recommended changes</strong><span>There is nothing to accept in this folder.</span></div>'}</div></section>
+    <section class="changes-panel card" aria-labelledby="choices-heading"><header class="section-header"><div><p class="eyebrow">Needs your judgment</p><h2 id="choices-heading">Choices needed</h2></div><span class="choice-count">${pendingChoices.length} ${pendingChoices.length === 1 ? "choice" : "choices"}</span></header><div class="change-list recommended-list" role="list" aria-label="Choices needed">${choices.length ? choices.map((item) => contractChangeRow(item, model, true)).join("") : '<div class="empty-list"><strong>No choices remain</strong><span>Review the complete batch when you are ready.</span></div>'}</div></section>
+  </div>`;
+}
+
+function labelBreadcrumb(label = "") {
+  return breadcrumb(label.split(" › ").filter(Boolean));
+}
+
+function contractDetailActions(item) {
+  if (!item) return "";
+  if (item.choiceType === "destination") {
+    return button("Choose folder", "open-destination-choice", { primary: true, attrs: `data-item-id="${item.id}"` });
+  }
+  if (item.choiceType === "duplicate") {
+    return `${button("Review copies", "open-duplicate-choice", { primary: true, attrs: `data-item-id="${item.id}"` })}${button("Keep all copies", "set-duplicate-decision", { attrs: `data-item-id="${item.id}" data-duplicate-decision="keep_all"` })}`;
+  }
+  if (item.itemId) return "";
+  return `${button("Accept", "decide-contract-recommendation", { primary: true, attrs: `data-item-id="${item.id}" data-decision="accept"` })}${button("Keep here", "decide-contract-recommendation", { attrs: `data-item-id="${item.id}" data-decision="keep"` })}`;
+}
+
+function contractItemDetails(model) {
+  const item = model.organization.selectedItem;
+  if (!item) return '<aside class="item-details card" aria-labelledby="details-heading"><p class="eyebrow">Current choice</p><h2 id="details-heading">Item details</h2><div class="empty-details"><strong>No item selected</strong><span>Select a change to see its folders and actions.</span></div></aside>';
+  const decision = item.itemId
+    ? "Kept by Standard"
+    : item.choiceType
+      ? item.confirmed ? "Choice saved" : "Choice needed"
+      : item.decision === "accept" ? "Accepted" : item.decision === "keep" ? "Kept here" : "Undecided";
+  const proposed = item.choiceType === "destination"
+    ? item.options.find((option) => option.optionId === item.selectedOptionId)?.label || "Choice needed"
+    : item.choiceType === "duplicate"
+      ? `${item.copies.filter((copy) => copy.selectedForBin).length} of ${item.copies.length} copies selected`
+      : item.itemId ? item.currentFolderLabel : item.destinationFolderLabel;
+  const optionLabels = item.choiceType === "destination"
+    ? `<div><dt>Folder choices</dt><dd>${item.options.map((option) => escapeHtml(option.label)).join(" · ")}</dd></div>`
+    : "";
+  return `<aside class="item-details card" aria-labelledby="details-heading"><p class="eyebrow">Current choice</p><h2 id="details-heading">Item details</h2><div class="detail-title-row">${fileIcon(item.icon, item.kind)}<div><strong class="detail-title">${escapeHtml(item.name)}</strong><span>${escapeHtml(item.choiceType === "duplicate" ? "Duplicate copy" : item.itemId ? "Standard" : "Move")}</span></div></div><dl class="details-list"><div><dt>Kind</dt><dd>${escapeHtml(item.kind)}</dd></div><div><dt>Size</dt><dd>${escapeHtml(item.size || "—")}</dd></div><div><dt>Current folder</dt><dd>${labelBreadcrumb(item.currentFolderLabel)}</dd></div><div><dt>Proposed folder</dt><dd>${labelBreadcrumb(proposed)}</dd></div><div><dt>Why this change</dt><dd>${escapeHtml(item.reason || item.standardName || "This file follows an active Standard.")}</dd></div><div><dt>Decision</dt><dd>${escapeHtml(decision)}</dd></div>${optionLabels}${item.standardName ? `<div><dt>Standard</dt><dd>${escapeHtml(item.standardName)}</dd></div>` : ""}</dl><div class="detail-actions">${contractDetailActions(item)}</div></aside>`;
+}
+
+function contractKeptByStandards(model) {
+  const kept = model.organization.keptByStandards;
+  if (!kept.length) return "";
+  return `<details class="kept-summary card"><summary><span><strong>Kept by Standards</strong><small>${kept.length} ${kept.length === 1 ? "file" : "files"} kept in place</small></span></summary><ul>${kept.map((item) => `<li>${escapeHtml(item.name)} · ${escapeHtml(item.currentFolderLabel)} · ${escapeHtml(item.standardName)}</li>`).join("")}</ul></details>`;
+}
+
+function contractReadyToMove(model) {
+  const summary = model.organization.movementSummary;
+  return `${pageHeader("Organize", "The organization has been checked and approved.", "", model.scope.displayName)}${stages({ workflowStage: "moving" })}<section class="workflow-result card" role="status"><p class="eyebrow">Move</p><h2>Ready to move</h2><p>The organization has been checked and approved.<br>No files have moved yet.</p><div class="verification-counts"><strong>${summary.filesToMove} ${summary.filesToMove === 1 ? "file" : "files"} to move</strong><span>${summary.namesToChange} ${summary.namesToChange === 1 ? "name" : "names"} to change</span><span>${summary.foldersToCreate} ${summary.foldersToCreate === 1 ? "folder" : "folders"} to create</span><span>${summary.duplicateCopies} duplicate ${summary.duplicateCopies === 1 ? "copy" : "copies"} set aside</span></div><div>${button("Move files — not connected yet", "none", { primary: true, disabled: true, attrs: 'aria-describedby="move-result-help" title="Movement is not connected in this stage."' })}</div><p id="move-result-help">No movement request is available in this stage.</p></section>`;
+}
+
+function contractStaleResult(model) {
+  return `${pageHeader("Organize", model.workflow.message, "", model.scope.displayName)}${stages({ workflowStage: contractStage(model.workflow) })}<section class="workflow-result card" role="status"><p class="eyebrow">Organize</p><h2>${escapeHtml(model.workflow.status)}</h2><p>${escapeHtml(model.workflow.message)}</p><div>${button(model.workflow.primaryAction.label, model.workflow.primaryAction.action, { primary: true })}</div></section>`;
+}
+
+function renderContractOrganize(model) {
+  if (model.workflow.stage === "ready_to_move") return contractReadyToMove(model);
+  if (model.workflow.stage === "stale") return contractStaleResult(model);
+  const approval = model.organization.approval.readyForApproval
+    ? `${button("Review and approve", "review-and-approve", { primary: true })}<small>No files have moved yet.</small>`
+    : "";
+  return `${pageHeader("Organize", "Choose what happens, then check the compact file map.", approval, model.scope.displayName)}${contractStyleControl(model)}${contractKeptByStandards(model)}<div class="organize-layout"><div class="organize-main">${contractChangesPanel(model)}<section class="movement-panel card" aria-labelledby="movement-heading"><header class="section-header"><div><p class="eyebrow">Accepted changes</p><h2 id="movement-heading">Where files will go</h2></div><span class="panel-note">Shown automatically</span></header>${renderMovementTree(model.organization.movementTree)}</section></div>${contractItemDetails(model)}</div>`;
+}
+
 export function renderOrganize(store) {
+  if (store?.mode === "production_fixture") return renderContractOrganize(store);
   const state = store.getState();
   if (["moving", "verifying"].includes(state.workflowStage)) {
     return `${pageHeader("Organize", "The test move and its checks are separate steps.")}${stages(state)}${workflowResult(store)}`;
@@ -152,6 +300,9 @@ function duplicateRow(item, state) {
 }
 
 export function renderDuplicateBin(store) {
+  if (store?.mode === "production_fixture" && !store.duplicateBin.connected) {
+    return `${pageHeader("Duplicate Bin", "Duplicate copies moved out of the way.", "", store.scope.displayName)}<section class="bin-card card"><div class="empty-state"><span class="empty-state-icon">0</span><h2>Duplicate Bin is not connected yet.</h2><p>No files are shown here.</p></div></section>`;
+  }
   const state = store.getState();
   const items = state.duplicateBinItems;
   return `${pageHeader("Duplicate Bin", "Duplicate copies moved out of the way.", button("Restore selected", "restore-selected", { primary: true, disabled: !state.selectedBinIds.length }))}<section class="bin-card card">${items.length ? `<div class="bin-toolbar"><label><input type="checkbox" data-action="select-all-bin" ${state.selectedBinIds.length === items.length ? "checked" : ""}> Select all</label><strong>${items.length} ${items.length === 1 ? "file" : "files"}</strong></div><div class="bin-table" role="table" aria-label="Duplicate Bin"><div class="bin-row bin-header" role="row"><span role="columnheader"></span><span role="columnheader">Name</span><span role="columnheader">Original folder</span><span role="columnheader">Date moved</span><span role="columnheader">Size</span><span role="columnheader">Kind</span><span role="columnheader"></span></div>${items.map((item) => duplicateRow(item, state)).join("")}</div>` : '<div class="empty-state"><span class="empty-state-icon">0</span><h2>Duplicate Bin is empty</h2><p>Copies moved here during organization will appear here.</p></div>'}</section>`;
@@ -174,6 +325,9 @@ function activityRow(entry, expanded) {
 }
 
 export function renderActivity(store) {
+  if (store?.mode === "production_fixture" && !store.activity.connected) {
+    return `${pageHeader("Activity", "File moves and undo.", "", store.scope.displayName)}<section class="activity-list" aria-label="Completed file moves"><div class="empty-state"><h2>No file moves recorded.</h2><p>Completed moves will appear here.</p></div></section>`;
+  }
   const state = store.getState();
   return `${pageHeader("Activity", "File moves and undo.", `${button("Expand all", "expand-all-activity")}${button("Collapse all", "collapse-all-activity")}`)}<section class="activity-list" aria-label="Completed file moves">${state.activityMoves.length ? state.activityMoves.map((entry) => activityRow(entry, state.expandedActivityIds.includes(entry.id))).join("") : '<div class="empty-state"><h2>No file moves yet</h2><p>Completed moves will appear here.</p></div>'}</section>`;
 }
@@ -202,6 +356,9 @@ function interpretationPanel(state) {
 }
 
 export function renderStandards(store) {
+  if (store?.mode === "production_fixture" && !store.standards.connected) {
+    return `${pageHeader("Standards", "Reusable instructions for future organization.", "", store.scope.displayName)}<section class="standards-list" aria-label="Saved standards"><div class="empty-state"><h2>Standards editing is not connected yet.</h2><p>No active Standards are shown.</p></div></section>`;
+  }
   const state = store.getState();
   return `${pageHeader("Standards", "Reusable instructions for future organization.", button("Add standard", "open-standard-builder", { primary: true }))}${interpretationPanel(state)}<section class="standards-intro card"><div><strong>Simple and reusable</strong><span>Standards use familiar choices and sample folders.</span></div>${button("See a sample disagreement", "open-standard-conflict", { quiet: true })}</section><section class="standards-list" aria-label="Saved standards">${state.standards.map(standardRow).join("")}</section>`;
 }
@@ -229,6 +386,10 @@ function settingsContent(store) {
 }
 
 export function renderSettings(store) {
+  if (store?.mode === "production_fixture") {
+    const section = store.store.getState().settingsSection;
+    return `${pageHeader("Settings", "A small set of clear app preferences.", "", store.scope.displayName)}<div class="settings-layout"><nav class="settings-nav" aria-label="Settings sections">${SETTINGS_SECTIONS.map(([id, label]) => `<button type="button" data-action="set-settings-section" data-section="${id}" aria-current="${section === id ? "page" : "false"}">${escapeHtml(label)}</button>`).join("")}</nav><section class="settings-content">${settingsContent(store.store)}</section></div>`;
+  }
   const section = store.getState().settingsSection;
   return `${pageHeader("Settings", "A small set of clear app preferences.")}<div class="settings-layout"><nav class="settings-nav" aria-label="Settings sections">${SETTINGS_SECTIONS.map(([id, label]) => `<button type="button" data-action="set-settings-section" data-section="${id}" aria-current="${section === id ? "page" : "false"}">${escapeHtml(label)}</button>`).join("")}</nav><section class="settings-content">${settingsContent(store)}</section></div>`;
 }
@@ -246,7 +407,65 @@ function folderPicker(store, name = "standard-folder") {
   return `<div class="folder-picker" role="radiogroup" aria-label="Sample folders">${store.fixtures.folderChoices.map((parts, index) => `<label><input type="radio" name="${name}" value="${escapeHtml(parts.join("|"))}" ${index === 1 ? "checked" : ""}>${fileIcon("folder", "Folder")}${breadcrumb(parts)}</label>`).join("")}</div>`;
 }
 
+function contractDestinationDialog(model, payload) {
+  const choice = model.organization.choicesNeeded.find((item) => (
+    item.id === payload.itemId && item.choiceType === "destination"
+  ));
+  if (!choice) return null;
+  return {
+    eyebrow: "Choose a folder",
+    title: "Change folder",
+    description: "Choose one of the available destinations.",
+    content: `<div class="folder-picker" role="radiogroup" aria-label="Available folders">${choice.options.map((option) => `<label><input type="radio" name="destination-choice" data-action="select-destination-option" data-item-id="${choice.id}" data-option-id="${option.optionId}" ${choice.selectedOptionId === option.optionId ? "checked" : ""}>${fileIcon(option.action === "keep" ? choice.icon : "folder", option.action === "keep" ? choice.kind : "Folder")}<span><strong>${escapeHtml(option.label)}</strong><small>${escapeHtml(option.supportingText)}</small></span></label>`).join("")}</div>`,
+    actions: `${button("Cancel", "close-dialog")}${button("Confirm folder", "confirm-destination-choice", { primary: true, disabled: !choice.selectedOptionId, attrs: `data-item-id="${choice.id}"` })}`,
+  };
+}
+
+function contractDuplicateDialog(model, payload) {
+  const choice = model.organization.choicesNeeded.find((item) => (
+    item.id === payload.itemId && item.choiceType === "duplicate"
+  ));
+  if (!choice) return null;
+  const status = model.store.duplicateChoiceStatus(choice.id);
+  const choosing = choice.decision === "choose_for_bin";
+  return {
+    eyebrow: "Identical copies",
+    title: "Choose what to keep",
+    description: `${choice.identicalCopyCount} identical copies were found.`,
+    content: `<fieldset class="builder-section choice-cards compact"><legend>What should happen?</legend><label><input type="radio" name="duplicate-decision" data-action="set-duplicate-decision" data-item-id="${choice.id}" data-duplicate-decision="keep_all" ${choice.decision === "keep_all" ? "checked" : ""}><span>Keep all copies</span></label><label><input type="radio" name="duplicate-decision" data-action="set-duplicate-decision" data-item-id="${choice.id}" data-duplicate-decision="choose_for_bin" ${choosing ? "checked" : ""}><span>Choose copies for Duplicate Bin</span></label></fieldset><div class="folder-picker" role="group" aria-label="Identical copies">${choice.copies.map((copy) => `<label><input type="checkbox" data-action="toggle-duplicate-copy" data-item-id="${choice.id}" data-copy-id="${copy.copyId}" ${copy.selectedForBin ? "checked" : ""} ${choosing ? "" : "disabled"}>${fileIcon(choice.icon, choice.kind)}<span><strong>${escapeHtml(copy.name)}</strong><small>${escapeHtml(copy.folderLabel)}</small></span></label>`).join("")}</div>${choosing && !status.valid ? '<p role="status">Choose at least one copy, but not every copy.</p>' : ""}`,
+    actions: `${button("Cancel", "close-dialog")}${button("Confirm choice", "confirm-duplicate-choice", { primary: true, disabled: !status.valid, attrs: `data-item-id="${choice.id}"` })}`,
+  };
+}
+
+function contractApprovalDialog(model) {
+  const approval = model.organization.approval;
+  const duplicateLine = approval.duplicateCopiesDeferred
+    ? `<p><strong>${approval.duplicateCopiesDeferred}</strong><span>${approval.duplicateCopiesDeferred === 1 ? "duplicate copy is" : "duplicate copies are"} set aside for a later step.</span></p>`
+    : "";
+  const choicesLine = approval.choicesRemaining
+    ? `<p><strong>${approval.choicesRemaining}</strong><span>${approval.choicesRemaining === 1 ? "choice remains" : "choices remain"}.</span></p>`
+    : "";
+  return {
+    eyebrow: "Final approval",
+    title: "Ready to organize",
+    description: approval.supportingText,
+    content: `<div class="approval-summary"><p><strong>${approval.filesToMove}</strong><span>${approval.filesToMove === 1 ? "file will move" : "files will move"}.</span></p>${duplicateLine}${choicesLine}</div><p>${escapeHtml(approval.supportingText)}</p>`,
+    actions: `${button("Back to changes", "close-dialog")}${button(approval.confirmLabel, "approve-organization", { primary: true, disabled: !approval.readyForApproval || approval.choicesRemaining !== 0 })}`,
+  };
+}
+
+function renderContractDialog(model, type, payload) {
+  if (type === "destination") return contractDestinationDialog(model, payload);
+  if (type === "duplicate") return contractDuplicateDialog(model, payload);
+  if (type === "approval") return contractApprovalDialog(model);
+  return null;
+}
+
 export function renderDialog(store, type, payload = {}) {
+  if (store?.mode === "production_fixture") {
+    return renderContractDialog(store, type, payload)
+      || { eyebrow: "Loci Flow", title: "Confirm", description: "Choose what happens next.", content: "", actions: button("Close", "close-dialog") };
+  }
   if (type === "folder") return {
     eyebrow: "Choose a sample folder",
     title: "Change folder",

@@ -83,7 +83,37 @@ function renderNode(node, depth) {
   return `<li role="treeitem" aria-level="${depth}" class="move-tree-item" style="--tree-depth:${depth}"><div class="move-tree-row">${icon}<span class="move-tree-name">${escapeHtml(node.name)}</span>${badge}</div>${node.children?.length ? `<ul role="group">${sortNodes(node.children).map((child) => renderNode(child, depth + 1)).join("")}</ul>` : ""}</li>`;
 }
 
+function suppliedIcon(kind = "") {
+  const normalized = String(kind).toLowerCase();
+  const aliases = {
+    "text document": "txt",
+    "word document": "document",
+    "csv spreadsheet": "spreadsheet",
+    "source code": "code",
+    "zip archive": "archive",
+  };
+  return FILE_ICON_MAP[aliases[normalized] || normalized] || FILE_ICON_MAP.unknown;
+}
+
+function renderSuppliedNode(node, depth) {
+  const icon = node.type === "folder"
+    ? fileIcon("folder", "Folder")
+    : fileIcon(suppliedIcon(node.kind), node.kind || "File");
+  const badge = node.note
+    ? `<span class="move-note">${escapeHtml(node.note)}</span>`
+    : "";
+  const children = Array.isArray(node.children) ? node.children : [];
+  return `<li role="treeitem" aria-level="${depth}" class="move-tree-item" style="--tree-depth:${depth}"><div class="move-tree-row">${icon}<span class="move-tree-name">${escapeHtml(node.name)}</span>${badge}</div>${children.length ? `<ul role="group">${children.map((child) => renderSuppliedNode(child, depth + 1)).join("")}</ul>` : ""}</li>`;
+}
+
+export function renderSuppliedMovementTree(treeModel) {
+  const nodes = Array.isArray(treeModel?.nodes) ? treeModel.nodes : [];
+  if (!nodes.length) return '<div class="empty-tree"><strong>No accepted changes yet</strong><span>Accepted moves, names, and folders will appear here.</span></div>';
+  return `<ul class="move-tree" role="tree" aria-label="Where files will go">${nodes.map((node) => renderSuppliedNode(node, 1)).join("")}</ul>`;
+}
+
 export function renderMovementTree(changes) {
+  if (!Array.isArray(changes)) return renderSuppliedMovementTree(changes);
   const tree = buildMovementTree(changes);
   if (!tree.children.length) return '<div class="empty-tree"><strong>No accepted changes yet</strong><span>Accepted moves, names, and folders will appear here.</span></div>';
   return `<ul class="move-tree" role="tree" aria-label="Where files will go">${sortNodes(tree.children).map((node) => renderNode(node, 1)).join("")}</ul>`;

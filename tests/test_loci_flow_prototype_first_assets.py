@@ -66,12 +66,10 @@ class LociFlowPrototypeFirstAssetTests(unittest.TestCase):
         }
         self.assertEqual(actual, PROTOTYPE_SHA256)
 
-    def test_core_assets_are_exact_copies(self) -> None:
+    def test_immutable_core_assets_are_exact_copies(self) -> None:
         for relative in (
             "styles.css",
             "fixtures.json",
-            "store.js",
-            "views.js",
             "assets/file-icons.svg",
             "assets/loci-flow-mark.svg",
         ):
@@ -81,43 +79,19 @@ class LociFlowPrototypeFirstAssetTests(unittest.TestCase):
                     (PROTOTYPE / relative).read_bytes(),
                 )
 
-    def test_bootstrap_and_tree_have_only_named_live_adaptations(self) -> None:
-        prototype_app = (PROTOTYPE / "app.js").read_text(encoding="utf-8")
-        expected_app = prototype_app.replace(
-            'import sample from "./fixtures.json" with { type: "json" };\n',
-            'import { createFixtureDataSource } from "./data_source.js";\n',
-        ).replace(
-            'import { renderDialog, renderRoute } from "./views.js";\n',
-            'import { renderDialog, renderRoute } from "./views.js";\n'
-            'import { buildDialogViewModel, buildRouteViewModel } from "./view_models.js";\n',
-        ).replace(
-            "const store = createStore(sample);",
-            "const fixtureDataSource = createFixtureDataSource();\n"
-            "const store = createStore(fixtureDataSource.load());",
-        ).replace(
-            "renderRoute(store, route)",
-            "renderRoute(buildRouteViewModel(store, route), route)",
-        ).replace(
-            "renderDialog(store, type, payload)",
-            "renderDialog(buildDialogViewModel(store), type, payload)",
-        )
-        self.assertEqual(
-            (LIVE / "app.js").read_text(encoding="utf-8"),
-            expected_app,
-        )
-
-        prototype_tree = (PROTOTYPE / "tree.js").read_text(encoding="utf-8")
-        expected_tree = prototype_tree.replace(
-            "};\n\nexport function escapeHtml",
-            '};\n\nconst FILE_ICON_SPRITE = new URL("./assets/file-icons.svg", import.meta.url).href;\n\nexport function escapeHtml',
-        ).replace(
-            'href="assets/file-icons.svg#${mapped}"',
-            'href="${FILE_ICON_SPRITE}#${mapped}"',
-        )
-        self.assertEqual(
-            (LIVE / "tree.js").read_text(encoding="utf-8"),
-            expected_tree,
-        )
+    def test_stage_a_bootstrap_and_tree_paths_remain_available(self) -> None:
+        app = (LIVE / "app.js").read_text(encoding="utf-8")
+        tree = (LIVE / "tree.js").read_text(encoding="utf-8")
+        for required in (
+            'import { createFixtureDataSource } from "./data_source.js";',
+            "const fixtureDataSource = createFixtureDataSource();",
+            "buildRouteViewModel(store, route)",
+            "buildDialogViewModel(store)",
+        ):
+            self.assertIn(required, app)
+        self.assertIn('new URL("./assets/file-icons.svg", import.meta.url)', tree)
+        self.assertIn("export function buildMovementTree(changes)", tree)
+        self.assertIn("export function renderSuppliedMovementTree", tree)
 
     def test_live_template_preserves_prototype_structure(self) -> None:
         self.assertEqual(

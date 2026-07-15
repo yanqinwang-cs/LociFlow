@@ -213,6 +213,13 @@ export function createStore(fixtures) {
       nextCheck: fixtures.meta.nextCheck,
       currentFolder: fixtures.meta.currentFolder,
       lastMoveSummary: fixtures.meta.lastMoveSummary,
+      stageB1: clone(fixtures.stageB1 || null),
+      selectedItemId: fixtures.stageB1
+        ? fixtures.stageB1.organization.recommendations[0]?.id
+          || fixtures.stageB1.organization.choicesNeeded[0]?.id
+          || fixtures.stageB1.organization.keptByStandards[0]?.itemId
+          || null
+        : null,
       showReuseSuggestion: false,
       moveUndoSnapshot: null,
       interpretation: { status: "idle", text: "", suggestions: [], clarification: null, alternatives: [] },
@@ -251,6 +258,17 @@ export function createStore(fixtures) {
       update((draft) => { draft.route = route; });
     },
     openOrganize() {
+      if (state.stageB1) {
+        update((draft) => {
+          draft.route = "organize";
+          draft.selectedItemId = draft.selectedItemId
+            || draft.stageB1.organization.recommendations[0]?.id
+            || draft.stageB1.organization.choicesNeeded[0]?.id
+            || draft.stageB1.organization.keptByStandards[0]?.itemId
+            || null;
+        });
+        return store.activeContractItem();
+      }
       update((draft) => {
         draft.route = "organize";
         if (!["moving", "verifying"].includes(draft.workflowStage)) draft.workflowStage = "organizing";
@@ -262,6 +280,19 @@ export function createStore(fixtures) {
       return store.activeChange();
     },
     startCheck() {
+      if (state.stageB1) {
+        update((draft) => {
+          draft.route = "home";
+          draft.stageB1.workflow = {
+            stage: "checking",
+            status: "Checking files…",
+            primaryAction: { label: "Checking files…", action: "none", enabled: false },
+          };
+          draft.stageB1.scope.lastCheckedLabel = "Checking now";
+          draft.stageB1.freshness.lastCheckedLabel = "Checking now";
+        });
+        return;
+      }
       update((draft) => {
         rebuildPlan(draft, "checking");
         draft.route = "home";
@@ -276,6 +307,12 @@ export function createStore(fixtures) {
       });
     },
     setOrganizationStyle(style) {
+      if (state.stageB1) {
+        if (!(style in state.stageB1.organization.style.options)
+            || style === state.stageB1.organization.style.selected) return false;
+        update((draft) => { draft.stageB1.organization.style.selected = style; });
+        return true;
+      }
       if (!STYLE_KEYS.includes(style) || style === state.organizationStyle) return false;
       update((draft) => {
         draft.organizationStyle = style;
@@ -309,6 +346,134 @@ export function createStore(fixtures) {
     },
     activeChange() {
       return state.changes.find((change) => change.id === state.activeChangeId) || null;
+    },
+    activeContractItem() {
+      if (!state.stageB1) return null;
+      const organization = state.stageB1.organization;
+      return [
+        ...organization.recommendations,
+        ...organization.choicesNeeded,
+        ...organization.keptByStandards,
+      ].find((item) => (item.id || item.itemId) === state.selectedItemId) || null;
+    },
+    selectContractItem(id) {
+      if (!state.stageB1) return false;
+      const organization = state.stageB1.organization;
+      const exists = [
+        ...organization.recommendations,
+        ...organization.choicesNeeded,
+        ...organization.keptByStandards,
+      ].some((item) => (item.id || item.itemId) === id);
+      if (!exists) return false;
+      update((draft) => { draft.selectedItemId = id; });
+      return true;
+    },
+    decideContractRecommendation(id, decision) {
+      if (!state.stageB1 || !["accept", "keep"].includes(decision)) return false;
+      const item = state.stageB1.organization.recommendations.find((entry) => entry.id === id);
+      if (!item) return false;
+      update((draft) => {
+        const target = draft.stageB1.organization.recommendations.find((entry) => entry.id === id);
+        target.decision = decision;
+        draft.selectedItemId = id;
+      });
+      return true;
+    },
+    selectDestinationOption(id, optionId) {
+      if (!state.stageB1) return false;
+      const choice = state.stageB1.organization.choicesNeeded.find((item) => (
+        item.id === id && item.choiceType === "destination"
+      ));
+      if (!choice?.options.some((option) => option.optionId === optionId)) return false;
+      update((draft) => {
+        const target = draft.stageB1.organization.choicesNeeded.find((item) => item.id === id);
+        target.selectedOptionId = optionId;
+        target.confirmed = false;
+        draft.selectedItemId = id;
+      });
+      return true;
+    },
+    confirmDestinationChoice(id) {
+      if (!state.stageB1) return false;
+      const choice = state.stageB1.organization.choicesNeeded.find((item) => (
+        item.id === id && item.choiceType === "destination"
+      ));
+      if (!choice?.options.some((option) => option.optionId === choice.selectedOptionId)) return false;
+      update((draft) => {
+        const target = draft.stageB1.organization.choicesNeeded.find((item) => item.id === id);
+        target.confirmed = true;
+      });
+      return true;
+    },
+    setDuplicateDecision(id, decision) {
+      if (!state.stageB1 || !["keep_all", "choose_for_bin"].includes(decision)) return false;
+      const choice = state.stageB1.organization.choicesNeeded.find((item) => (
+        item.id === id && item.choiceType === "duplicate"
+      ));
+      if (!choice) return false;
+      update((draft) => {
+        const target = draft.stageB1.organization.choicesNeeded.find((item) => item.id === id);
+        target.decision = decision;
+        target.confirmed = false;
+        if (decision === "keep_all") {
+          target.copies.forEach((copy) => { copy.selectedForBin = false; });
+        }
+        draft.selectedItemId = id;
+      });
+      return true;
+    },
+    setDuplicateCopies(id, copyIds) {
+      if (!state.stageB1 || !Array.isArray(copyIds) || new Set(copyIds).size !== copyIds.length) return false;
+      const choice = state.stageB1.organization.choicesNeeded.find((item) => (
+        item.id === id && item.choiceType === "duplicate"
+      ));
+      const known = new Set(choice?.copies.map((copy) => copy.copyId) || []);
+      if (!choice || copyIds.some((copyId) => !known.has(copyId))) return false;
+      const selected = new Set(copyIds);
+      update((draft) => {
+        const target = draft.stageB1.organization.choicesNeeded.find((item) => item.id === id);
+        target.decision = "choose_for_bin";
+        target.confirmed = false;
+        target.copies.forEach((copy) => { copy.selectedForBin = selected.has(copy.copyId); });
+        draft.selectedItemId = id;
+      });
+      return true;
+    },
+    toggleDuplicateCopy(id, copyId) {
+      if (!state.stageB1) return false;
+      const choice = state.stageB1.organization.choicesNeeded.find((item) => (
+        item.id === id && item.choiceType === "duplicate"
+      ));
+      if (!choice?.copies.some((copy) => copy.copyId === copyId)) return false;
+      const selected = choice.copies.filter((copy) => copy.selectedForBin).map((copy) => copy.copyId);
+      const next = selected.includes(copyId)
+        ? selected.filter((item) => item !== copyId)
+        : [...selected, copyId];
+      return store.setDuplicateCopies(id, next);
+    },
+    duplicateChoiceStatus(id) {
+      if (!state.stageB1) return { valid: false, selectedCount: 0, copyCount: 0 };
+      const choice = state.stageB1.organization.choicesNeeded.find((item) => (
+        item.id === id && item.choiceType === "duplicate"
+      ));
+      if (!choice) return { valid: false, selectedCount: 0, copyCount: 0 };
+      const selectedIds = choice.copies.filter((copy) => copy.selectedForBin).map((copy) => copy.copyId);
+      const unique = new Set(selectedIds);
+      const valid = choice.decision === "keep_all"
+        || (choice.decision === "choose_for_bin"
+          && unique.size === selectedIds.length
+          && selectedIds.length > 0
+          && selectedIds.length < choice.copies.length);
+      return { valid, selectedCount: selectedIds.length, copyCount: choice.copies.length };
+    },
+    confirmDuplicateChoice(id) {
+      const status = store.duplicateChoiceStatus(id);
+      if (!status.valid) return false;
+      update((draft) => {
+        const target = draft.stageB1.organization.choicesNeeded.find((item) => item.id === id);
+        target.confirmed = true;
+      });
+      return true;
     },
     selectChange(id, { additive = false, range = false } = {}) {
       const visibleIds = store.waitingChanges().map((change) => change.id);
@@ -404,6 +569,7 @@ export function createStore(fixtures) {
       return true;
     },
     canReviewAndApprove() {
+      if (state.stageB1) return Boolean(state.stageB1.organization.approval.readyForApproval);
       return state.changes.length > 0
         && state.changes.every((change) => change.decision !== "pending")
         && state.changes.some((change) => change.decision === "accepted")
@@ -411,11 +577,52 @@ export function createStore(fixtures) {
     },
     beginApproval() {
       if (!store.canReviewAndApprove()) return false;
-      update((draft) => { draft.workflowStage = "approving"; });
+      update((draft) => {
+        if (draft.stageB1) {
+          draft.stageB1.workflow.stage = "approving";
+          draft.stageB1.workflow.status = "Ready to approve";
+        } else {
+          draft.workflowStage = "approving";
+        }
+      });
       return true;
     },
     approvalSummary() {
+      if (state.stageB1) return clone(state.stageB1.organization.approval);
       return batchCounts(store.acceptedChanges());
+    },
+    approveScenario() {
+      if (!state.stageB1 || !store.canReviewAndApprove()) return null;
+      const approval = clone(state.stageB1.organization.approval);
+      if (approval.choicesRemaining !== 0) return null;
+      update((draft) => {
+        draft.stageB1.workflow = {
+          stage: "ready_to_move",
+          status: "Ready to move",
+          primaryAction: {
+            label: "Move files — not connected yet",
+            action: "none",
+            enabled: false,
+          },
+        };
+        draft.stageB1.organization.approval.readyForApproval = false;
+      });
+      return approval;
+    },
+    reloadScenarioChoices() {
+      if (!state.stageB1) return false;
+      update((draft) => {
+        draft.stageB1.workflow = {
+          stage: "organizing",
+          status: "Changes are ready to review",
+          primaryAction: {
+            label: "Continue organizing",
+            action: "continue-organizing",
+            enabled: true,
+          },
+        };
+      });
+      return true;
     },
     approveTestMove() {
       if (!store.canReviewAndApprove()) return null;

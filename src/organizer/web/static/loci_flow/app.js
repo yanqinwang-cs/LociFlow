@@ -1,7 +1,7 @@
 import { createFixtureDataSource } from "./data_source.js";
 import { createStore } from "./store.js";
 import { renderDialog, renderRoute } from "./views.js";
-import { buildDialogViewModel, buildRouteViewModel } from "./view_models.js";
+import { buildDialogViewModel, buildRouteViewModel, buildShellViewModel } from "./view_models.js";
 
 const fixtureDataSource = createFixtureDataSource();
 const store = createStore(fixtureDataSource.load());
@@ -35,6 +35,7 @@ function announce(message) {
 
 function syncShell() {
   const state = store.getState();
+  const shell = buildShellViewModel(store);
   document.documentElement.dataset.theme = state.theme;
   document.querySelectorAll('[data-action="set-theme"]').forEach((control) => {
     control.setAttribute("aria-pressed", String(control.dataset.themeValue === state.theme));
@@ -44,8 +45,12 @@ function syncShell() {
   });
   const organizeCount = elements.nav.querySelector("[data-organize-count]");
   const binCount = elements.nav.querySelector("[data-bin-count]");
-  if (organizeCount) organizeCount.textContent = String(state.changes.filter((change) => change.decision === "pending").length);
-  if (binCount) binCount.textContent = String(state.duplicateBinItems.length);
+  const folderTitle = document.querySelector(".folder-title strong");
+  const folderFreshness = document.querySelector(".folder-title span");
+  if (folderTitle) folderTitle.textContent = shell.scope.displayName;
+  if (folderFreshness) folderFreshness.textContent = shell.toolbarFreshnessLabel;
+  if (organizeCount) organizeCount.textContent = String(shell.organizeCount);
+  if (binCount) binCount.textContent = String(shell.duplicateBinCount);
 }
 
 function render(options = {}) {
@@ -86,6 +91,15 @@ function openDialog(type, payload = {}, trigger = document.activeElement) {
   if (!elements.dialog.open) elements.dialog.showModal();
   window.requestAnimationFrame(() => {
     elements.dialog.querySelector("input:checked, select, button:not([disabled])")?.focus();
+  });
+}
+
+function refreshDialog(type, payload, focusAttribute, focusValue) {
+  setDialog(type, payload);
+  window.requestAnimationFrame(() => {
+    const control = [...elements.dialog.querySelectorAll(`[${focusAttribute}]`)]
+      .find((item) => item.getAttribute(focusAttribute) === focusValue);
+    control?.focus();
   });
 }
 
@@ -134,6 +148,7 @@ function actionFor(target, event) {
 
   if (action === "history-back") return window.history.back();
   if (action === "history-forward") return window.history.forward();
+  if (action === "none") return;
   if (action === "set-theme") {
     store.setTheme(target.dataset.themeValue);
     announce(`${target.textContent.trim()} appearance selected.`);
@@ -148,8 +163,13 @@ function actionFor(target, event) {
   if (action === "open-standards") return navigate("standards", { focusMain: true });
   if (action === "check-files" || action === "check-again") {
     store.startCheck();
-    announce(`${store.waitingChanges().length} sample changes are ready to organize.`);
+    announce(store.getState().stageB1 ? "Checking files…" : `${store.waitingChanges().length} sample changes are ready to organize.`);
     return navigate("home", { focusMain: true });
+  }
+  if (action === "reload-choices") {
+    if (!store.reloadScenarioChoices()) return;
+    announce("The latest choices are ready to review.");
+    return navigate("organize", { focusChanges: true });
   }
   if (action === "set-style") {
     store.setOrganizationStyle(target.dataset.style);
@@ -164,6 +184,63 @@ function actionFor(target, event) {
     const ids = store.acceptRecommended();
     announce(`${ids.length} recommended changes accepted. No file moved.`);
     return render({ focusChanges: true });
+  }
+  if (action === "accept-contract-recommended") {
+    const recommendations = store.getState().stageB1?.organization.recommendations || [];
+    const pending = recommendations.filter((item) => item.decision === "undecided");
+    pending.forEach((item) => store.decideContractRecommendation(item.id, "accept"));
+    announce(`${pending.length} recommended ${pending.length === 1 ? "change" : "changes"} accepted. No file moved.`);
+    return render({ focusChanges: true });
+  }
+  if (action === "activate-contract-item") {
+    if (!store.selectContractItem(target.dataset.itemId)) return;
+    return render({ focusDetails: true });
+  }
+  if (action === "decide-contract-recommendation") {
+    if (!store.decideContractRecommendation(target.dataset.itemId, target.dataset.decision)) return;
+    announce(target.dataset.decision === "keep" ? "The file will stay here." : "Change accepted. No file moved.");
+    return render({ focusDetails: true });
+  }
+  if (action === "open-destination-choice") {
+    store.selectContractItem(target.dataset.itemId);
+    return openDialog("destination", { itemId: target.dataset.itemId }, target);
+  }
+  if (action === "select-destination-option") {
+    if (!store.selectDestinationOption(target.dataset.itemId, target.dataset.optionId)) return;
+    return refreshDialog("destination", { itemId: target.dataset.itemId }, "data-option-id", target.dataset.optionId);
+  }
+  if (action === "confirm-destination-choice") {
+    if (!store.confirmDestinationChoice(target.dataset.itemId)) return;
+    closeDialog({ restoreFocus: false });
+    announce("Folder choice saved. No file moved.");
+    return render({ focusDetails: true });
+  }
+  if (action === "open-duplicate-choice") {
+    store.selectContractItem(target.dataset.itemId);
+    return openDialog("duplicate", { itemId: target.dataset.itemId }, target);
+  }
+  if (action === "set-duplicate-decision") {
+    if (!store.setDuplicateDecision(target.dataset.itemId, target.dataset.duplicateDecision)) return;
+    if (elements.dialog.open && dialogType === "duplicate") {
+      return refreshDialog("duplicate", { itemId: target.dataset.itemId }, "data-duplicate-decision", target.dataset.duplicateDecision);
+    }
+    if (target.dataset.duplicateDecision === "keep_all") {
+      store.confirmDuplicateChoice(target.dataset.itemId);
+    }
+    announce(target.dataset.duplicateDecision === "keep_all" ? "All copies will stay where they are." : "Choose which copies to set aside.");
+    return render({ focusDetails: true });
+  }
+  if (action === "toggle-duplicate-copy") {
+    if (!store.toggleDuplicateCopy(target.dataset.itemId, target.dataset.copyId)) return;
+    return refreshDialog("duplicate", { itemId: target.dataset.itemId }, "data-copy-id", target.dataset.copyId);
+  }
+  if (action === "confirm-duplicate-choice") {
+    if (!store.confirmDuplicateChoice(target.dataset.itemId)) {
+      return setDialog("duplicate", { itemId: target.dataset.itemId });
+    }
+    closeDialog({ restoreFocus: false });
+    announce("Duplicate choice saved. No file moved.");
+    return render({ focusDetails: true });
   }
   if (action === "toggle-change") {
     store.selectChange(target.dataset.changeId, { additive: true, range: event.shiftKey });
@@ -219,6 +296,13 @@ function actionFor(target, event) {
     closeDialog({ restoreFocus: false });
     if (!batch) return;
     announce("Test move complete. No real files were changed.");
+    return navigate("organize", { focusMain: true });
+  }
+  if (action === "approve-organization") {
+    const approval = store.approveScenario();
+    closeDialog({ restoreFocus: false });
+    if (!approval) return;
+    announce("Organization approved. No files have moved yet.");
     return navigate("organize", { focusMain: true });
   }
   if (action === "verify-test-move") {
