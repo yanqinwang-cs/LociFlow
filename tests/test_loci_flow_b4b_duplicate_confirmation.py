@@ -171,6 +171,146 @@ class LociFlowB4BDuplicateConfirmationTests(unittest.TestCase):
         self.assertIn("await dataSource.confirmMovement(", movement)
         self.assertIn("state.movement.confirmationText !== preview.confirmation", movement)
 
+    def test_shared_dialog_clears_inert_before_reuse_for_approval(self) -> None:
+        result = self.run_node(
+            """
+            const selectedCopyId=payload.choices_needed[1].copies[0].id;
+            const duplicateDrafts={
+              D1:{optionId:"choose-for-bin",selectedCopyIds:[selectedCopyId]},
+            };
+            const stageB1=buildProductionStageB1Contract({
+              snapshot:{status:"completed",backendState:payload},duplicateDrafts,
+            });
+            const state={
+              route:"organize",theme:"light",loadStatus:"ready",pendingMutation:false,
+              backendSnapshot:{status:"completed",backendState:payload},duplicateDrafts,
+              destinationDrafts:{},selectedItemId:null,selectedRowIds:[],workflowOverride:null,
+              activeDialog:"duplicate",
+              activity:{loadStatus:"ready",pendingUndo:false},
+              movement:{previewStatus:"idle",executionPending:false,execution:null},
+            };
+            const viewSource={getState:()=>({stageB1})};
+            const events=[];
+            const elements={
+              app:{inert:false,setAttribute:()=>{}},
+              nav:{querySelectorAll:()=>[],querySelector:()=>null},
+              dialog:{
+                open:true,inert:false,
+                close(){this.open=false;events.push(["dialog-closed"]);},
+                showModal(){this.open=true;events.push(["dialog-opened"]);},
+                querySelector:()=>({focus:()=>{}}),
+              },
+              dialogEyebrow:{textContent:""},dialogTitle:{textContent:""},
+              dialogDescription:{textContent:""},dialogContent:{innerHTML:""},
+              dialogActions:{innerHTML:""},
+            };
+            const document={
+              documentElement:{dataset:{}},activeElement:null,
+              querySelectorAll:()=>[],querySelector:()=>null,
+            };
+            const window={requestAnimationFrame:(callback)=>callback()};
+            let releaseDuplicate;
+            const duplicatePending=new Promise((resolve)=>{releaseDuplicate=resolve;});
+            let approvals=0;
+            let failApproval=false;
+            const dataSource={
+              decideChoice:async()=>{events.push(["duplicate-request"]);await duplicatePending;return {status:"completed"};},
+              approve:async()=>{approvals+=1;if(failApproval)throw {code:"request_failed"};return {status:"completed"};},
+            };
+            const syncSource=appSource.slice(
+              appSource.indexOf("function syncShell"),
+              appSource.indexOf("function replaceActivityEmptyState"),
+            );
+            const dialogSource=appSource.slice(
+              appSource.indexOf("function setDialog"),
+              appSource.indexOf("function resetMovementConfirmation"),
+            );
+            const pendingSource=appSource.slice(
+              appSource.indexOf("function setPending"),
+              appSource.indexOf("async function loadCurrent"),
+            );
+            const mutationSource=appSource.slice(
+              appSource.indexOf("async function handleMutation"),
+              appSource.indexOf("async function reloadAfterConflict"),
+            );
+            const actionSource=appSource.slice(
+              appSource.indexOf("function actionFor"),
+              appSource.indexOf('document.addEventListener("click"'),
+            );
+            const makeLifecycle=new Function(
+              "viewSource","state","elements","document","window","buildShellViewModel",
+              "renderDialog","buildDialogViewModel","announce","applySnapshot","render",
+              "workflowOverride","reloadAfterConflict","dataSource","loadCurrent","setDialog",
+              "refreshDialog",
+              `let dialogPayload={},dialogTrigger=null;\n${syncSource}\n${dialogSource}\n${pendingSource}\n${mutationSource}\n${resolver}\n${duplicateFunctions}\n${actionSource}\nreturn {confirmDuplicate,actionFor};`,
+            );
+            const lifecycle=makeLifecycle(
+              viewSource,state,elements,document,window,
+              ()=>({scope:{displayName:"Downloads"},toolbarFreshnessLabel:"Now",organizeCount:1,duplicateBinCount:0}),
+              ()=>({eyebrow:"Final approval",title:"Ready to organize",description:"Confirm",content:"",actions:""}),
+              ()=>({}),
+              (message)=>events.push(["announce",message]),
+              (snapshot)=>events.push(["snapshot",snapshot.status]),
+              ()=>events.push(["render"]),
+              (status)=>({status,primaryAction:{}}),
+              async()=>events.push(["reload-conflict"]),
+              dataSource,
+              async()=>events.push(["reload-current"]),
+              ()=>{},
+              ()=>{},
+            );
+
+            const duplicateResult=lifecycle.confirmDuplicate({dataset:{itemId:"D1"}});
+            await Promise.resolve();
+            const duringDuplicate={
+              pending:state.pendingMutation,dialogInert:elements.dialog.inert,dialogOpen:elements.dialog.open,
+            };
+            releaseDuplicate();
+            await duplicateResult;
+            const afterDuplicate={
+              pending:state.pendingMutation,dialogInert:elements.dialog.inert,dialogOpen:elements.dialog.open,
+            };
+
+            lifecycle.actionFor({dataset:{action:"review-and-approve"}});
+            const approvalOpened={dialogInert:elements.dialog.inert,dialogOpen:elements.dialog.open};
+            lifecycle.actionFor({dataset:{action:"close-dialog"}});
+            const backWorked=!elements.dialog.open;
+
+            lifecycle.actionFor({dataset:{action:"review-and-approve"}});
+            await lifecycle.actionFor({dataset:{action:"approve-organization"}});
+            const afterApproval={approvals,pending:state.pendingMutation,dialogInert:elements.dialog.inert};
+
+            lifecycle.actionFor({dataset:{action:"review-and-approve"}});
+            failApproval=true;
+            await lifecycle.actionFor({dataset:{action:"approve-organization"}});
+            const afterError={pending:state.pendingMutation,dialogInert:elements.dialog.inert,dialogOpen:elements.dialog.open};
+            console.log(JSON.stringify({
+              duringDuplicate,afterDuplicate,approvalOpened,backWorked,afterApproval,afterError,events,
+            }));
+            """
+        )
+        self.assertEqual(
+            result["duringDuplicate"],
+            {"pending": True, "dialogInert": True, "dialogOpen": True},
+        )
+        self.assertEqual(
+            result["afterDuplicate"],
+            {"pending": False, "dialogInert": False, "dialogOpen": False},
+        )
+        self.assertEqual(
+            result["approvalOpened"],
+            {"dialogInert": False, "dialogOpen": True},
+        )
+        self.assertTrue(result["backWorked"])
+        self.assertEqual(
+            result["afterApproval"],
+            {"approvals": 1, "pending": False, "dialogInert": False},
+        )
+        self.assertEqual(
+            result["afterError"],
+            {"pending": False, "dialogInert": False, "dialogOpen": True},
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -199,7 +199,7 @@ function syncShell() {
   elements.app.setAttribute("aria-busy", String(
     state.pendingMutation || state.loadStatus === "loading" || activityBusy || movementBusy,
   ));
-  if (elements.dialog.open) elements.dialog.inert = state.pendingMutation;
+  elements.dialog.inert = state.pendingMutation;
 }
 
 function replaceActivityEmptyState(title, description, { retry = false } = {}) {
