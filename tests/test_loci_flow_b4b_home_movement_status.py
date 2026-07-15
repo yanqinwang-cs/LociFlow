@@ -163,9 +163,11 @@ class LociFlowB4BHomeMovementStatusTests(unittest.TestCase):
             "Not organized yet",
         )
         self.assertEqual(result["noHistory"]["shell"]["movementStatusLabel"], "No move ready")
+        self.assertEqual(result["noHistory"]["shell"]["bannerStatusLabel"], "Review changes")
         self.assertNotIn("Not organized yet", result["verified"]["homeHtml"])
         self.assertIn("2 files moved and checked.", result["verified"]["homeHtml"])
         self.assertEqual(result["verified"]["shell"]["movementStatusLabel"], "Move verified")
+        self.assertEqual(result["verified"]["shell"]["bannerStatusLabel"], "Move verified")
         self.assertNotEqual(
             result["verified"]["freshness"]["lastOrganizedLabel"],
             "Completed",
@@ -173,6 +175,55 @@ class LociFlowB4BHomeMovementStatusTests(unittest.TestCase):
         self.assertEqual(result["recovered"]["freshness"]["lastOrganizedLabel"], "Completed")
         self.assertEqual(result["recovered"]["shell"]["movementStatusLabel"], "Move verified")
         self.assertNotIn("Movement off", json.dumps(result))
+
+    def test_production_banner_maps_only_truthful_user_states(self) -> None:
+        result = self.run_node(
+            """
+            const shellFor=(snapshot,movement=null)=>{
+              const contract=buildProductionStageB1Contract({snapshot,movement});
+              return buildShellViewModel({getState:()=>({
+                route:"home",theme:"light",selectedItemId:null,settingsSection:"appearance",
+                settings:{notifications:{}},stageB1:contract,
+              })});
+            };
+            const loading=shellFor({status:"loading",backendState:null});
+            const readyState=clone(ready);
+            readyState.execution={
+              status:"ready",operation_id:null,files_expected:2,files_moved:0,
+              files_failed:0,files_unattempted:2,verification_status:null,
+            };
+            const movingState=clone(readyState);
+            movingState.execution={
+              ...movingState.execution,status:"moving",operation_id:operationId,
+              verification_status:"not_run",
+            };
+            const verifiedState=clone(readyState);
+            verifiedState.execution={
+              ...verifiedState.execution,status:"verified",operation_id:operationId,
+              files_moved:2,files_unattempted:0,verification_status:"passed",
+            };
+            const failedState=clone(readyState);
+            failedState.execution={
+              ...failedState.execution,status:"movement_failed",operation_id:operationId,
+              files_failed:1,files_unattempted:1,verification_status:"not_run",
+            };
+            console.log(JSON.stringify({
+              loading:loading.bannerStatusLabel,
+              ready:shellFor({status:"completed",backendState:validateOrganizationResponse(readyState)}).bannerStatusLabel,
+              moving:shellFor({status:"completed",backendState:validateOrganizationResponse(movingState)}).bannerStatusLabel,
+              verified:shellFor({status:"completed",backendState:validateOrganizationResponse(verifiedState)}).bannerStatusLabel,
+              failed:shellFor({status:"completed",backendState:validateOrganizationResponse(failedState)}).bannerStatusLabel,
+            }));
+            """
+        )
+        self.assertEqual(result, {
+            "loading": "Checking files",
+            "ready": "Ready to move",
+            "moving": "Moving files",
+            "verified": "Move verified",
+            "failed": "Move needs attention",
+        })
+        self.assertNotIn("No files can move in this stage", json.dumps(result))
 
     def test_in_progress_failed_and_activity_history_do_not_claim_false_completion(self) -> None:
         result = self.run_node(
@@ -228,6 +279,8 @@ class LociFlowB4BHomeMovementStatusTests(unittest.TestCase):
         template = TEMPLATE.read_text(encoding="utf-8")
         self.assertIn('document.querySelector(".sample-label")', app)
         self.assertIn("movementStatus.textContent = shell.movementStatusLabel", app)
+        self.assertIn('document.querySelector(".prototype-notice span:last-child")', app)
+        self.assertIn("bannerStatus.textContent = shell.bannerStatusLabel", app)
         self.assertIn('<span class="sample-label">Movement off</span>', template)
         home = views[views.index("function renderContractHome"):views.index("export function renderHome")]
         organize = views[views.index("function renderContractOrganize"):views.index("export function renderOrganize")]

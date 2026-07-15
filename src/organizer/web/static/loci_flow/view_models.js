@@ -402,6 +402,17 @@ function movementStatusLabel(workflow) {
   return "No move ready";
 }
 
+function bannerStatusLabel(workflow) {
+  if (workflow.stage === "checking") return "Checking files";
+  if (workflow.stage === "ready_to_move") return "Ready to move";
+  if (workflow.stage === "move_in_progress") return "Moving files";
+  if (workflow.stage === "move_completed") return "Move verified";
+  if (workflow.stage === "move_failed" || workflow.stage === "stale") {
+    return "Move needs attention";
+  }
+  return "Review changes";
+}
+
 function movementWorkflow(backend, movement) {
   const execution = movement?.execution || backend.execution;
   if (movement?.executionPending) {
@@ -783,6 +794,7 @@ export function buildShellViewModel(sourceState) {
   return {
     ...model,
     toolbarFreshnessLabel: toolbarFreshnessLabel(model.scope.lastCheckedLabel),
+    bannerStatusLabel: bannerStatusLabel(model.workflow),
     movementStatusLabel: movementStatusLabel(model.workflow),
     organizeCount: unresolvedRecommendations + unresolvedChoices,
     duplicateBinCount: model.duplicateBin.connected ? model.duplicateBin.items.length : 0,

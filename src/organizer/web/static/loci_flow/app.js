@@ -188,9 +188,13 @@ function syncShell() {
   const binCount = elements.nav.querySelector("[data-bin-count]");
   const folderTitle = document.querySelector(".folder-title strong");
   const folderFreshness = document.querySelector(".folder-title span");
+  const bannerBadge = document.querySelector(".prototype-notice .prototype-badge");
+  const bannerStatus = document.querySelector(".prototype-notice span:last-child");
   const movementStatus = document.querySelector(".sample-label");
   if (folderTitle) folderTitle.textContent = shell.scope.displayName;
   if (folderFreshness) folderFreshness.textContent = shell.toolbarFreshnessLabel;
+  if (bannerBadge && shell.bannerStatusLabel) bannerBadge.textContent = "Status";
+  if (bannerStatus && shell.bannerStatusLabel) bannerStatus.textContent = shell.bannerStatusLabel;
   if (movementStatus) movementStatus.textContent = shell.movementStatusLabel;
   if (organizeCount) organizeCount.textContent = String(shell.organizeCount);
   if (binCount) binCount.textContent = String(shell.duplicateBinCount);
