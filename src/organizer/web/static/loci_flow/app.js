@@ -2,11 +2,14 @@ import { createLociFlowApiClient } from "./api.js";
 import {
   activityErrorMessage,
   createBackendDataSource,
+  isUncertainMovementError,
   isUncertainUndoError,
+  movementErrorMessage,
 } from "./data_source.js";
 import { renderDialog, renderRoute } from "./views.js";
 import {
   buildDialogViewModel,
+  buildMovementConfirmationViewModel,
   buildProductionStageB1Contract,
   buildRouteViewModel,
   buildShellViewModel,
@@ -56,6 +59,16 @@ const state = {
     loadVersion: 0,
     previewVersion: 0,
   },
+  movement: {
+    previewStatus: "idle",
+    preview: null,
+    confirmationText: "",
+    executionPending: false,
+    execution: null,
+    errorCode: null,
+    errorMessage: null,
+    previewVersion: 0,
+  },
 };
 const viewSource = {
   getState() {
@@ -77,6 +90,7 @@ const viewSource = {
         destinationDrafts: state.destinationDrafts,
         duplicateDrafts: state.duplicateDrafts,
         activity: state.activity,
+        movement: state.movement,
       }),
     };
   },
@@ -127,9 +141,29 @@ function allItemIds() {
   ]);
 }
 
+function movementPlanKey(snapshot) {
+  const backend = snapshot?.backendState;
+  if (!backend) return null;
+  return JSON.stringify([
+    backend.scope.display_name,
+    backend.freshness.scan_generation,
+    backend.review.decision_revision,
+    backend.review.status,
+    backend.review.approval?.approved_at || null,
+  ]);
+}
+
 function applySnapshot(snapshot, { preserveSelection = true } = {}) {
+  const previousPlanKey = movementPlanKey(state.backendSnapshot);
+  const nextPlanKey = movementPlanKey(snapshot);
   state.backendSnapshot = snapshot;
   state.loadStatus = "ready";
+  if (previousPlanKey && previousPlanKey !== nextPlanKey) {
+    discardMovementConfirmation();
+    state.movement.execution = null;
+    state.movement.errorCode = null;
+    state.movement.errorMessage = null;
+  }
   if (!preserveSelection || !allItemIds().has(state.selectedItemId)) {
     state.selectedItemId = null;
   }
@@ -155,9 +189,11 @@ function syncShell() {
   if (binCount) binCount.textContent = String(shell.duplicateBinCount);
   const activityBusy = state.route === "activity"
     && (state.activity.loadStatus === "loading" || state.activity.pendingUndo);
-  elements.app.inert = state.pendingMutation;
+  const movementBusy = state.movement.previewStatus === "loading"
+    || state.movement.executionPending;
+  elements.app.inert = state.pendingMutation || movementBusy;
   elements.app.setAttribute("aria-busy", String(
-    state.pendingMutation || state.loadStatus === "loading" || activityBusy,
+    state.pendingMutation || state.loadStatus === "loading" || activityBusy || movementBusy,
   ));
   if (elements.dialog.open) elements.dialog.inert = state.pendingMutation;
 }
@@ -225,6 +261,7 @@ function navigate(route, options = {}) {
   if (!routes.has(route)) return;
   const previousRoute = state.route;
   if (previousRoute === "activity" && route !== "activity") discardActivityPreview();
+  if (previousRoute === "organize" && route !== "organize") discardMovementConfirmation();
   state.route = route;
   if (window.location.hash !== `#/${route}`) window.location.hash = `#/${route}`;
   render(options);
@@ -262,11 +299,85 @@ function refreshDialog(focusAttribute, focusValue) {
 
 function closeDialog({ restoreFocus = true } = {}) {
   if (state.activeDialog === "activity-undo") state.activity.activeUndoPreview = null;
+  if (state.activeDialog === "movement-confirmation") resetMovementConfirmation();
   if (elements.dialog.open) elements.dialog.close();
   state.activeDialog = null;
   dialogPayload = {};
   if (restoreFocus) dialogTrigger?.focus?.();
   dialogTrigger = null;
+}
+
+function resetMovementConfirmation() {
+  state.movement.previewVersion += 1;
+  state.movement.previewStatus = "idle";
+  state.movement.preview = null;
+  state.movement.confirmationText = "";
+}
+
+function discardMovementConfirmation() {
+  resetMovementConfirmation();
+  if (state.activeDialog !== "movement-confirmation") return;
+  if (elements.dialog.open) elements.dialog.close();
+  state.activeDialog = null;
+  dialogPayload = {};
+  dialogTrigger = null;
+}
+
+function setMovementDialog(preview, trigger) {
+  const view = buildMovementConfirmationViewModel(
+    preview,
+    state.movement.confirmationText,
+  );
+  state.activeDialog = "movement-confirmation";
+  state.movement.previewStatus = "ready";
+  state.movement.preview = preview;
+  dialogPayload = {};
+  dialogTrigger = trigger;
+  elements.dialogEyebrow.textContent = view.eyebrow;
+  elements.dialogTitle.textContent = view.title;
+  elements.dialogDescription.textContent = view.description;
+  elements.dialogContent.replaceChildren();
+  if (view.duplicateMessage) {
+    const duplicateMessage = document.createElement("p");
+    duplicateMessage.textContent = view.duplicateMessage;
+    elements.dialogContent.append(duplicateMessage);
+  }
+  const instruction = document.createElement("p");
+  instruction.textContent = view.instruction;
+  const field = document.createElement("label");
+  field.className = "builder-field";
+  const label = document.createElement("span");
+  label.textContent = "Confirmation phrase";
+  const input = document.createElement("input");
+  input.type = "text";
+  input.autocomplete = "off";
+  input.spellcheck = false;
+  input.dataset.action = "movement-confirmation-input";
+  input.value = view.confirmationText;
+  field.append(label, input);
+  elements.dialogContent.append(instruction, field);
+  elements.dialogActions.replaceChildren();
+  const cancel = document.createElement("button");
+  cancel.type = "button";
+  cancel.dataset.action = "cancel-move";
+  cancel.textContent = view.cancelLabel;
+  const confirm = document.createElement("button");
+  confirm.type = "button";
+  confirm.className = "button button-primary";
+  confirm.dataset.action = "confirm-move";
+  confirm.textContent = view.confirmLabel;
+  confirm.disabled = !view.canConfirm;
+  elements.dialogActions.append(cancel, confirm);
+  if (!elements.dialog.open) elements.dialog.showModal();
+  window.requestAnimationFrame(() => input.focus());
+}
+
+function setMovementDialogPending() {
+  elements.dialog.querySelectorAll("button, input, select").forEach((control) => {
+    control.disabled = true;
+  });
+  const confirm = elements.dialog.querySelector('[data-action="confirm-move"]');
+  if (confirm) confirm.textContent = "Moving files…";
 }
 
 function discardActivityPreview() {
@@ -333,17 +444,18 @@ async function loadCurrent({ clearOverride = true } = {}) {
   render();
 }
 
-async function loadActivity({ noticeMessage = null } = {}) {
-  if (state.route !== "activity") return;
+async function loadActivity({ noticeMessage = null, force = false } = {}) {
+  if (state.route !== "activity" && !force) return;
+  const visible = state.route === "activity";
   const version = ++state.activity.loadVersion;
   state.activity.loadStatus = "loading";
   state.activity.entries = [];
   state.activity.errorMessage = null;
   state.activity.noticeMessage = noticeMessage;
-  render();
+  if (visible) render();
   try {
     const payload = await dataSource.loadActivity();
-    if (version !== state.activity.loadVersion || state.route !== "activity") return;
+    if (version !== state.activity.loadVersion) return;
     state.activity.entries = payload.activity;
     const ids = new Set(payload.activity.map((entry) => entry.id));
     state.activity.expandedIds = new Set(
@@ -351,13 +463,14 @@ async function loadActivity({ noticeMessage = null } = {}) {
     );
     state.activity.loadStatus = "ready";
   } catch {
-    if (version !== state.activity.loadVersion || state.route !== "activity") return;
+    if (version !== state.activity.loadVersion) return;
     state.activity.entries = [];
     state.activity.expandedIds = new Set();
     state.activity.loadStatus = "error";
     state.activity.errorMessage = "Try again.";
   }
-  render();
+  if (state.route === "activity") render();
+  else syncShell();
 }
 
 function toggleActivity(activityId) {
@@ -418,8 +531,117 @@ async function confirmActivityUndo() {
   }
 }
 
+function currentExecution() {
+  const backendExecution = state.backendSnapshot.backendState?.execution || null;
+  if (backendExecution && backendExecution.status !== "ready") return backendExecution;
+  return state.movement.execution || backendExecution;
+}
+
+function executionAnnouncement(execution) {
+  if (!execution) return "The move result could not be confirmed.";
+  if (execution.status === "verified") {
+    return execution.files_moved === 1 ? "1 file moved." : `${execution.files_moved} files moved.`;
+  }
+  if (new Set(["prepared", "moving", "moved_unverified"]).has(execution.status)) {
+    return "The file move is still in progress.";
+  }
+  if (execution.status === "partial_movement") return "The move partly completed.";
+  if (execution.status === "movement_failed") return "The files did not move.";
+  return "The move needs attention.";
+}
+
+async function previewMove(target) {
+  if (
+    state.movement.previewStatus === "loading"
+    || state.movement.executionPending
+    || state.pendingMutation
+    || state.activity.pendingUndo
+  ) return;
+  discardMovementConfirmation();
+  state.movement.errorCode = null;
+  state.movement.errorMessage = null;
+  const version = ++state.movement.previewVersion;
+  state.movement.previewStatus = "loading";
+  render();
+  announce("Preparing the approved move…");
+  try {
+    const preview = await dataSource.previewMovement();
+    if (version !== state.movement.previewVersion || state.route !== "organize") return;
+    state.movement.previewStatus = "ready";
+    state.movement.preview = preview;
+    state.movement.confirmationText = "";
+    render();
+    const trigger = elements.app.querySelector('[data-action="preview-move"]') || target;
+    setMovementDialog(preview, trigger);
+  } catch (error) {
+    if (version !== state.movement.previewVersion) return;
+    state.movement.previewStatus = "error";
+    state.movement.preview = null;
+    state.movement.errorCode = error?.code || "request_failed";
+    state.movement.errorMessage = movementErrorMessage(error);
+    announce(state.movement.errorMessage);
+    render({ focusMain: true });
+  }
+}
+
+async function confirmMove() {
+  const preview = state.movement.preview;
+  if (
+    !preview
+    || state.movement.executionPending
+    || state.movement.confirmationText !== preview.confirmation
+  ) return;
+  state.movement.executionPending = true;
+  state.movement.errorCode = null;
+  state.movement.errorMessage = null;
+  setMovementDialogPending();
+  syncShell();
+  announce("Moving files…");
+  let requestError = null;
+  try {
+    const result = await dataSource.confirmMovement(
+      preview.confirmation_token,
+      state.movement.confirmationText,
+    );
+    state.movement.execution = result.operation;
+  } catch (error) {
+    requestError = error;
+  }
+  closeDialog({ restoreFocus: false });
+  state.movement.executionPending = false;
+  try {
+    applySnapshot(await dataSource.loadCurrentState());
+  } catch {
+    // The authoritative execution response remains available if reloading fails.
+  }
+  const execution = currentExecution();
+  const recovered = execution && execution.status !== "ready" && execution.status !== "not_ready";
+  if (requestError && !recovered) {
+    state.movement.errorCode = requestError?.code || "request_failed";
+    state.movement.errorMessage = movementErrorMessage(requestError);
+  } else {
+    state.movement.errorCode = null;
+    state.movement.errorMessage = null;
+  }
+  if (execution?.operation_id) {
+    await loadActivity({ force: true });
+  }
+  if (requestError && isUncertainMovementError(requestError) && !recovered) {
+    announce("The move result could not be confirmed. Load the latest organization before trying again.");
+  } else if (requestError && !recovered) {
+    announce(state.movement.errorMessage);
+  } else {
+    announce(executionAnnouncement(execution));
+  }
+  render({ focusMain: true });
+}
+
 async function checkFiles() {
   if (state.scanPolling || state.pendingMutation) return;
+  discardMovementConfirmation();
+  state.movement.execution = null;
+  state.movement.errorCode = null;
+  state.movement.errorMessage = null;
   state.workflowOverride = null;
   state.scanPolling = true;
   applySnapshot({ status: "checking", backendState: null });
@@ -631,7 +853,13 @@ function actionFor(target) {
   if (action === "open-activity") return navigate("activity", { focusMain: true });
   if (action === "open-standards") return navigate("standards", { focusMain: true });
   if (action === "check-files" || action === "check-again") return checkFiles();
-  if (action === "reload-choices") return loadCurrent();
+  if (action === "reload-choices") {
+    discardMovementConfirmation();
+    state.movement.execution = null;
+    state.movement.errorCode = null;
+    state.movement.errorMessage = null;
+    return loadCurrent();
+  }
   if (action === "retry-activity") return loadActivity();
   if (action === "toggle-activity") return toggleActivity(target.dataset.activityId);
   if (action === "expand-all-activity") {
@@ -644,6 +872,9 @@ function actionFor(target) {
   }
   if (action === "undo-move") return previewActivityUndo(target);
   if (action === "confirm-activity-undo") return confirmActivityUndo();
+  if (action === "preview-move") return previewMove(target);
+  if (action === "confirm-move") return confirmMove();
+  if (action === "cancel-move") return closeDialog();
   if (action === "set-style") {
     announce("Only the current deterministic organization plan is available.");
     return;
@@ -710,10 +941,23 @@ document.addEventListener("click", (event) => {
   if (target) actionFor(target);
 });
 
+document.addEventListener("input", (event) => {
+  const input = event.target.closest('[data-action="movement-confirmation-input"]');
+  if (!input || state.activeDialog !== "movement-confirmation") return;
+  state.movement.confirmationText = input.value;
+  const view = buildMovementConfirmationViewModel(
+    state.movement.preview,
+    state.movement.confirmationText,
+  );
+  const confirm = elements.dialog.querySelector('[data-action="confirm-move"]');
+  if (confirm) confirm.disabled = !view.canConfirm || state.movement.executionPending;
+});
+
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && elements.dialog.open) {
     event.preventDefault();
     if (state.activeDialog === "activity-undo" && state.activity.pendingUndo) return;
+    if (state.activeDialog === "movement-confirmation" && state.movement.executionPending) return;
     closeDialog();
     return;
   }
@@ -746,6 +990,7 @@ window.addEventListener("hashchange", () => {
   const previousRoute = state.route;
   const nextRoute = routeFromHash();
   if (previousRoute === "activity" && nextRoute !== "activity") discardActivityPreview();
+  if (previousRoute === "organize" && nextRoute !== "organize") discardMovementConfirmation();
   state.route = nextRoute;
   render({ focusMain: true });
   if (nextRoute === "activity" && previousRoute !== "activity") loadActivity();

@@ -1,8 +1,11 @@
 const CURRENT_ORGANIZATION_URL = "/api/organization/current";
 const DECISIONS_URL = "/api/organization/decisions";
 const APPROVAL_URL = "/api/organization/approval";
+const MOVEMENT_PREVIEW_URL = "/api/organization/move/preview";
+const MOVEMENT_URL = "/api/organization/move";
 const SCAN_URL = "/scan?surface=home";
 const ACTIVITY_URL = "/api/activity";
+const MOVEMENT_CONFIRMATION = "MOVE APPROVED FILES";
 const UNDO_CONFIRMATION = "UNDO FILE MOVE";
 
 export class LociFlowApiError extends Error {
@@ -189,6 +192,39 @@ export async function approveOrganizationPlan(
   return postJson(APPROVAL_URL, mutationBase(payload, csrfToken), fetchImpl);
 }
 
+export async function previewOrganizationMove(
+  fetchImpl = defaultFetch,
+  csrfToken,
+) {
+  return postJson(
+    MOVEMENT_PREVIEW_URL,
+    { csrf_token: requiredToken(csrfToken) },
+    fetchImpl,
+  );
+}
+
+export async function moveApprovedOrganization(
+  payload,
+  fetchImpl = defaultFetch,
+  csrfToken,
+) {
+  if (typeof payload?.confirmationToken !== "string" || !payload.confirmationToken) {
+    throw new LociFlowApiError("invalid_movement_contract", "Move information is invalid.");
+  }
+  if (payload.confirmation !== MOVEMENT_CONFIRMATION) {
+    throw new LociFlowApiError("invalid_confirmation", "The confirmation phrase does not match.");
+  }
+  return postJson(
+    MOVEMENT_URL,
+    {
+      csrf_token: requiredToken(csrfToken),
+      confirmation_token: payload.confirmationToken,
+      confirmation: payload.confirmation,
+    },
+    fetchImpl,
+  );
+}
+
 export async function getActivity(fetchImpl = defaultFetch) {
   const response = await fetchImpl(ACTIVITY_URL, {
     ...baseOptions(),
@@ -257,6 +293,12 @@ export function createLociFlowApiClient(fetchImpl = defaultFetch) {
     ),
     approveOrganizationPlan: (payload, csrfToken) => (
       approveOrganizationPlan(payload, fetchImpl, csrfToken)
+    ),
+    previewOrganizationMove: (csrfToken) => (
+      previewOrganizationMove(fetchImpl, csrfToken)
+    ),
+    moveApprovedOrganization: (payload, csrfToken) => (
+      moveApprovedOrganization(payload, fetchImpl, csrfToken)
     ),
     getActivity: () => getActivity(fetchImpl),
     previewActivityUndo: (operationId, csrfToken) => (

@@ -90,6 +90,7 @@ class WebLociFlowDecisionTests(unittest.IsolatedAsyncioTestCase):
     def test_frontend_contains_decision_approval_and_ready_states_without_persistence(self) -> None:
         app = (LOCI / "app.js").read_text(encoding="utf-8")
         data_source = (LOCI / "data_source.js").read_text(encoding="utf-8")
+        view_models = (LOCI / "view_models.js").read_text(encoding="utf-8")
         views = (LOCI / "views.js").read_text(encoding="utf-8")
         combined = (app + data_source + views).lower()
         for wording in (
@@ -100,9 +101,9 @@ class WebLociFlowDecisionTests(unittest.IsolatedAsyncioTestCase):
             "Ready to organize",
             "Ready to move",
             "No files have moved yet.",
-            "Move files — not connected yet",
+            "Move files",
         ):
-            self.assertIn(wording, app + views)
+            self.assertIn(wording, app + view_models + views)
         self.assertIn('decision === "undecided"', data_source)
         self.assertIn("selected.size >= backendChoice.copies.length", app)
         self.assertIn('options.disabled ? "disabled"', views)

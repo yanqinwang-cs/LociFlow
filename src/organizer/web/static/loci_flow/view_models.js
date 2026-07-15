@@ -161,6 +161,21 @@ function contractModel(store, page) {
     entries: [...contract.activity.entries],
     expandedIds: [...(contract.activity.expandedIds || [])],
   };
+  const workflow = {
+    ...contract.workflow,
+    primaryAction: { ...contract.workflow.primaryAction },
+  };
+  if (
+    page === "home"
+    && workflow.stage === "ready_to_move"
+    && workflow.primaryAction.action === "preview-move"
+  ) {
+    workflow.primaryAction = {
+      label: "Open Organize",
+      action: "continue-organizing",
+      enabled: true,
+    };
+  }
   return {
     mode: "production_fixture",
     scenarioId: contract.id,
@@ -168,7 +183,7 @@ function contractModel(store, page) {
     store,
     scope: { ...contract.scope },
     freshness: { ...contract.freshness },
-    workflow: { ...contract.workflow, primaryAction: { ...contract.workflow.primaryAction } },
+    workflow,
     organization: {
       ...contract.organization,
       style: {
@@ -335,7 +350,126 @@ function defaultOrganization() {
   };
 }
 
-function workflowFor(snapshot, override) {
+function moveCountMessage(execution) {
+  const moved = countLabel(execution.files_moved, "file moved", "files moved");
+  const remaining = execution.files_failed + execution.files_unattempted;
+  if (!remaining) return `${moved} and checked.`;
+  return `${moved}. ${countLabel(remaining, "file needs attention", "files need attention")}.`;
+}
+
+function lastMoveSummary(execution) {
+  if (!execution) return null;
+  if (execution.status === "verified") {
+    return `${countLabel(execution.files_moved, "file moved", "files moved")}.`;
+  }
+  if (new Set(["prepared", "moving", "moved_unverified"]).has(execution.status)) {
+    return "File move in progress.";
+  }
+  if (new Set([
+    "partial_movement", "movement_failed", "verification_failed", "interrupted",
+    "recovery_required",
+  ]).has(execution.status)) {
+    if (execution.files_moved > 0) return moveCountMessage(execution);
+    return "Latest move needs attention.";
+  }
+  return null;
+}
+
+function movementWorkflow(backend, movement) {
+  const execution = movement?.execution || backend.execution;
+  if (movement?.executionPending) {
+    return {
+      stage: "move_in_progress",
+      status: "Moving files…",
+      message: "Loci Flow is checking each approved move.",
+      primaryAction: { label: "Moving files…", action: "none", enabled: false },
+    };
+  }
+  if (execution.status === "verified") {
+    return {
+      stage: "move_completed",
+      status: "Files moved",
+      message: moveCountMessage(execution),
+      primaryAction: { label: "View Activity", action: "open-activity", enabled: true },
+    };
+  }
+  if (execution.status === "partial_movement") {
+    return {
+      stage: "move_failed",
+      status: "Move partly completed",
+      message: moveCountMessage(execution),
+      primaryAction: { label: "View Activity", action: "open-activity", enabled: true },
+    };
+  }
+  if (execution.status === "movement_failed") {
+    return {
+      stage: "move_failed",
+      status: "Files did not move",
+      message: moveCountMessage(execution),
+      primaryAction: { label: "View Activity", action: "open-activity", enabled: true },
+    };
+  }
+  if (execution.status === "verification_failed") {
+    return {
+      stage: "move_failed",
+      status: "Move could not be confirmed",
+      message: "Open Activity to see which files need attention.",
+      primaryAction: { label: "View Activity", action: "open-activity", enabled: true },
+    };
+  }
+  if (new Set(["prepared", "moving", "moved_unverified"]).has(execution.status)) {
+    return {
+      stage: "move_in_progress",
+      status: "Move in progress",
+      message: "The latest file move is still being checked.",
+      primaryAction: { label: "Reload result", action: "reload-choices", enabled: true },
+    };
+  }
+  if (new Set(["interrupted", "recovery_required"]).has(execution.status)) {
+    return {
+      stage: "move_failed",
+      status: "Move needs attention",
+      message: "Open Activity to review the latest file move.",
+      primaryAction: { label: "View Activity", action: "open-activity", enabled: true },
+    };
+  }
+  if (movement?.previewStatus === "loading") {
+    return {
+      stage: "ready_to_move",
+      status: "Ready to move",
+      primaryAction: { label: "Preparing move…", action: "none", enabled: false },
+    };
+  }
+  if (movement?.errorMessage) {
+    const changed = new Set([
+      "approved_plan_not_found", "approved_plan_stale", "scan_generation_mismatch",
+      "decision_revision_mismatch", "invalid_confirmation_token", "invalid_confirmation",
+    ]).has(movement.errorCode);
+    return {
+      stage: "move_failed",
+      status: changed ? "Organization changed" : "Move could not be prepared",
+      message: movement.errorMessage,
+      primaryAction: changed
+        ? { label: "Load latest plan", action: "reload-choices", enabled: true }
+        : { label: "Try again", action: "preview-move", enabled: true },
+    };
+  }
+  if (execution.status === "ready") {
+    return {
+      stage: "ready_to_move",
+      status: "Ready to move",
+      primaryAction: { label: "Move files", action: "preview-move", enabled: true },
+    };
+  }
+  return {
+    stage: "move_failed",
+    status: "No files are ready to move",
+    message: "Load the latest organization before continuing.",
+    primaryAction: { label: "Load latest plan", action: "reload-choices", enabled: true },
+  };
+}
+
+function workflowFor(snapshot, override, movement) {
   if (override) return { ...override, primaryAction: { ...override.primaryAction } };
   if (!snapshot || snapshot.status === "loading") {
     return {
@@ -370,11 +504,7 @@ function workflowFor(snapshot, override) {
   const backend = snapshot.backendState;
   const totalChanges = backend.recommended_changes.length + backend.choices_needed.length;
   if (backend.review.status === "ready_to_move") {
-    return {
-      stage: "ready_to_move",
-      status: "Ready to move",
-      primaryAction: { label: "Move files — not connected yet", action: "none", enabled: false },
-    };
+    return movementWorkflow(backend, movement);
   }
   if (totalChanges === 0) {
     return {
@@ -533,6 +663,7 @@ export function buildProductionStageB1Contract({
   destinationDrafts = {},
   duplicateDrafts = {},
   activity = null,
+  movement = null,
 } = {}) {
   const backend = snapshot?.backendState || null;
   const scopeName = backend?.scope.display_name || "Selected folder";
@@ -557,7 +688,7 @@ export function buildProductionStageB1Contract({
       lastOrganizedLabel: "Not organized yet",
       nextCheckLabel: "Not scheduled",
     },
-    workflow: workflowFor(snapshot, workflowOverride),
+    workflow: workflowFor(snapshot, workflowOverride, movement),
     organization,
     duplicateBin: { connected: false, items: [] },
     activity: activity
@@ -568,8 +699,14 @@ export function buildProductionStageB1Contract({
         expandedIds: [...(activity.expandedIds || [])],
         errorMessage: activity.errorMessage || null,
         noticeMessage: activity.noticeMessage || null,
+        lastMoveSummary: lastMoveSummary(movement?.execution || backend?.execution),
       }
-      : { connected: false, entries: [], expandedIds: [] },
+      : {
+        connected: false,
+        entries: [],
+        expandedIds: [],
+        lastMoveSummary: lastMoveSummary(movement?.execution || backend?.execution),
+      },
     standards: { connected: false, items: [] },
     settings: { connected: true },
   };
@@ -627,6 +764,25 @@ export function buildRouteViewModel(sourceState, route) {
   if (route === "standards") return buildStandardsViewModel(sourceState);
   if (route === "settings") return buildSettingsViewModel(sourceState);
   return buildHomeViewModel(sourceState);
+}
+
+export function buildMovementConfirmationViewModel(preview, confirmationText = "") {
+  const count = preview.files_to_move;
+  const duplicates = preview.duplicate_copies_deferred;
+  return {
+    stage: "confirmation_ready",
+    eyebrow: "Final confirmation",
+    title: "Move these files?",
+    description: `${countLabel(count, "file will move", "files will move")}.`,
+    duplicateMessage: duplicates > 0
+      ? `${countLabel(duplicates, "duplicate copy is", "duplicate copies are")} not part of this move. ${duplicates === 1 ? "It will remain" : "They will remain"} for the separate Duplicate Bin step.`
+      : null,
+    instruction: `Type ${preview.confirmation} to continue.`,
+    confirmationText,
+    canConfirm: confirmationText === preview.confirmation,
+    cancelLabel: "Cancel",
+    confirmLabel: "Move files",
+  };
 }
 
 export function buildDialogViewModel(sourceState) {

@@ -117,7 +117,7 @@ class WebLociFlowPrototypeFirstTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("http://", shell.text)
         self.assertNotIn("https://", shell.text)
 
-    async def test_frontend_stays_disconnected_from_backend_movement_routes(self) -> None:
+    async def test_frontend_connects_to_movement_without_changing_fixture_scenarios(self) -> None:
         methods_by_path = {
             route.path: set(route.methods or set())
             for route in _application_routes(self.app.routes)
@@ -134,11 +134,18 @@ class WebLociFlowPrototypeFirstTests(unittest.IsolatedAsyncioTestCase):
             / "static"
             / "loci_flow"
         )
-        assets = "\n".join(
-            path.read_text(encoding="utf-8") for path in sorted(loci.glob("*.js"))
+        production_assets = "\n".join(
+            (loci / name).read_text(encoding="utf-8")
+            for name in ("api.js", "data_source.js", "view_models.js", "app.js", "views.js")
         )
-        self.assertNotIn("/api/organization/move", assets)
-        self.assertIn("Move files — not connected yet", assets)
+        fixture_assets = "\n".join(
+            (loci / name).read_text(encoding="utf-8")
+            for name in ("store.js", "stage_b1_scenarios.js")
+        )
+        self.assertIn("/api/organization/move/preview", production_assets)
+        self.assertIn("/api/organization/move", production_assets)
+        self.assertNotIn("Move files — not connected yet", production_assets)
+        self.assertIn("Move files — not connected yet", fixture_assets)
 
 
 def _client(app: object) -> httpx.AsyncClient:

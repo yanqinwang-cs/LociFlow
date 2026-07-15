@@ -8,7 +8,18 @@ const REVIEW_STATUSES = new Set(["in_progress", "ready_for_approval", "ready_to_
 const RECOMMENDATION_DECISIONS = new Set(["undecided", "accept", "keep"]);
 const MAX_TEXT_LENGTH = 2048;
 const MAX_CONFIRMATION_TOKEN_LENGTH = 512;
+const MOVEMENT_CONFIRMATION = "MOVE APPROVED FILES";
 const UNDO_CONFIRMATION = "UNDO FILE MOVE";
+const EXECUTION_STATUSES = new Set([
+  "not_ready", "ready", "no_supported_moves", "recovery_required",
+  "prepared", "moving", "moved_unverified", "verified", "partial_movement",
+  "movement_failed", "verification_failed", "interrupted",
+]);
+const EXECUTION_IN_PROGRESS_STATUSES = new Set(["prepared", "moving", "moved_unverified"]);
+const EXECUTION_TERMINAL_STATUSES = new Set([
+  "verified", "partial_movement", "movement_failed", "verification_failed", "interrupted",
+]);
+const VERIFICATION_STATUSES = new Set(["not_run", "passed", "failed"]);
 const ACTIVITY_TYPES = new Set(["organization", "restore"]);
 const MOVEMENT_ACTIVITY_STATUSES = new Set([
   "verified", "partial_movement", "movement_failed", "verification_failed",
@@ -29,6 +40,23 @@ const ACTIVITY_ERROR_MESSAGES = Object.freeze({
   undo_source_changed: "A moved file changed after it was moved.",
   unsafe_undo_path: "This move cannot be undone safely.",
   movement_or_undo_in_progress: "Another file action is running.",
+});
+const MOVEMENT_ERROR_MESSAGES = Object.freeze({
+  approved_plan_not_found: "The approved organization is no longer available.",
+  approved_plan_stale: "The approved organization has changed.",
+  scan_generation_mismatch: "The folder was checked again. Review the latest organization.",
+  decision_revision_mismatch: "The organization choices changed. Review them again.",
+  invalid_confirmation: "The confirmation phrase does not match.",
+  invalid_confirmation_token: "This move confirmation is no longer available.",
+  movement_already_started: "This move has already started. The latest result will be loaded.",
+  movement_or_undo_in_progress: "Another file action is running.",
+  movement_recovery_required: "A previous move needs attention in Activity.",
+  source_changed: "A file changed after the folder was checked.",
+  protected_item_selected: "A protected file cannot be moved.",
+  unsafe_destination: "A destination folder is no longer available.",
+  overwrite_detected: "A destination file now exists.",
+  move_conflict: "The approved moves now conflict.",
+  no_supported_moves: "No approved files are ready to move.",
 });
 
 export class OrganizationDataError extends Error {
@@ -72,6 +100,20 @@ function activityContractError() {
   );
 }
 
+function movementContractError() {
+  return new OrganizationDataError(
+    "invalid_movement_contract",
+    "Move information could not be loaded.",
+  );
+}
+
+function requireMovementObject(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw movementContractError();
+  }
+  return value;
+}
+
 function requireActivityObject(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw activityContractError();
   return value;
@@ -107,6 +149,99 @@ function requireText(value, { allowDot = false } = {}) {
 function requireCount(value) {
   if (!Number.isSafeInteger(value) || value < 0) throw contractError();
   return value;
+}
+
+function requireMovementToken(value) {
+  if (
+    typeof value !== "string"
+    || value.length > MAX_CONFIRMATION_TOKEN_LENGTH
+    || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(value)
+  ) {
+    throw movementContractError();
+  }
+  return value;
+}
+
+function requireMovementTimestamp(value) {
+  if (value === null) return null;
+  if (typeof value !== "string" || value.length > 64 || !Number.isFinite(Date.parse(value))) {
+    throw movementContractError();
+  }
+  return value;
+}
+
+function validateExecution(rawExecution, { operationResponse = false } = {}) {
+  const raw = requireMovementObject(rawExecution);
+  if (!EXECUTION_STATUSES.has(raw.status)) throw movementContractError();
+  const operationId = operationResponse ? raw.id : raw.operation_id;
+  if (operationId !== null) requireMovementToken(operationId);
+  if (operationResponse && operationId === null) throw movementContractError();
+  const filesExpected = requireCount(raw.files_expected);
+  const filesMoved = requireCount(raw.files_moved);
+  const filesFailed = requireCount(raw.files_failed);
+  const filesUnattempted = requireCount(raw.files_unattempted);
+  if (filesMoved + filesFailed + filesUnattempted > filesExpected) {
+    throw movementContractError();
+  }
+  const verificationStatus = raw.verification_status;
+  if (verificationStatus !== null && !VERIFICATION_STATUSES.has(verificationStatus)) {
+    throw movementContractError();
+  }
+  if (new Set(["not_ready", "no_supported_moves"]).has(raw.status) && operationId !== null) {
+    throw movementContractError();
+  }
+  if (
+    raw.status === "ready"
+    && (operationId !== null || filesExpected < 1 || filesMoved || filesFailed
+      || filesUnattempted !== filesExpected || verificationStatus !== null)
+  ) {
+    throw movementContractError();
+  }
+  if (
+    (EXECUTION_IN_PROGRESS_STATUSES.has(raw.status) || EXECUTION_TERMINAL_STATUSES.has(raw.status))
+    && operationId === null
+  ) {
+    throw movementContractError();
+  }
+  return {
+    status: raw.status,
+    operation_id: operationId,
+    files_expected: filesExpected,
+    files_moved: filesMoved,
+    files_failed: filesFailed,
+    files_unattempted: filesUnattempted,
+    verification_status: verificationStatus,
+    ...(operationResponse ? {
+      started_at: requireMovementTimestamp(raw.started_at),
+      completed_at: requireMovementTimestamp(raw.completed_at),
+    } : {}),
+  };
+}
+
+export function validateMovementPreview(rawPreview) {
+  const raw = requireMovementObject(rawPreview);
+  if (
+    Object.keys(raw).length !== 4
+    || raw.confirmation !== MOVEMENT_CONFIRMATION
+  ) {
+    throw movementContractError();
+  }
+  const filesToMove = requireCount(raw.files_to_move);
+  if (filesToMove < 1) throw movementContractError();
+  return deepFreeze({
+    files_to_move: filesToMove,
+    duplicate_copies_deferred: requireCount(raw.duplicate_copies_deferred),
+    confirmation: raw.confirmation,
+    confirmation_token: requireMovementToken(raw.confirmation_token),
+  });
+}
+
+export function validateMovementResponse(rawPayload) {
+  const payload = requireMovementObject(rawPayload);
+  if (Object.keys(payload).length !== 1) throw movementContractError();
+  return deepFreeze({
+    operation: validateExecution(payload.operation, { operationResponse: true }),
+  });
 }
 
 export function isCanonicalActivityId(value) {
@@ -327,6 +462,7 @@ export function validateOrganizationResponse(rawPayload) {
   requireArray(payload.recommended_changes);
   requireArray(payload.choices_needed);
   requireArray(payload.kept_by_standards);
+  payload.execution = validateExecution(payload.execution);
 
   const actionableItemIds = new Set();
   const recommendationPaths = new Set();
@@ -510,6 +646,21 @@ export function isUncertainUndoError(error) {
     || !Object.hasOwn(ACTIVITY_ERROR_MESSAGES, code);
 }
 
+export function movementErrorMessage(error) {
+  return MOVEMENT_ERROR_MESSAGES[error?.code]
+    || (error?.code === "invalid_movement_contract" ? "Move information could not be loaded." : null)
+    || "The move result could not be confirmed. Load the latest organization before trying again.";
+}
+
+export function isUncertainMovementError(error) {
+  const code = error?.code || "";
+  return code === "request_failed"
+    || code === "invalid_response"
+    || code === "invalid_movement_contract"
+    || /^http_5\d\d$/.test(code)
+    || (!Object.hasOwn(MOVEMENT_ERROR_MESSAGES, code) && code !== "invalid_confirmation");
+}
+
 function snapshot(status, backendState = null) {
   return Object.freeze({ status, backendState });
 }
@@ -525,6 +676,17 @@ function normalizeActivityError(error, fallbackMessage) {
     return new ActivityDataError(error.code, ACTIVITY_ERROR_MESSAGES[error.code] || fallbackMessage);
   }
   return new ActivityDataError("request_failed", fallbackMessage);
+}
+
+function normalizeMovementError(error) {
+  if (error instanceof OrganizationDataError) return error;
+  if (error instanceof LociFlowApiError) {
+    return new OrganizationDataError(error.code, movementErrorMessage(error));
+  }
+  return new OrganizationDataError(
+    "request_failed",
+    "The move result could not be loaded.",
+  );
 }
 
 let fixtureModulesPromise;
@@ -548,6 +710,18 @@ export function createFixtureDataSource(options = {}) {
       const [{ default: fixtureState }, scenarios] = await fixtureModules();
       return scenarios.createStageB1Fixture(clone(fixtureState), scenarioId);
     },
+    async previewMovement() {
+      throw new OrganizationDataError(
+        "movement_unavailable",
+        "Real file moves are unavailable in sample mode.",
+      );
+    },
+    async confirmMovement() {
+      throw new OrganizationDataError(
+        "movement_unavailable",
+        "Real file moves are unavailable in sample mode.",
+      );
+    },
   });
 }
 
@@ -570,6 +744,8 @@ export function createBackendDataSource({
   let wakePoll = null;
   let activityState = null;
   let undoMutationPending = false;
+  let movementPreviewPending = false;
+  let movementPending = false;
 
   function assertActive() {
     if (disposed) throw new OrganizationDataError("disposed", "The organization view is unavailable.");
@@ -718,6 +894,85 @@ export function createBackendDataSource({
     return mutate((context) => apiClient.approveOrganizationPlan(context, csrfToken));
   }
 
+  function movementContext() {
+    assertActive();
+    if (
+      current.status !== "completed"
+      || !current.backendState
+      || current.backendState.review.status !== "ready_to_move"
+    ) {
+      throw new OrganizationDataError(
+        "approved_plan_not_found",
+        MOVEMENT_ERROR_MESSAGES.approved_plan_not_found,
+      );
+    }
+    return current.backendState;
+  }
+
+  async function previewMovement() {
+    const backend = movementContext();
+    if (movementPreviewPending || movementPending || undoMutationPending) {
+      throw new OrganizationDataError(
+        "movement_or_undo_in_progress",
+        MOVEMENT_ERROR_MESSAGES.movement_or_undo_in_progress,
+      );
+    }
+    if (backend.execution.status !== "ready") {
+      throw new OrganizationDataError(
+        backend.execution.status === "recovery_required"
+          ? "movement_recovery_required"
+          : "movement_already_started",
+        backend.execution.status === "recovery_required"
+          ? MOVEMENT_ERROR_MESSAGES.movement_recovery_required
+          : MOVEMENT_ERROR_MESSAGES.movement_already_started,
+      );
+    }
+    movementPreviewPending = true;
+    try {
+      if (typeof apiClient.previewOrganizationMove !== "function") {
+        throw new TypeError("movement preview API is unavailable");
+      }
+      return validateMovementPreview(
+        await apiClient.previewOrganizationMove(csrfToken),
+      );
+    } catch (error) {
+      throw normalizeMovementError(error);
+    } finally {
+      movementPreviewPending = false;
+    }
+  }
+
+  async function confirmMovement(confirmationToken, confirmation) {
+    movementContext();
+    requireMovementToken(confirmationToken);
+    if (confirmation !== MOVEMENT_CONFIRMATION) {
+      throw new OrganizationDataError(
+        "invalid_confirmation",
+        MOVEMENT_ERROR_MESSAGES.invalid_confirmation,
+      );
+    }
+    if (movementPending || movementPreviewPending || undoMutationPending) {
+      throw new OrganizationDataError(
+        "movement_or_undo_in_progress",
+        MOVEMENT_ERROR_MESSAGES.movement_or_undo_in_progress,
+      );
+    }
+    movementPending = true;
+    try {
+      if (typeof apiClient.moveApprovedOrganization !== "function") {
+        throw new TypeError("movement API is unavailable");
+      }
+      return validateMovementResponse(await apiClient.moveApprovedOrganization(
+        { confirmationToken, confirmation },
+        csrfToken,
+      ));
+    } catch (error) {
+      throw normalizeMovementError(error);
+    } finally {
+      movementPending = false;
+    }
+  }
+
   async function loadActivity() {
     assertActive();
     try {
@@ -731,7 +986,7 @@ export function createBackendDataSource({
 
   async function withUndoMutation(operation) {
     assertActive();
-    if (undoMutationPending) {
+    if (undoMutationPending || movementPending || movementPreviewPending) {
       throw new ActivityDataError("undo_in_progress", "Another Undo request is already running.");
     }
     undoMutationPending = true;
@@ -801,12 +1056,15 @@ export function createBackendDataSource({
     decideChoice,
     acceptRecommendations,
     approve,
+    previewMovement,
+    confirmMovement,
     loadActivity,
     previewUndo,
     confirmUndo,
     dispose,
     currentState: () => current,
     isMutationPending: () => mutationPending,
+    isMovementPending: () => movementPending || movementPreviewPending,
     isUndoPending: () => undoMutationPending,
   });
 }

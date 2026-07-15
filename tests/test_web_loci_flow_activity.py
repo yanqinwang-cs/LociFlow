@@ -66,12 +66,13 @@ class WebLociFlowActivityTests(unittest.TestCase):
     def test_activity_ui_has_real_controls_confirmation_and_no_fixture_persistence(self) -> None:
         api = (LOCI / "api.js").read_text(encoding="utf-8")
         app = (LOCI / "app.js").read_text(encoding="utf-8")
+        view_models = (LOCI / "view_models.js").read_text(encoding="utf-8")
         views = (LOCI / "views.js").read_text(encoding="utf-8")
-        combined = api + app + views
+        combined = api + app + view_models + views
         for wording in (
             "No file moves recorded.", "Details", "Expand all", "Collapse all",
             "Undo move", "Undo this move?", "will return to", "UNDO FILE MOVE",
-            "Move files — not connected yet",
+            "Move files",
         ):
             self.assertIn(wording, combined)
         self.assertIn("expandedIds: new Set()", app)
@@ -79,7 +80,7 @@ class WebLociFlowActivityTests(unittest.TestCase):
         self.assertIn("await dataSource.loadActivity()", app)
         self.assertIn('announce("Files restored.")', app)
         self.assertIn("undo.disabled = state.activity.pendingUndo", app)
-        for forbidden in ("fixtures.json", "localStorage", "sessionStorage", "/api/organization/move"):
+        for forbidden in ("fixtures.json", "localStorage", "sessionStorage"):
             self.assertNotIn(forbidden, combined)
 
 

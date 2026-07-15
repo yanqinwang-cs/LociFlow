@@ -10,18 +10,20 @@ LOCI = WEB / "static" / "loci_flow"
 
 
 class WebLociFlowMovementBoundaryTests(unittest.TestCase):
-    def test_backend_routes_exist_while_frontend_movement_remains_disconnected(self) -> None:
+    def test_frontend_connects_only_to_the_fixed_backend_movement_routes(self) -> None:
         assets = "\n".join(
-            path.read_text(encoding="utf-8")
-            for path in sorted(LOCI.glob("*.js"))
+            (LOCI / name).read_text(encoding="utf-8")
+            for name in ("api.js", "data_source.js", "view_models.js", "app.js", "views.js")
         )
         route = (WEB / "routes" / "organization_api.py").read_text(
             encoding="utf-8"
         )
 
-        self.assertIn("Move files — not connected yet", assets)
-        self.assertNotIn("/api/organization/move", assets)
-        self.assertNotIn("MOVE APPROVED FILES", assets)
+        self.assertNotIn("Move files — not connected yet", assets)
+        self.assertIn("/api/organization/move/preview", assets)
+        self.assertIn("/api/organization/move", assets)
+        self.assertIn("MOVE APPROVED FILES", assets)
+        self.assertIn('action === "preview-move"', assets)
         self.assertIn('"/api/organization/move/preview"', route)
         self.assertIn('"/api/organization/move"', route)
         self.assertNotIn("organizer.executor", route)

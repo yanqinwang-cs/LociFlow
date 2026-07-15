@@ -29,19 +29,17 @@ function stages(state) {
 
 function contractStage(workflow) {
   if (workflow.stage === "ready_to_move") return "moving";
+  if (workflow.stage === "move_in_progress") return "moving";
+  if (new Set(["move_completed", "move_failed"]).has(workflow.stage)) return "verifying";
   if (workflow.stage === "stale") return workflow.staleKind === "revision" ? "organizing" : "checking";
   return workflow.stage;
 }
 
 function contractPrimaryAction(workflow) {
-  const attrs = workflow.stage === "ready_to_move"
-    ? 'aria-describedby="move-not-connected-help" title="Movement is not connected in this stage."'
-    : "";
   return `${button(workflow.primaryAction.label, workflow.primaryAction.action, {
     primary: true,
     disabled: !workflow.primaryAction.enabled,
-    attrs,
-  })}${workflow.stage === "ready_to_move" ? '<small id="move-not-connected-help">No files have moved yet.</small>' : ""}`;
+  })}${workflow.stage === "ready_to_move" ? "<small>No files have moved yet.</small>" : ""}`;
 }
 
 function renderContractHome(model) {
@@ -59,7 +57,7 @@ function renderContractHome(model) {
     <section class="home-summaries" aria-label="Folder summary">
       <article class="summary-card"><span class="summary-icon" aria-hidden="true">01</span><div><h2>Organization</h2><strong>${escapeHtml(status)}</strong></div>${organizationAction}</article>
       <article class="summary-card"><span class="summary-icon" aria-hidden="true">02</span><div><h2>Duplicate Bin</h2><strong>${escapeHtml(duplicateLabel)}</strong></div>${button("Open Duplicate Bin", "open-duplicate-bin", { disabled: !model.duplicateBin.connected })}</article>
-      <article class="summary-card"><span class="summary-icon" aria-hidden="true">03</span><div><h2>Last file move</h2><strong>No files have moved yet.</strong></div>${button("View Activity", "open-activity", { disabled: !model.activity.connected })}</article>
+      <article class="summary-card"><span class="summary-icon" aria-hidden="true">03</span><div><h2>Last file move</h2><strong>${escapeHtml(model.activity.lastMoveSummary || "No files have moved yet.")}</strong></div>${button("View Activity", "open-activity", { disabled: !model.activity.connected })}</article>
     </section>`;
 }
 
@@ -268,7 +266,13 @@ function contractKeptByStandards(model) {
 
 function contractReadyToMove(model) {
   const summary = model.organization.movementSummary;
-  return `${pageHeader("Organize", "The organization has been checked and approved.", "", model.scope.displayName)}${stages({ workflowStage: "moving" })}<section class="workflow-result card" role="status"><p class="eyebrow">Move</p><h2>Ready to move</h2><p>The organization has been checked and approved.<br>No files have moved yet.</p><div class="verification-counts"><strong>${summary.filesToMove} ${summary.filesToMove === 1 ? "file" : "files"} to move</strong><span>${summary.namesToChange} ${summary.namesToChange === 1 ? "name" : "names"} to change</span><span>${summary.foldersToCreate} ${summary.foldersToCreate === 1 ? "folder" : "folders"} to create</span><span>${summary.duplicateCopies} duplicate ${summary.duplicateCopies === 1 ? "copy" : "copies"} set aside</span></div><div>${button("Move files — not connected yet", "none", { primary: true, disabled: true, attrs: 'aria-describedby="move-result-help" title="Movement is not connected in this stage."' })}</div><p id="move-result-help">No movement request is available in this stage.</p></section>`;
+  const action = model.workflow.primaryAction;
+  return `${pageHeader("Organize", "The organization has been checked and approved.", "", model.scope.displayName)}${stages({ workflowStage: "moving" })}<section class="workflow-result card" role="status"><p class="eyebrow">Move</p><h2>Ready to move</h2><p>The organization has been checked and approved.<br>No files have moved yet.</p><div class="verification-counts"><strong>${summary.filesToMove} ${summary.filesToMove === 1 ? "file" : "files"} to move</strong><span>${summary.namesToChange} ${summary.namesToChange === 1 ? "name" : "names"} to change</span><span>${summary.foldersToCreate} ${summary.foldersToCreate === 1 ? "folder" : "folders"} to create</span><span>${summary.duplicateCopies} duplicate ${summary.duplicateCopies === 1 ? "copy" : "copies"} set aside</span></div><div>${button(action.label, action.action, { primary: true, disabled: !action.enabled })}</div><p>No files have moved yet.</p></section>`;
+}
+
+function contractMovementResult(model) {
+  const action = model.workflow.primaryAction;
+  return `${pageHeader("Organize", model.workflow.message, "", model.scope.displayName)}${stages({ workflowStage: contractStage(model.workflow) })}<section class="workflow-result card" role="status"><p class="eyebrow">Move</p><h2>${escapeHtml(model.workflow.status)}</h2><p>${escapeHtml(model.workflow.message)}</p><div>${button(action.label, action.action, { primary: true, disabled: !action.enabled })}</div></section>`;
 }
 
 function contractStaleResult(model) {
@@ -277,6 +281,9 @@ function contractStaleResult(model) {
 
 function renderContractOrganize(model) {
   if (model.workflow.stage === "ready_to_move") return contractReadyToMove(model);
+  if (new Set(["move_in_progress", "move_completed", "move_failed"]).has(model.workflow.stage)) {
+    return contractMovementResult(model);
+  }
   if (model.workflow.stage === "stale") return contractStaleResult(model);
   const approval = model.organization.approval.readyForApproval
     ? `${button("Review and approve", "review-and-approve", { primary: true })}<small>No files have moved yet.</small>`

@@ -83,6 +83,15 @@ def _payload() -> dict[str, object]:
             "strategy_id": "current_deterministic",
             "organization_style": None,
         },
+        "execution": {
+            "status": "not_ready",
+            "operation_id": None,
+            "files_expected": 0,
+            "files_moved": 0,
+            "files_failed": 0,
+            "files_unattempted": 0,
+            "verification_status": None,
+        },
         "recommended_changes": [
             {
                 "id": "O1",
@@ -204,7 +213,7 @@ class LociFlowStageB2AdapterTests(unittest.TestCase):
     def test_locked_stage_b1_assets_keep_their_committed_hashes(self) -> None:
         expected = {
             "styles.css": "6288229571bb209624e00a2a82c639c93ea8eae1aca3dbad9022cb5203c637dd",
-            "views.js": "b07a7b55e6f4571ade59f04439660952ff4c2582d8f0fea0e78f7ea3b61aa96a",
+            "views.js": "591738cd4642fa295422f7fff63bf20d9791688b0917f1a302188208d35748ef",
             "tree.js": "5dc9db40114c78f1dd9b7d81dfb2a52c6c5b8f73670d8a6f2bed49cc7d385975",
             "store.js": "ac0876ec961fadd4b62115d1f372606fa536b2a00ac026029578a263bb5ad3be",
             "fixtures.json": "0d614d82bf3aa75b4ab102a77d47e77b3d3ef7ed390afd6119c1e4099e36fec1",
@@ -420,8 +429,6 @@ class LociFlowStageB2AdapterTests(unittest.TestCase):
             "eventsource",
             "serviceworker",
             "/api/undo",
-            "/api/organization/move",
-            "movement-preview",
         ):
             self.assertNotIn(forbidden, combined)
 

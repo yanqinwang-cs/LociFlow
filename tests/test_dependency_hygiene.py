@@ -74,7 +74,6 @@ class DependencyHygieneTests(unittest.TestCase):
 
         self.assertTrue((source_root / "web").is_dir())
         self.assertFalse((source_root / "application" / "preflight_service.py").exists())
-        self.assertFalse((source_root / "application" / "execution_service.py").exists())
 
     def test_no_secret_or_environment_file_is_tracked(self) -> None:
         result = subprocess.run(
