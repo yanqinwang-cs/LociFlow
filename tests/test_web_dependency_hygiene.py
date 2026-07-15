@@ -278,7 +278,11 @@ class WebDependencyHygieneTests(unittest.TestCase):
         self.assertIn("/scan?surface=home", loci_assets)
         self.assertIn("/api/activity", loci_assets)
         self.assertNotIn("/api/organization/move", loci_assets)
-        self.assertNotIn("/api/organization/move", route_text)
+        self.assertIn("/api/organization/move", route_text)
+        self.assertIn(
+            "organizer.application.organization_movement_service",
+            route_text,
+        )
         self.assertIn("/api/activity", route_text)
         self.assertIn("organizer.application.undo_service", route_text)
 

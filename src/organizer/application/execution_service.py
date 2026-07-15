@@ -74,10 +74,17 @@ class OrganizationExecutionError(ValueError):
 def issue_movement_authorization(
     approved_plan: ApprovedOrganizationPlan,
     coordinator: OrganizationExecutionCoordinator,
+    *,
+    browser_session_id: str | None = None,
+    configured_root_identity: str | None = None,
 ) -> MovementAuthorization:
     if approved_plan.status != STATUS_READY_TO_MOVE:
         raise OrganizationExecutionError("approved_plan_not_found")
-    return coordinator.issue_authorization(approved_plan)
+    return coordinator.issue_authorization(
+        approved_plan,
+        browser_session_id=browser_session_id,
+        configured_root_identity=configured_root_identity,
+    )
 
 
 def move_approved_organization(

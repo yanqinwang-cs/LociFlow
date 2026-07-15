@@ -167,6 +167,33 @@ class OrganizationDecisionStore:
             self._sessions[browser_session_id] = snapshot
             return snapshot
 
+    def approved_for_movement(
+        self,
+        browser_session_id: str,
+        scan: ScanJobSnapshot,
+        projection: InternalOrganizationProjection,
+    ) -> OrganizationDecisionSnapshot:
+        """Return the exact session-owned approval without recreating it."""
+
+        with self._lock:
+            if (
+                scan.status != "completed"
+                or scan.job_id is None
+                or projection.scan_generation != scan.job_id
+            ):
+                raise OrganizationDecisionError("scan_generation_mismatch")
+            current = self._sessions.get(browser_session_id)
+            if current is not None and current.session.scan_generation != scan.job_id:
+                self._sessions.pop(browser_session_id, None)
+                current = None
+            if (
+                current is None
+                or current.session.status != STATUS_READY_TO_MOVE
+                or current.session.approved_plan is None
+            ):
+                raise OrganizationDecisionError("approved_plan_not_found")
+            return current
+
     def _mutable_current(
         self,
         browser_session_id: str,

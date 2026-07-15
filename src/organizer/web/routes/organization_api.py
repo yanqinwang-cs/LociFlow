@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import uuid
 
 from fastapi import APIRouter
 from starlette.requests import Request
@@ -9,6 +10,12 @@ from starlette.responses import JSONResponse, Response
 from organizer.application.organization_decision_service import (
     OrganizationDecisionError,
     organization_review_to_dict,
+)
+from organizer.application.organization_movement_service import (
+    OrganizationMovementError,
+    execute_organization_movement,
+    preview_organization_movement,
+    project_organization_execution,
 )
 from organizer.application.organization_slice_service import (
     build_internal_organization_projection,
@@ -54,6 +61,25 @@ _ERRORS = {
     "source_changed": (409, "A file changed after it was checked."),
     "duplicate_group_changed": (409, "Duplicate copies changed after they were checked."),
     "approval_already_completed": (409, "This organization plan is already approved."),
+    "approved_plan_not_found": (409, "The approved organization plan is unavailable."),
+}
+
+_MOVEMENT_ERRORS = {
+    "approved_plan_not_found": (409, "The approved organization plan is unavailable."),
+    "approved_plan_stale": (409, "The approved organization plan is stale."),
+    "scan_generation_mismatch": (409, "The organization review belongs to an earlier scan."),
+    "decision_revision_mismatch": (409, "Organization choices were updated elsewhere."),
+    "invalid_confirmation": (400, "Movement confirmation is invalid."),
+    "invalid_confirmation_token": (409, "Movement confirmation is unavailable."),
+    "movement_already_started": (409, "This approved plan has already started."),
+    "movement_or_undo_in_progress": (409, "Another file action is in progress."),
+    "movement_recovery_required": (409, "A previous move needs attention."),
+    "source_changed": (409, "A file changed after it was checked."),
+    "protected_item_selected": (409, "A protected file cannot be moved."),
+    "unsafe_destination": (409, "A destination is no longer safe."),
+    "overwrite_detected": (409, "A destination is no longer available."),
+    "move_conflict": (409, "The approved moves now conflict."),
+    "no_supported_moves": (409, "No regular files are ready to move."),
 }
 
 
@@ -81,7 +107,7 @@ def create_organization_api_router() -> APIRouter:
                 "The organization result is unavailable for this scan.",
                 409,
             )
-        return _current_response(current.projection, current.session)
+        return _current_response(request, current.projection, current.session)
 
     @router.post("/api/organization/decisions", include_in_schema=False)
     async def update_decision(request: Request) -> Response:
@@ -188,7 +214,7 @@ def create_organization_api_router() -> APIRouter:
             )
         except (FormDataError, json.JSONDecodeError, TypeError, ValueError):
             return _decision_error(OrganizationDecisionError("invalid_option"))
-        return _current_response(current.projection, current.session)
+        return _current_response(request, current.projection, current.session)
 
     @router.post("/api/organization/approval", include_in_schema=False)
     async def approve_organization(request: Request) -> Response:
@@ -225,7 +251,96 @@ def create_organization_api_router() -> APIRouter:
             )
         except (FormDataError, TypeError, ValueError):
             return _decision_error(OrganizationDecisionError("invalid_option"))
-        return _current_response(current.projection, current.session)
+        return _current_response(request, current.projection, current.session)
+
+    @router.post("/api/organization/move/preview", include_in_schema=False)
+    async def preview_move(request: Request) -> Response:
+        common = _validate_common_request(request)
+        if common is not None:
+            return common
+        scan_or_response = _completed_scan(request)
+        if isinstance(scan_or_response, Response):
+            return scan_or_response
+        try:
+            form = await _validated_mutation_form(request, {"csrf_token"})
+            _require_movement_fields(form, {"csrf_token"})
+            projection = _projection(scan_or_response)
+            browser_session_id = session_id_for_session(request.session)
+            current = request.app.state.organization_decisions.approved_for_movement(
+                browser_session_id,
+                scan_or_response,
+                projection,
+            )
+            approved_plan = current.session.approved_plan
+            assert approved_plan is not None
+            assert scan_or_response.job_id is not None
+            preview = preview_organization_movement(
+                approved_plan=approved_plan,
+                browser_session_id=browser_session_id,
+                current_scan_generation=scan_or_response.job_id,
+                current_decision_revision=current.session.decision_revision,
+                coordinator=request.app.state.organization_execution,
+                operation_repository=request.app.state.organization_operations,
+            )
+        except (OrganizationDecisionError, OrganizationMovementError) as error:
+            return _movement_error(error.code)
+        except WebSecurityError:
+            return _error_response(
+                "request_authentication_failed",
+                "The movement request could not be authenticated.",
+                403,
+            )
+        except (FormDataError, TypeError, ValueError):
+            return _error_response("invalid_request", "The movement request is invalid.", 400)
+        return _json_response(preview.to_dict())
+
+    @router.post("/api/organization/move", include_in_schema=False)
+    async def execute_move(request: Request) -> Response:
+        common = _validate_common_request(request)
+        if common is not None:
+            return common
+        scan_or_response = _completed_scan(request)
+        if isinstance(scan_or_response, Response):
+            return scan_or_response
+        try:
+            expected_fields = {
+                "csrf_token",
+                "confirmation_token",
+                "confirmation",
+            }
+            form = await _validated_mutation_form(request, expected_fields)
+            _require_movement_fields(form, expected_fields)
+            projection = _projection(scan_or_response)
+            browser_session_id = session_id_for_session(request.session)
+            current = request.app.state.organization_decisions.approved_for_movement(
+                browser_session_id,
+                scan_or_response,
+                projection,
+            )
+            approved_plan = current.session.approved_plan
+            assert approved_plan is not None
+            assert scan_or_response.job_id is not None
+            result = execute_organization_movement(
+                approved_plan=approved_plan,
+                browser_session_id=browser_session_id,
+                current_scan_generation=scan_or_response.job_id,
+                current_decision_revision=current.session.decision_revision,
+                confirmation_token=_server_issued_id(form.get("confirmation_token")),
+                confirmation=_required(form.get("confirmation")),
+                coordinator=request.app.state.organization_execution,
+                operation_repository=request.app.state.organization_operations,
+            )
+        except (OrganizationDecisionError, OrganizationMovementError) as error:
+            return _movement_error(error.code)
+        except WebSecurityError:
+            return _error_response(
+                "request_authentication_failed",
+                "The movement request could not be authenticated.",
+                403,
+            )
+        except (FormDataError, TypeError, ValueError):
+            return _error_response("invalid_request", "The movement request is invalid.", 400)
+        return _json_response({"operation": result.to_operation_dict()})
 
     return router
 
@@ -300,6 +415,11 @@ def _require_exact_fields(form: dict[str, str], expected: set[str]) -> None:
         raise OrganizationDecisionError("invalid_option")
 
 
+def _require_movement_fields(form: dict[str, str], expected: set[str]) -> None:
+    if set(form) != expected:
+        raise FormDataError("movement fields are invalid")
+
+
 def _required(value: str | None) -> str:
     if not isinstance(value, str) or not value:
         raise OrganizationDecisionError("invalid_option")
@@ -311,6 +431,17 @@ def _revision(value: str | None) -> int:
     if not text.isdigit():
         raise OrganizationDecisionError("invalid_option")
     return int(text)
+
+
+def _server_issued_id(value: str | None) -> str:
+    text = _required(value)
+    try:
+        parsed = uuid.UUID(text)
+    except ValueError as error:
+        raise FormDataError("movement authorization ID is invalid") from error
+    if str(parsed) != text:
+        raise FormDataError("movement authorization ID is invalid")
+    return text
 
 
 def _id_array(value: str | None) -> tuple[str, ...]:
@@ -327,12 +458,14 @@ def _id_array(value: str | None) -> tuple[str, ...]:
     return tuple(data)
 
 
-def _current_response(projection, session) -> JSONResponse:
+def _current_response(request: Request, projection, session) -> JSONResponse:
     payload = projection.public_slice.to_dict()
     payload["review"] = organization_review_to_dict(session, projection)
-    response = JSONResponse(payload)
-    response.headers["Cache-Control"] = "no-store"
-    return response
+    payload["execution"] = project_organization_execution(
+        approved_plan=session.approved_plan,
+        operation_repository=request.app.state.organization_operations,
+    ).to_dict()
+    return _json_response(payload)
 
 
 def _decision_error(error: OrganizationDecisionError) -> JSONResponse:
@@ -343,10 +476,22 @@ def _decision_error(error: OrganizationDecisionError) -> JSONResponse:
     return _error_response(error.code, message, status)
 
 
+def _movement_error(code: str) -> JSONResponse:
+    status, message = _MOVEMENT_ERRORS.get(
+        code,
+        (400, "The movement request is invalid."),
+    )
+    return _error_response(code, message, status)
+
+
+def _json_response(payload: object, status_code: int = 200) -> JSONResponse:
+    response = JSONResponse(payload, status_code=status_code)
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
 def _error_response(code: str, message: str, status_code: int) -> JSONResponse:
-    response = JSONResponse(
+    return _json_response(
         {"error": {"code": code, "message": message}},
         status_code=status_code,
     )
-    response.headers["Cache-Control"] = "no-store"
-    return response

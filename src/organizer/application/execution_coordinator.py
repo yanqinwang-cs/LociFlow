@@ -33,6 +33,8 @@ class OrganizationExecutionCoordinator:
         self,
         approved_plan: ApprovedOrganizationPlan,
         *,
+        browser_session_id: str | None = None,
+        configured_root_identity: str | None = None,
         issued_at: str | None = None,
     ) -> MovementAuthorization:
         authorization = MovementAuthorization(
@@ -44,6 +46,8 @@ class OrganizationExecutionCoordinator:
             issued_at=issued_at or _utc_timestamp(),
             consumed_at=None,
             status=AUTHORIZATION_AVAILABLE,
+            browser_session_id=browser_session_id,
+            configured_root_identity=configured_root_identity,
         )
         with self._authorization_lock:
             self._authorizations[authorization.authorization_id] = authorization

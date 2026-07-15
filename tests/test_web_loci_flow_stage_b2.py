@@ -154,7 +154,7 @@ class WebLociFlowStageB2Tests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((first_source.read_bytes(), second_source.read_bytes()), before)
         self.assertFalse((self.root / "AI_Review" / "organization_operations").exists())
 
-    async def test_routes_keep_movement_activity_and_undo_outside_stage_b2(self) -> None:
+    async def test_backend_movement_is_post_only_and_executor_stays_out_of_routes(self) -> None:
         methods_by_path = {
             route.path: set(route.methods or set())
             for route in _application_routes(self.app.routes)
@@ -165,8 +165,9 @@ class WebLociFlowStageB2Tests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(methods_by_path["/api/organization/current"], {"GET"})
         self.assertEqual(methods_by_path["/api/organization/decisions"], {"POST"})
         self.assertEqual(methods_by_path["/api/organization/approval"], {"POST"})
+        self.assertEqual(methods_by_path["/api/organization/move/preview"], {"POST"})
+        self.assertEqual(methods_by_path["/api/organization/move"], {"POST"})
         for forbidden in (
-            "/api/organization/move",
             "/api/organization/movement-preview",
             "/api/loci-flow/move",
         ):

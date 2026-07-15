@@ -170,7 +170,7 @@ class WebLociFlowStageB3Tests(unittest.IsolatedAsyncioTestCase):
             for forbidden in (str(root), "sha256", "authorization_id", "legacy_operation_log"):
                 self.assertNotIn(forbidden, serialized)
 
-    async def test_routes_keep_browser_movement_absent_and_executor_out_of_routes(self) -> None:
+    async def test_backend_movement_is_post_only_and_executor_out_of_routes(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             app = create_app(WebAppConfig(
@@ -190,8 +190,9 @@ class WebLociFlowStageB3Tests(unittest.IsolatedAsyncioTestCase):
             {"POST"},
         )
         self.assertEqual(methods_by_path["/api/activity/{operation_id}/undo"], {"POST"})
+        self.assertEqual(methods_by_path["/api/organization/move/preview"], {"POST"})
+        self.assertEqual(methods_by_path["/api/organization/move"], {"POST"})
         for forbidden in (
-            "/api/organization/move",
             "/api/organization/movement-preview",
             "/api/loci-flow/move",
         ):

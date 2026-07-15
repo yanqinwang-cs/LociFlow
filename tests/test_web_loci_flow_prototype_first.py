@@ -117,14 +117,28 @@ class WebLociFlowPrototypeFirstTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("http://", shell.text)
         self.assertNotIn("https://", shell.text)
 
-    async def test_stage_a_adds_no_frontend_mutation_route(self) -> None:
+    async def test_frontend_stays_disconnected_from_backend_movement_routes(self) -> None:
         methods_by_path = {
             route.path: set(route.methods or set())
             for route in _application_routes(self.app.routes)
             if hasattr(route, "path") and hasattr(route, "methods")
         }
         self.assertEqual(methods_by_path["/loci-flow"], {"GET"})
-        self.assertNotIn("/api/organization/move", methods_by_path)
+        self.assertEqual(methods_by_path["/api/organization/move/preview"], {"POST"})
+        self.assertEqual(methods_by_path["/api/organization/move"], {"POST"})
+        loci = (
+            Path(__file__).resolve().parents[1]
+            / "src"
+            / "organizer"
+            / "web"
+            / "static"
+            / "loci_flow"
+        )
+        assets = "\n".join(
+            path.read_text(encoding="utf-8") for path in sorted(loci.glob("*.js"))
+        )
+        self.assertNotIn("/api/organization/move", assets)
+        self.assertIn("Move files — not connected yet", assets)
 
 
 def _client(app: object) -> httpx.AsyncClient:

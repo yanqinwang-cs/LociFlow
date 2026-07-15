@@ -108,6 +108,17 @@ class OrganizationOperationRepository:
         ]
         return matches[-1] if matches else None
 
+    def find_for_authorization(
+        self,
+        authorization_id: str,
+    ) -> OrganizationOperationRecord | None:
+        matches = [
+            record
+            for record in self.list_records()
+            if record.authorization_id == authorization_id
+        ]
+        return matches[-1] if matches else None
+
     def blocking_record(self) -> OrganizationOperationRecord | None:
         for record in reversed(self.list_records()):
             if record.status in BLOCKING_OPERATION_STATUSES:

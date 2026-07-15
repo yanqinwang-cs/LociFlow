@@ -53,6 +53,8 @@ class MovementAuthorization:
     issued_at: str
     consumed_at: str | None
     status: str
+    browser_session_id: str | None = None
+    configured_root_identity: str | None = None
 
 
 @dataclass(frozen=True)
