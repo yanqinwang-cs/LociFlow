@@ -95,18 +95,22 @@ const viewSource = {
     };
   },
   duplicateChoiceStatus(choiceId) {
-    const backendChoice = state.backendSnapshot.backendState?.choices_needed.find(
-      (item) => item.id === choiceId && item.choice_type === "exact_duplicate",
-    );
-    if (!backendChoice) return { valid: false };
+    const choice = currentDuplicateChoice(choiceId);
+    if (!choice) return { valid: false };
     const draft = duplicateDraft(choiceId);
     if (draft.optionId === "keep-all") return { valid: true };
     const selected = new Set(draft.selectedCopyIds);
     return {
-      valid: selected.size > 0 && selected.size < backendChoice.copies.length,
+      valid: selected.size > 0 && selected.size < choice.copies.length,
     };
   },
 };
+
+function currentDuplicateChoice(choiceId) {
+  return viewSource.getState().stageB1.organization.choicesNeeded.find(
+    (item) => item.id === choiceId && item.choiceType === "duplicate",
+  ) || null;
+}
 
 let dialogPayload = {};
 let dialogTrigger = null;
@@ -816,12 +820,12 @@ function toggleDuplicateCopy(target) {
 function confirmDuplicate(target) {
   const choiceId = target.dataset.itemId;
   const draft = duplicateDraft(choiceId);
-  const backendChoice = state.backendSnapshot.backendState?.choices_needed.find((item) => item.id === choiceId);
-  if (!backendChoice) return;
+  const choice = currentDuplicateChoice(choiceId);
+  if (!choice) return invalidateStaleDuplicateChoice(choiceId);
   const selected = new Set(draft.selectedCopyIds);
   if (
     draft.optionId === "choose-for-bin"
-    && (selected.size === 0 || selected.size >= backendChoice.copies.length)
+    && (selected.size === 0 || selected.size >= choice.copies.length)
   ) {
     announce("Choose at least one copy, but not every copy.");
     return setDialog("duplicate", { itemId: choiceId });
@@ -835,6 +839,15 @@ function confirmDuplicate(target) {
     draft.optionId === "keep-all" ? "All copies will stay where they are." : "Duplicate choice saved. No file moved.",
     { close: true },
   );
+}
+
+async function invalidateStaleDuplicateChoice(choiceId) {
+  const drafts = { ...state.duplicateDrafts };
+  delete drafts[choiceId];
+  state.duplicateDrafts = drafts;
+  closeDialog({ restoreFocus: false });
+  announce("This duplicate choice is no longer available. Reloading the latest organization.");
+  await loadCurrent();
 }
 
 function actionFor(target) {

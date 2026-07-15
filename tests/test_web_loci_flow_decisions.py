@@ -105,7 +105,7 @@ class WebLociFlowDecisionTests(unittest.IsolatedAsyncioTestCase):
         ):
             self.assertIn(wording, app + view_models + views)
         self.assertIn('decision === "undecided"', data_source)
-        self.assertIn("selected.size >= backendChoice.copies.length", app)
+        self.assertIn("selected.size >= choice.copies.length", app)
         self.assertIn('options.disabled ? "disabled"', views)
         for forbidden in (
             "localstorage",
