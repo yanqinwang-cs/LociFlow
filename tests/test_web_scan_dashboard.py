@@ -111,6 +111,8 @@ class WebScanDashboardTests(unittest.IsolatedAsyncioTestCase):
 def _csrf(html: str) -> str:
     match = re.search(r'name="csrf_token" value="([^"]+)"', html)
     if match is None:
+        match = re.search(r'<meta name="csrf-token" content="([^"]+)"', html)
+    if match is None:
         raise AssertionError("CSRF token not rendered")
     return match.group(1)
 

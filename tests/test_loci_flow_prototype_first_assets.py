@@ -42,6 +42,8 @@ class _StructureParser(HTMLParser):
         for name, value in attrs:
             if name in {"href", "src"} and tag in {"link", "img", "script"}:
                 value = "<packaged-asset>"
+            if tag == "meta" and ("name", "description") in attrs and name == "content":
+                value = "<production-copy>"
             normalized.append((name, value))
         self.tokens.append(("start", tag, tuple(normalized)))
 
@@ -79,14 +81,14 @@ class LociFlowPrototypeFirstAssetTests(unittest.TestCase):
                     (PROTOTYPE / relative).read_bytes(),
                 )
 
-    def test_stage_a_bootstrap_and_tree_paths_remain_available(self) -> None:
+    def test_stage_b2_bootstrap_and_stage_a_tree_paths_remain_available(self) -> None:
         app = (LIVE / "app.js").read_text(encoding="utf-8")
         tree = (LIVE / "tree.js").read_text(encoding="utf-8")
         for required in (
-            'import { createFixtureDataSource } from "./data_source.js";',
-            "const fixtureDataSource = createFixtureDataSource();",
-            "buildRouteViewModel(store, route)",
-            "buildDialogViewModel(store)",
+            'import { createLociFlowApiClient } from "./api.js";',
+            'import { createBackendDataSource } from "./data_source.js";',
+            "buildRouteViewModel(viewSource, state.route)",
+            "buildDialogViewModel(viewSource)",
         ):
             self.assertIn(required, app)
         self.assertIn('new URL("./assets/file-icons.svg", import.meta.url)', tree)
@@ -139,16 +141,13 @@ class LociFlowPrototypeFirstAssetTests(unittest.TestCase):
         ):
             self.assertIn(required, views)
 
-    def test_frontend_is_fixture_only_and_uses_no_backend_runtime(self) -> None:
+    def test_production_frontend_uses_backend_and_retains_explicit_test_fixtures(self) -> None:
         javascript = "\n".join(
             path.read_text(encoding="utf-8")
             for path in sorted(LIVE.glob("*.js"))
         )
         lower = javascript.lower()
         for forbidden in (
-            "/api/",
-            '"/scan',
-            "fetch(",
             "xmlhttprequest",
             "localstorage",
             "sessionstorage",
@@ -160,7 +159,13 @@ class LociFlowPrototypeFirstAssetTests(unittest.TestCase):
             "prototype/loci-flow",
         ):
             self.assertNotIn(forbidden, lower)
-        self.assertFalse((LIVE / "api.js").exists())
+        self.assertTrue((LIVE / "api.js").exists())
+        self.assertIn('const current_organization_url = "/api/organization/current"', lower)
+        self.assertIn('const scan_url = "/scan?surface=home"', lower)
+        data_source = (LIVE / "data_source.js").read_text(encoding="utf-8")
+        self.assertIn('import("./fixtures.json"', data_source)
+        self.assertNotIn('from "./fixtures.json"', data_source)
+        self.assertNotIn("createFixtureDataSource", (LIVE / "app.js").read_text(encoding="utf-8"))
 
     def test_no_external_assets_or_prohibited_product_language(self) -> None:
         authored = [

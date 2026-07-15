@@ -260,7 +260,8 @@ class WebAppTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.headers["cache-control"], "no-store")
         self.assertEqual(shell.status_code, 200)
         self.assertIn("<title>Home · Loci Flow</title>", shell.text)
-        self.assertIn("Sample files only. Your files are not changed.", shell.text)
+        self.assertIn("No files can move in this stage.", shell.text)
+        self.assertNotIn("Sample files only", shell.text)
         self.assertNotIn("<title>Home · bootAI</title>", shell.text)
         self.assertNotIn(str(self.root), shell.text)
 

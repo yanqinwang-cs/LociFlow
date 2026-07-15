@@ -89,8 +89,9 @@ class WebLociFlowDecisionTests(unittest.IsolatedAsyncioTestCase):
 
     def test_frontend_contains_decision_approval_and_ready_states_without_persistence(self) -> None:
         app = (LOCI / "app.js").read_text(encoding="utf-8")
+        data_source = (LOCI / "data_source.js").read_text(encoding="utf-8")
         views = (LOCI / "views.js").read_text(encoding="utf-8")
-        combined = (app + views).lower()
+        combined = (app + data_source + views).lower()
         for wording in (
             "Accept all recommended changes",
             "Keep here",
@@ -102,17 +103,17 @@ class WebLociFlowDecisionTests(unittest.IsolatedAsyncioTestCase):
             "Move files — not connected yet",
         ):
             self.assertIn(wording, app + views)
-        self.assertIn('item.decision === "undecided"', app)
-        self.assertIn("selected.size >= choice.copies.length", app)
-        self.assertIn('disabled: "disabled"', views)
+        self.assertIn('decision === "undecided"', data_source)
+        self.assertIn("selected.size >= backendChoice.copies.length", app)
+        self.assertIn('options.disabled ? "disabled"', views)
         for forbidden in (
             "localstorage",
             "sessionstorage",
             "document.cookie",
-            "innerhtml",
             "activity.push",
         ):
             self.assertNotIn(forbidden, combined)
+        self.assertEqual(app.count("elements.app.innerHTML ="), 1)
 
 
 def _client(app: object) -> httpx.AsyncClient:

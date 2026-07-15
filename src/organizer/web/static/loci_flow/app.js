@@ -1,10 +1,13 @@
-import { createFixtureDataSource } from "./data_source.js";
-import { createStore } from "./store.js";
+import { createLociFlowApiClient } from "./api.js";
+import { createBackendDataSource } from "./data_source.js";
 import { renderDialog, renderRoute } from "./views.js";
-import { buildDialogViewModel, buildRouteViewModel, buildShellViewModel } from "./view_models.js";
+import {
+  buildDialogViewModel,
+  buildProductionStageB1Contract,
+  buildRouteViewModel,
+  buildShellViewModel,
+} from "./view_models.js";
 
-const fixtureDataSource = createFixtureDataSource();
-const store = createStore(fixtureDataSource.load());
 const routes = new Set(["home", "organize", "duplicate-bin", "activity", "standards", "settings"]);
 const elements = {
   app: document.querySelector("#app"),
@@ -19,7 +22,62 @@ const elements = {
   dialogActions: document.querySelector("#dialog-actions"),
 };
 
-let dialogType = null;
+const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || "";
+const dataSource = createBackendDataSource({
+  apiClient: createLociFlowApiClient(),
+  csrfToken,
+});
+const state = {
+  route: "home",
+  theme: "light",
+  settingsSection: "appearance",
+  loadStatus: "loading",
+  backendSnapshot: { status: "loading", backendState: null },
+  selectedItemId: null,
+  selectedRowIds: [],
+  activeDialog: null,
+  pendingMutation: false,
+  scanPolling: false,
+  workflowOverride: null,
+  destinationDrafts: {},
+  duplicateDrafts: {},
+};
+const viewSource = {
+  getState() {
+    return {
+      route: state.route,
+      theme: state.theme,
+      selectedItemId: state.selectedItemId,
+      settingsSection: state.settingsSection,
+      settings: {
+        notifications: {
+          organizationReady: false,
+          moveCompleted: false,
+          moveFailed: false,
+        },
+      },
+      stageB1: buildProductionStageB1Contract({
+        snapshot: state.backendSnapshot,
+        workflowOverride: state.workflowOverride,
+        destinationDrafts: state.destinationDrafts,
+        duplicateDrafts: state.duplicateDrafts,
+      }),
+    };
+  },
+  duplicateChoiceStatus(choiceId) {
+    const backendChoice = state.backendSnapshot.backendState?.choices_needed.find(
+      (item) => item.id === choiceId && item.choice_type === "exact_duplicate",
+    );
+    if (!backendChoice) return { valid: false };
+    const draft = duplicateDraft(choiceId);
+    if (draft.optionId === "keep-all") return { valid: true };
+    const selected = new Set(draft.selectedCopyIds);
+    return {
+      valid: selected.size > 0 && selected.size < backendChoice.copies.length,
+    };
+  },
+};
+
 let dialogPayload = {};
 let dialogTrigger = null;
 
@@ -33,9 +91,37 @@ function announce(message) {
   window.requestAnimationFrame(() => { elements.live.textContent = message; });
 }
 
+function workflowOverride(status, message, action, label, staleKind = "revision") {
+  return {
+    stage: "stale",
+    status,
+    message,
+    staleKind,
+    primaryAction: { label, action, enabled: true },
+  };
+}
+
+function allItemIds() {
+  const backend = state.backendSnapshot.backendState;
+  if (!backend) return new Set();
+  return new Set([
+    ...backend.recommended_changes.map((item) => item.id),
+    ...backend.choices_needed.map((item) => item.id),
+    ...backend.kept_by_standards.map((item) => item.item.id),
+  ]);
+}
+
+function applySnapshot(snapshot, { preserveSelection = true } = {}) {
+  state.backendSnapshot = snapshot;
+  state.loadStatus = "ready";
+  if (!preserveSelection || !allItemIds().has(state.selectedItemId)) {
+    state.selectedItemId = null;
+  }
+  state.selectedRowIds = state.selectedRowIds.filter((id) => allItemIds().has(id));
+}
+
 function syncShell() {
-  const state = store.getState();
-  const shell = buildShellViewModel(store);
+  const shell = buildShellViewModel(viewSource);
   document.documentElement.dataset.theme = state.theme;
   document.querySelectorAll('[data-action="set-theme"]').forEach((control) => {
     control.setAttribute("aria-pressed", String(control.dataset.themeValue === state.theme));
@@ -51,32 +137,36 @@ function syncShell() {
   if (folderFreshness) folderFreshness.textContent = shell.toolbarFreshnessLabel;
   if (organizeCount) organizeCount.textContent = String(shell.organizeCount);
   if (binCount) binCount.textContent = String(shell.duplicateBinCount);
+  elements.app.inert = state.pendingMutation;
+  elements.app.setAttribute("aria-busy", String(state.pendingMutation || state.loadStatus === "loading"));
+  if (elements.dialog.open) elements.dialog.inert = state.pendingMutation;
 }
 
 function render(options = {}) {
-  const route = routeFromHash();
-  if (store.getState().route !== route) store.setRoute(route);
-  elements.app.innerHTML = renderRoute(buildRouteViewModel(store, route), route);
+  state.route = routeFromHash();
+  elements.app.innerHTML = renderRoute(buildRouteViewModel(viewSource, state.route), state.route);
   elements.app.setAttribute("aria-busy", "false");
-  document.title = `${route === "duplicate-bin" ? "Duplicate Bin" : route[0].toUpperCase() + route.slice(1)} · Loci Flow`;
+  document.title = `${state.route === "duplicate-bin" ? "Duplicate Bin" : state.route[0].toUpperCase() + state.route.slice(1)} · Loci Flow`;
   syncShell();
   if (options.focusChanges) {
     window.requestAnimationFrame(() => document.querySelector("#changes-to-confirm")?.focus({ preventScroll: false }));
   }
   if (options.focusMain) elements.main.focus({ preventScroll: true });
-  if (options.focusDetails) window.requestAnimationFrame(() => document.querySelector("#details-heading")?.focus({ preventScroll: true }));
+  if (options.focusDetails) {
+    window.requestAnimationFrame(() => document.querySelector("#details-heading")?.focus({ preventScroll: true }));
+  }
 }
 
 function navigate(route, options = {}) {
   if (!routes.has(route)) return;
-  store.setRoute(route);
+  state.route = route;
   if (window.location.hash !== `#/${route}`) window.location.hash = `#/${route}`;
   render(options);
 }
 
 function setDialog(type, payload = {}) {
-  const view = renderDialog(buildDialogViewModel(store), type, payload);
-  dialogType = type;
+  const view = renderDialog(buildDialogViewModel(viewSource), type, payload);
+  state.activeDialog = type;
   dialogPayload = payload;
   elements.dialogEyebrow.textContent = view.eyebrow;
   elements.dialogTitle.textContent = view.title;
@@ -94,8 +184,8 @@ function openDialog(type, payload = {}, trigger = document.activeElement) {
   });
 }
 
-function refreshDialog(type, payload, focusAttribute, focusValue) {
-  setDialog(type, payload);
+function refreshDialog(focusAttribute, focusValue) {
+  setDialog(state.activeDialog, dialogPayload);
   window.requestAnimationFrame(() => {
     const control = [...elements.dialog.querySelectorAll(`[${focusAttribute}]`)]
       .find((item) => item.getAttribute(focusAttribute) === focusValue);
@@ -105,316 +195,305 @@ function refreshDialog(type, payload, focusAttribute, focusValue) {
 
 function closeDialog({ restoreFocus = true } = {}) {
   if (elements.dialog.open) elements.dialog.close();
-  dialogType = null;
+  state.activeDialog = null;
   dialogPayload = {};
   if (restoreFocus) dialogTrigger?.focus?.();
   dialogTrigger = null;
 }
 
-function checkedFolder(name) {
-  const value = elements.dialog.querySelector(`input[name="${name}"]:checked`)?.value || "Sample Downloads";
-  return value.split("|");
+function setPending(value) {
+  state.pendingMutation = value;
+  syncShell();
 }
 
-function standardBuilderValue() {
-  return {
-    action: elements.dialog.querySelector('input[name="standard-action"]:checked')?.value || "Sort similar files",
-    recognize: elements.dialog.querySelector("#standard-recognize")?.value || "Person name",
-    grouping: elements.dialog.querySelector('input[name="standard-grouping"]:checked')?.value || "Create a folder for each value",
-    fileType: Boolean(elements.dialog.querySelector("#standard-file-type")?.checked),
-    folder: checkedFolder("standard-folder"),
+async function loadCurrent({ clearOverride = true } = {}) {
+  if (clearOverride) state.workflowOverride = null;
+  try {
+    applySnapshot(await dataSource.loadCurrentState());
+  } catch {
+    state.loadStatus = "error";
+    state.workflowOverride = workflowOverride(
+      "Organization information could not be loaded.",
+      "Try loading the latest organization information again.",
+      "reload-choices",
+      "Try again",
+    );
+  }
+  render();
+}
+
+async function checkFiles() {
+  if (state.scanPolling || state.pendingMutation) return;
+  state.workflowOverride = null;
+  state.scanPolling = true;
+  applySnapshot({ status: "checking", backendState: null });
+  render({ focusMain: true });
+  announce("Checking files…");
+  try {
+    const settled = await dataSource.startScan((snapshot) => {
+      applySnapshot(snapshot, { preserveSelection: false });
+      render();
+    });
+    applySnapshot(settled, { preserveSelection: false });
+    state.destinationDrafts = {};
+    state.duplicateDrafts = {};
+    announce(settled.status === "completed" ? "File check complete." : "File check failed.");
+  } catch {
+    applySnapshot({ status: "failed", backendState: null }, { preserveSelection: false });
+    announce("File check failed.");
+  } finally {
+    state.scanPolling = false;
+    render({ focusMain: true });
+  }
+}
+
+async function handleMutation(operation, successMessage, { close = false } = {}) {
+  if (state.pendingMutation) return;
+  setPending(true);
+  announce("Saving organization choice…");
+  try {
+    const snapshot = await operation();
+    applySnapshot(snapshot);
+    state.workflowOverride = null;
+    state.destinationDrafts = {};
+    state.duplicateDrafts = {};
+    if (close) closeDialog({ restoreFocus: false });
+    announce(successMessage);
+    render({ focusDetails: state.route === "organize" });
+  } catch (error) {
+    const code = error?.code;
+    if (code === "scan_generation_mismatch") {
+      state.selectedItemId = null;
+      state.selectedRowIds = [];
+      state.destinationDrafts = {};
+      state.duplicateDrafts = {};
+      state.workflowOverride = workflowOverride(
+        "Files have changed",
+        "Check the folder again before continuing.",
+        "check-again",
+        "Check again",
+        "generation",
+      );
+    } else if (code === "decision_revision_mismatch") {
+      await reloadAfterConflict();
+      state.workflowOverride = workflowOverride(
+        "Organization choices were updated",
+        "Reload the latest choices.",
+        "reload-choices",
+        "Reload choices",
+      );
+    } else if (code === "recommendation_set_changed") {
+      await reloadAfterConflict();
+      state.workflowOverride = workflowOverride(
+        "Organization changes were updated.",
+        "Review the latest changes.",
+        "reload-choices",
+        "Review changes",
+      );
+    } else if (new Set(["unknown_change_id", "unknown_choice_id", "invalid_option"]).has(code)) {
+      await reloadAfterConflict();
+      state.workflowOverride = workflowOverride(
+        "This choice is no longer available.",
+        "Reload the latest choices.",
+        "reload-choices",
+        "Reload choices",
+      );
+    } else {
+      state.workflowOverride = workflowOverride(
+        "Organization information could not be loaded.",
+        "No organization choice was changed.",
+        "reload-choices",
+        "Try again",
+      );
+    }
+    announce(state.workflowOverride.status);
+    render({ focusMain: true });
+  } finally {
+    setPending(false);
+  }
+}
+
+async function reloadAfterConflict() {
+  try {
+    applySnapshot(await dataSource.loadCurrentState());
+  } catch {
+    // The safe conflict state below remains visible if reloading also fails.
+  }
+}
+
+function recommendationDecision(target) {
+  return handleMutation(
+    () => dataSource.decideRecommendation(target.dataset.itemId, target.dataset.decision),
+    target.dataset.decision === "keep" ? "The file will stay here." : "Change accepted. No file moved.",
+  );
+}
+
+function acceptAllRecommendations() {
+  const backend = state.backendSnapshot.backendState;
+  if (!backend) return;
+  const decisions = new Map(backend.review.recommendations.map((item) => [item.change_id, item.decision]));
+  const pending = backend.recommended_changes
+    .map((item) => item.id)
+    .filter((id) => decisions.get(id) === "undecided");
+  return handleMutation(
+    () => dataSource.acceptRecommendations(pending),
+    `${pending.length} recommended ${pending.length === 1 ? "change" : "changes"} accepted. No file moved.`,
+  );
+}
+
+function selectDestination(target) {
+  state.destinationDrafts = {
+    ...state.destinationDrafts,
+    [target.dataset.itemId]: target.dataset.optionId,
+  };
+  refreshDialog("data-option-id", target.dataset.optionId);
+}
+
+function confirmDestination(target) {
+  const choiceId = target.dataset.itemId;
+  const optionId = state.destinationDrafts[choiceId];
+  if (!optionId) return;
+  return handleMutation(
+    () => dataSource.decideChoice(choiceId, optionId),
+    "Folder choice saved. No file moved.",
+    { close: true },
+  );
+}
+
+function duplicateDraft(choiceId) {
+  const backend = state.backendSnapshot.backendState;
+  const choiceState = backend?.review.choices.find((item) => item.choice_id === choiceId);
+  return state.duplicateDrafts[choiceId] || {
+    optionId: choiceState?.option_id || "keep-all",
+    selectedCopyIds: [...(choiceState?.selected_copy_ids || [])],
   };
 }
 
-function suggestedStandardValue() {
-  return {
-    name: elements.dialog.querySelector("#suggestion-name")?.value.trim() || "Untitled Standard",
-    description: elements.dialog.querySelector("#suggestion-description")?.value.trim() || "Review this organization instruction.",
-    appliesTo: (elements.dialog.querySelector("#suggestion-folder")?.value || "Sample Downloads")
-      .split("›")
-      .map((part) => part.trim())
-      .filter(Boolean),
+function setDuplicateDecision(target) {
+  const choiceId = target.dataset.itemId;
+  const current = duplicateDraft(choiceId);
+  state.duplicateDrafts = {
+    ...state.duplicateDrafts,
+    [choiceId]: {
+      optionId: target.dataset.duplicateDecision === "keep_all" ? "keep-all" : "choose-for-bin",
+      selectedCopyIds: current.selectedCopyIds,
+    },
   };
+  refreshDialog("data-duplicate-decision", target.dataset.duplicateDecision);
 }
 
-function afterChoice(message) {
-  announce(message);
-  render({ focusDetails: true });
+function toggleDuplicateCopy(target) {
+  const choiceId = target.dataset.itemId;
+  const current = duplicateDraft(choiceId);
+  const selected = new Set(current.selectedCopyIds);
+  if (selected.has(target.dataset.copyId)) selected.delete(target.dataset.copyId);
+  else selected.add(target.dataset.copyId);
+  state.duplicateDrafts = {
+    ...state.duplicateDrafts,
+    [choiceId]: { optionId: "choose-for-bin", selectedCopyIds: [...selected] },
+  };
+  refreshDialog("data-copy-id", target.dataset.copyId);
 }
 
-function actionFor(target, event) {
+function confirmDuplicate(target) {
+  const choiceId = target.dataset.itemId;
+  const draft = duplicateDraft(choiceId);
+  const backendChoice = state.backendSnapshot.backendState?.choices_needed.find((item) => item.id === choiceId);
+  if (!backendChoice) return;
+  const selected = new Set(draft.selectedCopyIds);
+  if (
+    draft.optionId === "choose-for-bin"
+    && (selected.size === 0 || selected.size >= backendChoice.copies.length)
+  ) {
+    announce("Choose at least one copy, but not every copy.");
+    return setDialog("duplicate", { itemId: choiceId });
+  }
+  return handleMutation(
+    () => dataSource.decideChoice(
+      choiceId,
+      draft.optionId,
+      draft.optionId === "choose-for-bin" ? [...selected] : undefined,
+    ),
+    draft.optionId === "keep-all" ? "All copies will stay where they are." : "Duplicate choice saved. No file moved.",
+    { close: true },
+  );
+}
+
+function actionFor(target) {
   const action = target.dataset.action;
   if (!action) return;
-
   if (action === "history-back") return window.history.back();
   if (action === "history-forward") return window.history.forward();
   if (action === "none") return;
   if (action === "set-theme") {
-    store.setTheme(target.dataset.themeValue);
+    state.theme = target.dataset.themeValue === "dark" ? "dark" : "light";
     announce(`${target.textContent.trim()} appearance selected.`);
     return render();
   }
-  if (action === "continue-organizing") {
-    store.openOrganize();
-    return navigate("organize", { focusChanges: true });
-  }
+  if (action === "continue-organizing") return navigate("organize", { focusChanges: true });
   if (action === "open-duplicate-bin") return navigate("duplicate-bin", { focusMain: true });
   if (action === "open-activity") return navigate("activity", { focusMain: true });
   if (action === "open-standards") return navigate("standards", { focusMain: true });
-  if (action === "check-files" || action === "check-again") {
-    store.startCheck();
-    announce(store.getState().stageB1 ? "Checking files…" : `${store.waitingChanges().length} sample changes are ready to organize.`);
-    return navigate("home", { focusMain: true });
-  }
-  if (action === "reload-choices") {
-    if (!store.reloadScenarioChoices()) return;
-    announce("The latest choices are ready to review.");
-    return navigate("organize", { focusChanges: true });
-  }
+  if (action === "check-files" || action === "check-again") return checkFiles();
+  if (action === "reload-choices") return loadCurrent();
   if (action === "set-style") {
-    store.setOrganizationStyle(target.dataset.style);
-    announce(`${target.textContent.trim().split("\n")[0]} style selected. No file moved.`);
-    return render({ focusChanges: true });
+    announce("Only the current deterministic organization plan is available.");
+    return;
   }
-  if (action === "filter-changes") {
-    store.setActionFilter(target.dataset.type);
-    return render({ focusChanges: true });
-  }
-  if (action === "accept-recommended") {
-    const ids = store.acceptRecommended();
-    announce(`${ids.length} recommended changes accepted. No file moved.`);
-    return render({ focusChanges: true });
-  }
-  if (action === "accept-contract-recommended") {
-    const recommendations = store.getState().stageB1?.organization.recommendations || [];
-    const pending = recommendations.filter((item) => item.decision === "undecided");
-    pending.forEach((item) => store.decideContractRecommendation(item.id, "accept"));
-    announce(`${pending.length} recommended ${pending.length === 1 ? "change" : "changes"} accepted. No file moved.`);
-    return render({ focusChanges: true });
-  }
-  if (action === "activate-contract-item") {
-    if (!store.selectContractItem(target.dataset.itemId)) return;
-    return render({ focusDetails: true });
-  }
-  if (action === "decide-contract-recommendation") {
-    if (!store.decideContractRecommendation(target.dataset.itemId, target.dataset.decision)) return;
-    announce(target.dataset.decision === "keep" ? "The file will stay here." : "Change accepted. No file moved.");
-    return render({ focusDetails: true });
-  }
-  if (action === "open-destination-choice") {
-    store.selectContractItem(target.dataset.itemId);
-    return openDialog("destination", { itemId: target.dataset.itemId }, target);
-  }
-  if (action === "select-destination-option") {
-    if (!store.selectDestinationOption(target.dataset.itemId, target.dataset.optionId)) return;
-    return refreshDialog("destination", { itemId: target.dataset.itemId }, "data-option-id", target.dataset.optionId);
-  }
-  if (action === "confirm-destination-choice") {
-    if (!store.confirmDestinationChoice(target.dataset.itemId)) return;
-    closeDialog({ restoreFocus: false });
-    announce("Folder choice saved. No file moved.");
-    return render({ focusDetails: true });
-  }
-  if (action === "open-duplicate-choice") {
-    store.selectContractItem(target.dataset.itemId);
-    return openDialog("duplicate", { itemId: target.dataset.itemId }, target);
-  }
-  if (action === "set-duplicate-decision") {
-    if (!store.setDuplicateDecision(target.dataset.itemId, target.dataset.duplicateDecision)) return;
-    if (elements.dialog.open && dialogType === "duplicate") {
-      return refreshDialog("duplicate", { itemId: target.dataset.itemId }, "data-duplicate-decision", target.dataset.duplicateDecision);
-    }
-    if (target.dataset.duplicateDecision === "keep_all") {
-      store.confirmDuplicateChoice(target.dataset.itemId);
-    }
-    announce(target.dataset.duplicateDecision === "keep_all" ? "All copies will stay where they are." : "Choose which copies to set aside.");
-    return render({ focusDetails: true });
-  }
-  if (action === "toggle-duplicate-copy") {
-    if (!store.toggleDuplicateCopy(target.dataset.itemId, target.dataset.copyId)) return;
-    return refreshDialog("duplicate", { itemId: target.dataset.itemId }, "data-copy-id", target.dataset.copyId);
-  }
-  if (action === "confirm-duplicate-choice") {
-    if (!store.confirmDuplicateChoice(target.dataset.itemId)) {
-      return setDialog("duplicate", { itemId: target.dataset.itemId });
-    }
-    closeDialog({ restoreFocus: false });
-    announce("Duplicate choice saved. No file moved.");
-    return render({ focusDetails: true });
-  }
-  if (action === "toggle-change") {
-    store.selectChange(target.dataset.changeId, { additive: true, range: event.shiftKey });
-    return render({ focusDetails: true });
-  }
-  if (action === "activate-change") {
-    store.selectChange(target.dataset.changeId, { additive: event.metaKey || event.ctrlKey, range: event.shiftKey });
-    return render({ focusDetails: true });
-  }
-  if (action === "select-all-visible") {
-    target.checked ? store.selectAllVisible() : store.clearSelection();
-    return render({ focusDetails: true });
-  }
-  if (action === "bulk-accept") {
-    const ids = store.bulkAction("accept");
-    return afterChoice(`${ids.length} compatible changes accepted together. No file moved.`);
-  }
-  if (action === "bulk-keep") {
-    const ids = store.bulkAction("keep");
-    return afterChoice(`${ids.length} changes kept together. No file moved.`);
-  }
-  if (action === "bulk-remove") {
-    const ids = store.bulkAction("remove");
-    return afterChoice(`${ids.length} changes removed together. No file moved.`);
-  }
-  if (action === "bulk-folder") return openDialog("folder", { bulk: true }, target);
-  if (action === "decide-change") {
-    store.decideChange(target.dataset.changeId, target.dataset.choice);
-    return afterChoice("Choice saved. No file moved.");
-  }
-  if (action === "open-folder") {
-    store.selectChange(target.dataset.changeId);
-    return openDialog("folder", { changeId: target.dataset.changeId }, target);
-  }
-  if (action === "confirm-folder") {
-    const folder = checkedFolder("change-folder-choice");
-    const ids = store.bulkAction("change-folder", folder);
-    closeDialog({ restoreFocus: false });
-    announce(`${ids.length} ${ids.length === 1 ? "change uses" : "changes use"} the chosen folder. No file moved.`);
-    return render({ focusDetails: true });
-  }
-  if (action === "dismiss-reuse") {
-    store.dismissReuseSuggestion();
-    return render({ focusDetails: true });
-  }
-  if (action === "review-and-approve") {
-    if (!store.beginApproval()) return;
-    render({ focusChanges: true });
-    return openDialog("approval", {}, target);
-  }
-  if (action === "approve-test-move") {
-    const batch = store.approveTestMove();
-    closeDialog({ restoreFocus: false });
-    if (!batch) return;
-    announce("Test move complete. No real files were changed.");
-    return navigate("organize", { focusMain: true });
-  }
-  if (action === "approve-organization") {
-    const approval = store.approveScenario();
-    closeDialog({ restoreFocus: false });
-    if (!approval) return;
-    announce("Organization approved. No files have moved yet.");
-    return navigate("organize", { focusMain: true });
-  }
-  if (action === "verify-test-move") {
-    const result = store.verifyTestMove();
-    if (!result) return;
-    announce(result.passed ? "Test move verified. No real files were changed." : "The sample checks found a problem.");
-    return render({ focusMain: true });
-  }
-  if (action === "complete-workflow") {
-    if (!store.completeWorkflow()) return;
-    announce("Everything is organized.");
-    return navigate("home", { focusMain: true });
-  }
-  if (action === "toggle-bin") {
-    store.toggleBinSelection(target.dataset.binId);
-    return render();
-  }
-  if (action === "select-all-bin") {
-    target.checked ? store.selectAllBin() : store.clearBinSelection();
-    return render();
-  }
-  if (action === "restore-one") {
-    const ids = store.restoreDuplicates([target.dataset.binId]);
-    announce(`${ids.length} file restored to its stored folder.`);
-    return render();
-  }
-  if (action === "restore-selected") {
-    const ids = store.restoreDuplicates();
-    announce(`${ids.length} ${ids.length === 1 ? "file" : "files"} restored to stored folders.`);
-    return render();
-  }
-  if (action === "toggle-activity") {
-    store.toggleActivity(target.dataset.activityId);
-    return render();
-  }
-  if (action === "expand-all-activity") {
-    store.setAllActivityExpanded(true);
-    return render();
-  }
-  if (action === "collapse-all-activity") {
-    store.setAllActivityExpanded(false);
-    return render();
-  }
-  if (action === "undo-move") {
-    if (!store.undoLatestMove()) return;
-    announce("The latest file move was undone in the sample.");
-    return navigate("home", { focusMain: true });
-  }
-  if (action === "interpret-preference") {
-    const text = document.querySelector("#preference-input")?.value || "";
-    store.interpretPreference(text);
-    announce("Preference interpreted for review. No Standard was activated.");
-    return render();
-  }
-  if (action === "clarify-preference") {
-    store.clarifyInterpretation(target.dataset.interpretChoice);
-    announce("Clarification saved. Suggested Standards are ready to review.");
-    return render();
-  }
-  if (action === "remove-suggested-standard") {
-    store.removeSuggestedStandard(target.dataset.suggestionId);
-    return render();
-  }
-  if (action === "edit-suggested-standard") return openDialog("standard-builder", { suggestedStandardId: target.dataset.suggestionId }, target);
-  if (action === "save-suggested-standard") {
-    store.updateSuggestedStandard(target.dataset.suggestionId, suggestedStandardValue());
-    closeDialog({ restoreFocus: false });
-    announce("Suggested Standard updated. It is not active yet.");
-    return render();
-  }
-  if (action === "confirm-suggested-standards") {
-    const count = store.confirmSuggestedStandards();
-    announce(`${count} Standards added. No file moved.`);
-    return render();
-  }
-  if (action === "cancel-interpretation") {
-    store.cancelInterpretation();
-    return render();
-  }
-  if (action === "open-standard-builder") return openDialog("standard-builder", { standardId: target.dataset.standardId || null }, target);
-  if (action === "save-standard") {
-    const standard = store.saveStandard(standardBuilderValue());
-    closeDialog({ restoreFocus: false });
-    announce(`${standard.name} saved. No file moved.`);
-    return navigate("standards", { focusMain: true });
-  }
-  if (action === "toggle-standard") {
-    store.toggleStandard(target.dataset.standardId);
-    announce("Standard updated. No file moved.");
-    return render();
-  }
-  if (action === "open-standard-conflict") return openDialog("standard-conflict", {}, target);
   if (action === "set-settings-section") {
-    store.setSettingsSection(target.dataset.section);
+    if (target.dataset.section !== "appearance") {
+      announce("Only appearance is available in this stage.");
+      return;
+    }
+    state.settingsSection = "appearance";
     return render();
   }
   if (action === "toggle-notification") {
-    store.toggleNotification(target.dataset.settingKey);
-    return render();
+    announce("Notifications are not connected in this stage.");
+    return;
   }
-  if (action === "reset-prototype") {
-    store.reset();
-    closeDialog({ restoreFocus: false });
-    announce("The starting sample has been restored.");
-    return navigate("home", { focusMain: true });
+  if (action === "accept-contract-recommended") return acceptAllRecommendations();
+  if (action === "activate-contract-item") {
+    state.selectedItemId = target.dataset.itemId;
+    return render({ focusDetails: true });
+  }
+  if (action === "decide-contract-recommendation") return recommendationDecision(target);
+  if (action === "open-destination-choice") {
+    state.selectedItemId = target.dataset.itemId;
+    const backendState = state.backendSnapshot.backendState?.review.choices.find(
+      (item) => item.choice_id === target.dataset.itemId,
+    );
+    if (backendState?.option_id) {
+      state.destinationDrafts = {
+        ...state.destinationDrafts,
+        [target.dataset.itemId]: backendState.option_id,
+      };
+    }
+    return openDialog("destination", { itemId: target.dataset.itemId }, target);
+  }
+  if (action === "select-destination-option") return selectDestination(target);
+  if (action === "confirm-destination-choice") return confirmDestination(target);
+  if (action === "open-duplicate-choice") {
+    state.selectedItemId = target.dataset.itemId;
+    return openDialog("duplicate", { itemId: target.dataset.itemId }, target);
+  }
+  if (action === "set-duplicate-decision") return setDuplicateDecision(target);
+  if (action === "toggle-duplicate-copy") return toggleDuplicateCopy(target);
+  if (action === "confirm-duplicate-choice") return confirmDuplicate(target);
+  if (action === "review-and-approve") return openDialog("approval", {}, target);
+  if (action === "approve-organization") {
+    return handleMutation(
+      () => dataSource.approve(),
+      "Organization approved. No files have moved yet.",
+      { close: true },
+    );
   }
   if (action === "close-dialog") return closeDialog();
 }
 
 document.addEventListener("click", (event) => {
   const target = event.target.closest("[data-action]");
-  if (target) actionFor(target, event);
+  if (target) actionFor(target);
 });
 
 document.addEventListener("keydown", (event) => {
@@ -448,12 +527,10 @@ document.addEventListener("keydown", (event) => {
   }
 });
 
-window.addEventListener("hashchange", () => {
-  store.setRoute(routeFromHash());
-  render({ focusMain: true });
-});
+window.addEventListener("hashchange", () => render({ focusMain: true }));
+window.addEventListener("beforeunload", () => dataSource.dispose());
 
-store.subscribe(syncShell);
 if (!window.location.hash) window.location.hash = "#/home";
-store.setRoute(routeFromHash());
+state.route = routeFromHash();
 render();
+loadCurrent();

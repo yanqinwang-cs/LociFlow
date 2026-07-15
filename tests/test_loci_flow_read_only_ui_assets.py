@@ -55,16 +55,13 @@ class LociFlowReadOnlyUiAssetTests(unittest.TestCase):
         self.assertNotIn("<script>", template)
         self.assertNotIn("style=", template)
 
-    def test_frontend_uses_fixture_boundary_without_backend_calls(self) -> None:
+    def test_frontend_uses_backend_with_explicit_test_fixture_boundary(self) -> None:
         javascript = "\n".join(
             path.read_text(encoding="utf-8")
             for path in sorted(LOCI.glob("*.js"))
         )
         lower = javascript.lower()
         for forbidden in (
-            "/api/",
-            '"/scan',
-            "fetch(",
             "localstorage",
             "sessionstorage",
             "indexeddb",
@@ -76,9 +73,11 @@ class LociFlowReadOnlyUiAssetTests(unittest.TestCase):
         ):
             self.assertNotIn(forbidden, lower)
         self.assertIn("createFixtureDataSource", javascript)
+        self.assertIn("createBackendDataSource", javascript)
         self.assertIn("buildHomeViewModel", javascript)
         self.assertIn("buildOrganizeViewModel", javascript)
-        self.assertFalse((LOCI / "api.js").exists())
+        self.assertTrue((LOCI / "api.js").exists())
+        self.assertNotIn("createFixtureDataSource", (LOCI / "app.js").read_text(encoding="utf-8"))
 
     def test_all_six_prototype_pages_are_live(self) -> None:
         views = (LOCI / "views.js").read_text(encoding="utf-8")
@@ -107,10 +106,10 @@ class LociFlowReadOnlyUiAssetTests(unittest.TestCase):
             import assert from 'node:assert/strict';
             const module = await import({(LOCI / 'data_source.js').as_uri()!r});
             const source = module.createFixtureDataSource();
-            const first = source.load();
+            const first = await source.load();
             first.meta.currentFolder = 'Changed';
             first.baseChanges.length = 0;
-            const second = source.load();
+            const second = await source.load();
             assert.equal(source.kind, 'fixture');
             assert.equal(second.meta.currentFolder, 'Sample Downloads');
             assert.ok(second.baseChanges.length > 0);

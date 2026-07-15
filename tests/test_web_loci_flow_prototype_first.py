@@ -84,7 +84,8 @@ class WebLociFlowPrototypeFirstTests(unittest.IsolatedAsyncioTestCase):
             ["home", "organize", "duplicate-bin", "activity", "standards", "settings"],
         )
         self.assertEqual(shell.text.count("<strong>Loci Flow</strong>"), 1)
-        self.assertIn("Sample files only. Your files are not changed.", shell.text)
+        self.assertIn("No files can move in this stage.", shell.text)
+        self.assertNotIn("Sample files only", shell.text)
         self.assertIn('data-theme-value="light"', shell.text)
         self.assertIn('data-theme-value="dark"', shell.text)
         self.assertNotIn("site-header", shell.text)

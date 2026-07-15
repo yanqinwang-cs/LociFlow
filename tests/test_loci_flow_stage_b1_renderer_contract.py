@@ -32,7 +32,7 @@ class LociFlowStageB1RendererContractTests(unittest.TestCase):
             import {{
               STAGE_B1_SCENARIO_IDS, DEFAULT_STAGE_B1_SCENARIO_ID
             }} from {json.dumps((LIVE / 'stage_b1_scenarios.js').as_uri())};
-            const make = (scenarioId) => createStore(createFixtureDataSource({{ scenarioId }}).load());
+            const make = async (scenarioId) => createStore(await createFixtureDataSource({{ scenarioId }}).load());
             const page = (store, route) => renderRoute(buildRouteViewModel(store, route), route);
             const dialog = (store, type, payload={{}}) => renderDialog(buildDialogViewModel(store), type, payload);
             {body}
@@ -49,7 +49,7 @@ class LociFlowStageB1RendererContractTests(unittest.TestCase):
     def test_scenario_set_is_exact_and_accepted_default_is_the_default(self) -> None:
         result = self.run_node(
             """
-            const source=createFixtureDataSource(); const store=createStore(source.load());
+            const source=createFixtureDataSource(); const store=createStore(await source.load());
             console.log(JSON.stringify({ids:STAGE_B1_SCENARIO_IDS,defaultId:DEFAULT_STAGE_B1_SCENARIO_ID,sourceId:source.scenarioId,contract:store.getState().stageB1}));
             """
         )
@@ -69,7 +69,7 @@ class LociFlowStageB1RendererContractTests(unittest.TestCase):
     def test_accepted_default_html_matches_the_accepted_prototype(self) -> None:
         result = self.run_node(
             f"""
-            const current=make('accepted_default');
+            const current=await make('accepted_default');
             const fixture=JSON.parse(fs.readFileSync({json.dumps(str(PROTOTYPE / 'fixtures.json'))},'utf8'));
             const {{ createStore: createAcceptedStore }}=await import({json.dumps((PROTOTYPE / 'store.js').as_uri())});
             const {{ renderRoute: renderAccepted }}=await import({json.dumps((PROTOTYPE / 'views.js').as_uri())});
@@ -85,7 +85,7 @@ class LociFlowStageB1RendererContractTests(unittest.TestCase):
         result = self.run_node(
             """
             const ids=['not_checked','checking','recommendations','ready_for_approval','ready_to_move','no_changes','stale_generation','stale_revision'];
-            console.log(JSON.stringify(Object.fromEntries(ids.map(id=>{const store=make(id);const model=buildHomeViewModel(store);return [id,{scope:model.scope.displayName,fresh:model.freshness.lastCheckedLabel,html:page(store,'home')}];}))));
+            console.log(JSON.stringify(Object.fromEntries(await Promise.all(ids.map(async id=>{const store=await make(id);const model=buildHomeViewModel(store);return [id,{scope:model.scope.displayName,fresh:model.freshness.lastCheckedLabel,html:page(store,'home')}];})))));
             """
         )
         expected = {
@@ -111,7 +111,7 @@ class LociFlowStageB1RendererContractTests(unittest.TestCase):
     def test_structured_organize_rows_details_and_kept_items_render_separately(self) -> None:
         result = self.run_node(
             """
-            const store=make('recommendations'); const model=buildOrganizeViewModel(store); const before=page(store,'organize');
+            const store=await make('recommendations'); const model=buildOrganizeViewModel(store); const before=page(store,'organize');
             store.selectContractItem('recommend-budget'); const selected=page(store,'organize');
             store.decideContractRecommendation('recommend-budget','keep'); const kept=page(store,'organize');
             console.log(JSON.stringify({before,selected,kept,model:{name:model.organization.recommendations[0].name,size:model.organization.recommendations[0].size,current:model.organization.recommendations[0].currentFolder}}));
@@ -132,7 +132,7 @@ class LociFlowStageB1RendererContractTests(unittest.TestCase):
     def test_destination_choice_uses_supplied_options_and_stores_only_the_selected_id(self) -> None:
         result = self.run_node(
             """
-            const store=make('destination_choice'); const before=dialog(store,'destination',{itemId:'choose-notes-folder'});
+            const store=await make('destination_choice'); const before=dialog(store,'destination',{itemId:'choose-notes-folder'});
             const selected=store.selectDestinationOption('choose-notes-folder','notes-keep');
             const after=dialog(store,'destination',{itemId:'choose-notes-folder'});
             const confirmed=store.confirmDestinationChoice('choose-notes-folder');
@@ -150,7 +150,7 @@ class LociFlowStageB1RendererContractTests(unittest.TestCase):
     def test_duplicate_choice_enforces_a_nonempty_proper_subset(self) -> None:
         result = self.run_node(
             """
-            const store=make('duplicate_choice');
+            const store=await make('duplicate_choice');
             const zeroSet=store.setDuplicateCopies('choose-brand-copies',[]); const zero=store.confirmDuplicateChoice('choose-brand-copies');
             store.setDuplicateCopies('choose-brand-copies',['brand-assets','brand-downloads','brand-shared']); const all=store.confirmDuplicateChoice('choose-brand-copies');
             const duplicateIds=store.setDuplicateCopies('choose-brand-copies',['brand-assets','brand-assets']);
@@ -174,11 +174,11 @@ class LociFlowStageB1RendererContractTests(unittest.TestCase):
     def test_supplied_tree_is_rendered_without_rebuilding_or_forbidden_items(self) -> None:
         result = self.run_node(
             """
-            const store=make('recommendations'); const model=buildOrganizeViewModel(store);
+            const store=await make('recommendations'); const model=buildOrganizeViewModel(store);
             const before=renderMovementTree(model.organization.movementTree);
             store.decideContractRecommendation('recommend-report','keep');
             const after=renderMovementTree(buildOrganizeViewModel(store).organization.movementTree);
-            const choiceTree=page(make('destination_choice'),'organize');
+            const choiceTree=page(await make('destination_choice'),'organize');
             console.log(JSON.stringify({before,after,choiceTree}));
             """
         )
@@ -193,10 +193,10 @@ class LociFlowStageB1RendererContractTests(unittest.TestCase):
     def test_approval_ready_to_move_and_stale_states_have_product_language_only(self) -> None:
         result = self.run_node(
             """
-            const store=make('ready_for_approval'); const activityBefore=store.getState().activityMoves.length;
+            const store=await make('ready_for_approval'); const activityBefore=store.getState().activityMoves.length;
             const approval=dialog(store,'approval'); const approved=store.approveScenario();
             const ready=page(store,'organize'); const activityAfter=store.getState().activityMoves.length;
-            const staleGeneration=page(make('stale_generation'),'organize'); const staleRevision=page(make('stale_revision'),'organize');
+            const staleGeneration=page(await make('stale_generation'),'organize'); const staleRevision=page(await make('stale_revision'),'organize');
             console.log(JSON.stringify({approval,approved,ready,activityBefore,activityAfter,staleGeneration,staleRevision}));
             """
         )
@@ -218,7 +218,7 @@ class LociFlowStageB1RendererContractTests(unittest.TestCase):
     def test_disconnected_pages_show_no_accepted_fixture_records_or_actions(self) -> None:
         result = self.run_node(
             """
-            const store=make('disconnected_pages'); console.log(JSON.stringify({bin:page(store,'duplicate-bin'),activity:page(store,'activity'),standards:page(store,'standards'),settings:page(store,'settings')}));
+            const store=await make('disconnected_pages'); console.log(JSON.stringify({bin:page(store,'duplicate-bin'),activity:page(store,'activity'),standards:page(store,'standards'),settings:page(store,'settings')}));
             """
         )
         self.assertIn("Duplicate Bin is not connected yet.", result["bin"])
@@ -229,21 +229,22 @@ class LociFlowStageB1RendererContractTests(unittest.TestCase):
         self.assertNotIn("Keep Submissions unchanged", result["standards"])
         self.assertIn("Appearance", result["settings"])
 
-    def test_fixture_boundary_has_no_network_persistence_or_dom_bypass(self) -> None:
-        javascript = "\n".join(
-            path.read_text(encoding="utf-8") for path in sorted(LIVE.glob("*.js"))
-        )
-        lower = javascript.lower()
+    def test_fixture_boundary_remains_explicit_without_persistence_or_dom_bypass(self) -> None:
+        fixture_source = (LIVE / "data_source.js").read_text(encoding="utf-8")
+        lower = fixture_source.lower()
         for forbidden in (
-            "fetch(", "xmlhttprequest", "websocket", "eventsource", "/api/",
-            '"/scan', "localstorage", "sessionstorage", "indexeddb",
+            "fetch(", "xmlhttprequest", "websocket", "eventsource",
+            "localstorage", "sessionstorage", "indexeddb",
             "document.cookie", "shutil", "os.rename", "path.rename",
         ):
             self.assertNotIn(forbidden, lower)
+        self.assertIn('import("./fixtures.json"', fixture_source)
+        self.assertIn('import("./stage_b1_scenarios.js")', fixture_source)
         self.assertNotRegex(lower, r"[?&](fixture|scenario|debug)=")
         app = (LIVE / "app.js").read_text(encoding="utf-8")
         self.assertEqual(app.count("elements.app.innerHTML ="), 1)
-        self.assertIn("renderRoute(buildRouteViewModel(store, route), route)", app)
+        self.assertIn("renderRoute(buildRouteViewModel(viewSource, state.route), state.route)", app)
+        self.assertNotIn("createFixtureDataSource", app)
 
     def test_prohibited_visible_language_is_absent(self) -> None:
         authored = "\n".join(
