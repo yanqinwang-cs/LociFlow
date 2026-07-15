@@ -7,11 +7,42 @@ const KNOWN_KINDS = new Set([
 const REVIEW_STATUSES = new Set(["in_progress", "ready_for_approval", "ready_to_move"]);
 const RECOMMENDATION_DECISIONS = new Set(["undecided", "accept", "keep"]);
 const MAX_TEXT_LENGTH = 2048;
+const MAX_CONFIRMATION_TOKEN_LENGTH = 512;
+const UNDO_CONFIRMATION = "UNDO FILE MOVE";
+const ACTIVITY_TYPES = new Set(["organization", "restore"]);
+const MOVEMENT_ACTIVITY_STATUSES = new Set([
+  "verified", "partial_movement", "movement_failed", "verification_failed",
+  "prepared", "moving", "moved_unverified", "interrupted", "recovery_required",
+]);
+const RESTORE_ACTIVITY_STATUSES = new Set([
+  "restored", "partial_undo", "undo_failed", "undo_verification_failed",
+  "prepared", "undoing", "restored_unverified", "interrupted",
+]);
+const ACTIVITY_ERROR_MESSAGES = Object.freeze({
+  operation_not_found: "This move is no longer available.",
+  operation_not_undoable: "This move can no longer be undone.",
+  operation_superseded: "A newer file move must be handled first.",
+  undo_already_started: "This move is already being restored.",
+  undo_already_completed: "This move has already been restored.",
+  undo_destination_occupied: "A file now exists in one of the previous folders.",
+  undo_source_missing: "A moved file could not be found.",
+  undo_source_changed: "A moved file changed after it was moved.",
+  unsafe_undo_path: "This move cannot be undone safely.",
+  movement_or_undo_in_progress: "Another file action is running.",
+});
 
 export class OrganizationDataError extends Error {
   constructor(code, message) {
     super(message);
     this.name = "OrganizationDataError";
+    this.code = code;
+  }
+}
+
+export class ActivityDataError extends Error {
+  constructor(code, message) {
+    super(message);
+    this.name = "ActivityDataError";
     this.code = code;
   }
 }
@@ -32,6 +63,23 @@ function contractError() {
     "invalid_contract",
     "Organization information could not be loaded.",
   );
+}
+
+function activityContractError() {
+  return new ActivityDataError(
+    "invalid_activity_contract",
+    "Activity could not be loaded.",
+  );
+}
+
+function requireActivityObject(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw activityContractError();
+  return value;
+}
+
+function requireActivityArray(value) {
+  if (!Array.isArray(value)) throw activityContractError();
+  return value;
 }
 
 function requireObject(value) {
@@ -58,6 +106,53 @@ function requireText(value, { allowDot = false } = {}) {
 
 function requireCount(value) {
   if (!Number.isSafeInteger(value) || value < 0) throw contractError();
+  return value;
+}
+
+export function isCanonicalActivityId(value) {
+  return typeof value === "string"
+    && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(value);
+}
+
+function requireActivityId(value) {
+  if (!isCanonicalActivityId(value)) throw activityContractError();
+  return value;
+}
+
+function requireActivityText(value) {
+  if (typeof value !== "string" || !value || value.length > MAX_TEXT_LENGTH) {
+    throw activityContractError();
+  }
+  return value;
+}
+
+function requireActivityCount(value) {
+  if (!Number.isSafeInteger(value) || value < 0) throw activityContractError();
+  return value;
+}
+
+function requireIsoTimestamp(value) {
+  if (value === null) return null;
+  if (typeof value !== "string" || value.length > 64) throw activityContractError();
+  const match = value.match(
+    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(Z|[+-]\d{2}:\d{2})$/,
+  );
+  if (!match) throw activityContractError();
+  const [, year, month, day, hour, minute, second, zone] = match;
+  const numeric = [year, month, day, hour, minute, second].map(Number);
+  const [yearValue, monthValue, dayValue, hourValue, minuteValue, secondValue] = numeric;
+  const daysInMonth = new Date(Date.UTC(yearValue, monthValue, 0)).getUTCDate();
+  if (
+    monthValue < 1 || monthValue > 12 || dayValue < 1 || dayValue > daysInMonth
+    || hourValue > 23 || minuteValue > 59 || secondValue > 59
+  ) {
+    throw activityContractError();
+  }
+  if (zone !== "Z") {
+    const [zoneHour, zoneMinute] = zone.slice(1).split(":").map(Number);
+    if (zoneHour > 23 || zoneMinute > 59) throw activityContractError();
+  }
+  if (!Number.isFinite(Date.parse(value))) throw activityContractError();
   return value;
 }
 
@@ -290,6 +385,131 @@ export function validateOrganizationResponse(rawPayload) {
   return deepFreeze(payload);
 }
 
+function validateActivityDetail(rawDetail, type) {
+  const detail = requireActivityObject(rawDetail);
+  const status = requireActivityText(detail.status);
+  if (type === "organization") {
+    if (!isSafeRelativePath(detail.source, { allowDot: false })) throw activityContractError();
+    if (!isSafeRelativePath(detail.destination, { allowDot: false })) throw activityContractError();
+    return { source: detail.source, destination: detail.destination, status };
+  }
+  if (!isSafeRelativePath(detail.restored_to, { allowDot: false })) throw activityContractError();
+  if (!isSafeRelativePath(detail.moved_from, { allowDot: false })) throw activityContractError();
+  return { restored_to: detail.restored_to, moved_from: detail.moved_from, status };
+}
+
+function validateActivityEntry(rawEntry) {
+  const entry = requireActivityObject(rawEntry);
+  const id = requireActivityId(entry.id);
+  if (!ACTIVITY_TYPES.has(entry.type)) throw activityContractError();
+  const title = requireActivityText(entry.title);
+  const status = requireActivityText(entry.status);
+  const allowedStatuses = entry.type === "organization"
+    ? MOVEMENT_ACTIVITY_STATUSES
+    : RESTORE_ACTIVITY_STATUSES;
+  if (!allowedStatuses.has(status)) throw activityContractError();
+  const startedAt = requireIsoTimestamp(entry.started_at);
+  const completedAt = requireIsoTimestamp(entry.completed_at);
+  for (const field of [
+    "files_expected", "files_moved", "files_restored", "files_failed", "files_unattempted",
+  ]) {
+    requireActivityCount(entry[field]);
+  }
+  const verificationStatus = entry.verification_status === null
+    ? null
+    : requireActivityText(entry.verification_status);
+  if (typeof entry.undoable !== "boolean") throw activityContractError();
+  const relatedOperationId = entry.related_operation_id === null
+    ? null
+    : requireActivityId(entry.related_operation_id);
+  const completed = entry.type === "organization" ? entry.files_moved : entry.files_restored;
+  if (completed + entry.files_failed + entry.files_unattempted > entry.files_expected) {
+    throw activityContractError();
+  }
+  if (entry.type === "organization") {
+    if (entry.files_restored !== 0 || relatedOperationId !== null) throw activityContractError();
+    if (
+      entry.undoable
+      && (status !== "verified" || verificationStatus !== "passed" || entry.files_moved < 1)
+    ) {
+      throw activityContractError();
+    }
+  } else if (entry.files_moved !== 0 || entry.undoable || relatedOperationId === null) {
+    throw activityContractError();
+  }
+  return {
+    id,
+    type: entry.type,
+    title,
+    status,
+    started_at: startedAt,
+    completed_at: completedAt,
+    files_expected: entry.files_expected,
+    files_moved: entry.files_moved,
+    files_restored: entry.files_restored,
+    files_failed: entry.files_failed,
+    files_unattempted: entry.files_unattempted,
+    verification_status: verificationStatus,
+    undoable: entry.undoable,
+    related_operation_id: relatedOperationId,
+    details: requireActivityArray(entry.details).map(
+      (detail) => validateActivityDetail(detail, entry.type),
+    ),
+  };
+}
+
+export function validateActivityResponse(rawPayload) {
+  const payload = requireActivityObject(rawPayload);
+  const ids = new Set();
+  let undoableCount = 0;
+  const activity = requireActivityArray(payload.activity).map((rawEntry) => {
+    const entry = validateActivityEntry(rawEntry);
+    if (ids.has(entry.id)) throw activityContractError();
+    ids.add(entry.id);
+    if (entry.undoable) undoableCount += 1;
+    return entry;
+  });
+  if (undoableCount > 1) throw activityContractError();
+  return deepFreeze({ activity });
+}
+
+export function validateUndoPreview(rawPreview, requestedOperationId) {
+  const preview = requireActivityObject(rawPreview);
+  requireActivityId(requestedOperationId);
+  if (requireActivityId(preview.operation_id) !== requestedOperationId) throw activityContractError();
+  if (!Number.isSafeInteger(preview.files_to_restore) || preview.files_to_restore < 1) {
+    throw activityContractError();
+  }
+  if (preview.confirmation !== UNDO_CONFIRMATION) throw activityContractError();
+  if (
+    typeof preview.confirmation_token !== "string"
+    || !preview.confirmation_token
+    || preview.confirmation_token.length > MAX_CONFIRMATION_TOKEN_LENGTH
+  ) {
+    throw activityContractError();
+  }
+  return deepFreeze({
+    operation_id: preview.operation_id,
+    files_to_restore: preview.files_to_restore,
+    confirmation: preview.confirmation,
+    confirmation_token: preview.confirmation_token,
+  });
+}
+
+export function activityErrorMessage(error) {
+  return ACTIVITY_ERROR_MESSAGES[error?.code]
+    || (error?.code === "activity_unavailable" ? "Activity could not be loaded." : null)
+    || "The Activity request could not be completed.";
+}
+
+export function isUncertainUndoError(error) {
+  const code = error?.code || "";
+  return code === "request_failed"
+    || code === "invalid_response"
+    || /^http_5\d\d$/.test(code)
+    || !Object.hasOwn(ACTIVITY_ERROR_MESSAGES, code);
+}
+
 function snapshot(status, backendState = null) {
   return Object.freeze({ status, backendState });
 }
@@ -297,6 +517,14 @@ function snapshot(status, backendState = null) {
 function normalizeApiError(error) {
   if (error instanceof OrganizationDataError || error instanceof LociFlowApiError) return error;
   return new OrganizationDataError("request_failed", "Organization information could not be loaded.");
+}
+
+function normalizeActivityError(error, fallbackMessage) {
+  if (error instanceof ActivityDataError) return error;
+  if (error instanceof LociFlowApiError) {
+    return new ActivityDataError(error.code, ACTIVITY_ERROR_MESSAGES[error.code] || fallbackMessage);
+  }
+  return new ActivityDataError("request_failed", fallbackMessage);
 }
 
 let fixtureModulesPromise;
@@ -340,6 +568,8 @@ export function createBackendDataSource({
   let scanPending = false;
   let pollTimer = null;
   let wakePoll = null;
+  let activityState = null;
+  let undoMutationPending = false;
 
   function assertActive() {
     if (disposed) throw new OrganizationDataError("disposed", "The organization view is unavailable.");
@@ -488,6 +718,73 @@ export function createBackendDataSource({
     return mutate((context) => apiClient.approveOrganizationPlan(context, csrfToken));
   }
 
+  async function loadActivity() {
+    assertActive();
+    try {
+      if (typeof apiClient.getActivity !== "function") throw new TypeError("Activity API is unavailable");
+      activityState = validateActivityResponse(await apiClient.getActivity());
+      return activityState;
+    } catch (error) {
+      throw normalizeActivityError(error, "Activity could not be loaded.");
+    }
+  }
+
+  async function withUndoMutation(operation) {
+    assertActive();
+    if (undoMutationPending) {
+      throw new ActivityDataError("undo_in_progress", "Another Undo request is already running.");
+    }
+    undoMutationPending = true;
+    try {
+      return await operation();
+    } finally {
+      undoMutationPending = false;
+    }
+  }
+
+  function currentUndoableEntry(operationId) {
+    requireActivityId(operationId);
+    const entry = activityState?.activity.find((item) => item.id === operationId);
+    if (!entry || entry.undoable !== true) {
+      throw new ActivityDataError("operation_not_undoable", ACTIVITY_ERROR_MESSAGES.operation_not_undoable);
+    }
+    return entry;
+  }
+
+  function previewUndo(operationId) {
+    currentUndoableEntry(operationId);
+    return withUndoMutation(async () => {
+      try {
+        if (typeof apiClient.previewActivityUndo !== "function") throw new TypeError("Undo API is unavailable");
+        return validateUndoPreview(
+          await apiClient.previewActivityUndo(operationId, csrfToken),
+          operationId,
+        );
+      } catch (error) {
+        throw normalizeActivityError(error, "The Undo preview could not be loaded.");
+      }
+    });
+  }
+
+  function confirmUndo(operationId, confirmationToken) {
+    currentUndoableEntry(operationId);
+    if (
+      typeof confirmationToken !== "string"
+      || !confirmationToken
+      || confirmationToken.length > MAX_CONFIRMATION_TOKEN_LENGTH
+    ) {
+      throw activityContractError();
+    }
+    return withUndoMutation(async () => {
+      try {
+        if (typeof apiClient.undoActivityOperation !== "function") throw new TypeError("Undo API is unavailable");
+        return await apiClient.undoActivityOperation(operationId, confirmationToken, csrfToken);
+      } catch (error) {
+        throw normalizeActivityError(error, "The Undo result could not be loaded.");
+      }
+    });
+  }
+
   function dispose() {
     disposed = true;
     if (pollTimer !== null) cancel(pollTimer);
@@ -504,8 +801,12 @@ export function createBackendDataSource({
     decideChoice,
     acceptRecommendations,
     approve,
+    loadActivity,
+    previewUndo,
+    confirmUndo,
     dispose,
     currentState: () => current,
     isMutationPending: () => mutationPending,
+    isUndoPending: () => undoMutationPending,
   });
 }

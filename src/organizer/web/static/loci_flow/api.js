@@ -2,6 +2,8 @@ const CURRENT_ORGANIZATION_URL = "/api/organization/current";
 const DECISIONS_URL = "/api/organization/decisions";
 const APPROVAL_URL = "/api/organization/approval";
 const SCAN_URL = "/scan?surface=home";
+const ACTIVITY_URL = "/api/activity";
+const UNDO_CONFIRMATION = "UNDO FILE MOVE";
 
 export class LociFlowApiError extends Error {
   constructor(code, message, status = 0) {
@@ -83,6 +85,18 @@ function mutationBase(payload, csrfToken) {
     scan_generation: String(payload.scanGeneration),
     expected_revision: String(payload.expectedRevision),
   };
+}
+
+export function isCanonicalOperationId(value) {
+  return typeof value === "string"
+    && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(value);
+}
+
+function requiredOperationId(operationId) {
+  if (!isCanonicalOperationId(operationId)) {
+    throw new LociFlowApiError("invalid_activity_contract", "Activity information is invalid.");
+  }
+  return operationId;
 }
 
 export async function getCurrentOrganization(fetchImpl = defaultFetch) {
@@ -175,6 +189,59 @@ export async function approveOrganizationPlan(
   return postJson(APPROVAL_URL, mutationBase(payload, csrfToken), fetchImpl);
 }
 
+export async function getActivity(fetchImpl = defaultFetch) {
+  const response = await fetchImpl(ACTIVITY_URL, {
+    ...baseOptions(),
+    method: "GET",
+  });
+  return responseJson(response);
+}
+
+export const fetchActivity = getActivity;
+
+export async function previewActivityUndo(
+  operationId,
+  fetchImpl = defaultFetch,
+  csrfToken,
+) {
+  const id = requiredOperationId(operationId);
+  return postJson(
+    `${ACTIVITY_URL}/${encodeURIComponent(id)}/undo/preview`,
+    { csrf_token: requiredToken(csrfToken) },
+    fetchImpl,
+  );
+}
+
+export async function undoActivityOperation(
+  operationId,
+  confirmationToken,
+  fetchImpl = defaultFetch,
+  csrfToken,
+) {
+  const id = requiredOperationId(operationId);
+  if (typeof confirmationToken !== "string" || !confirmationToken) {
+    throw new LociFlowApiError("invalid_activity_contract", "Activity information is invalid.");
+  }
+  return postJson(
+    `${ACTIVITY_URL}/${encodeURIComponent(id)}/undo`,
+    {
+      csrf_token: requiredToken(csrfToken),
+      confirmation_token: confirmationToken,
+      confirmation: UNDO_CONFIRMATION,
+    },
+    fetchImpl,
+  );
+}
+
+export function executeActivityUndo(payload, fetchImpl = defaultFetch, csrfToken) {
+  return undoActivityOperation(
+    payload.operationId,
+    payload.confirmationToken,
+    fetchImpl,
+    csrfToken,
+  );
+}
+
 export function createLociFlowApiClient(fetchImpl = defaultFetch) {
   return Object.freeze({
     getCurrentOrganization: () => getCurrentOrganization(fetchImpl),
@@ -190,6 +257,13 @@ export function createLociFlowApiClient(fetchImpl = defaultFetch) {
     ),
     approveOrganizationPlan: (payload, csrfToken) => (
       approveOrganizationPlan(payload, fetchImpl, csrfToken)
+    ),
+    getActivity: () => getActivity(fetchImpl),
+    previewActivityUndo: (operationId, csrfToken) => (
+      previewActivityUndo(operationId, fetchImpl, csrfToken)
+    ),
+    undoActivityOperation: (operationId, confirmationToken, csrfToken) => (
+      undoActivityOperation(operationId, confirmationToken, fetchImpl, csrfToken)
     ),
   });
 }

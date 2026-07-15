@@ -1,5 +1,9 @@
 import { createLociFlowApiClient } from "./api.js";
-import { createBackendDataSource } from "./data_source.js";
+import {
+  activityErrorMessage,
+  createBackendDataSource,
+  isUncertainUndoError,
+} from "./data_source.js";
 import { renderDialog, renderRoute } from "./views.js";
 import {
   buildDialogViewModel,
@@ -41,6 +45,17 @@ const state = {
   workflowOverride: null,
   destinationDrafts: {},
   duplicateDrafts: {},
+  activity: {
+    loadStatus: "idle",
+    entries: [],
+    expandedIds: new Set(),
+    activeUndoPreview: null,
+    pendingUndo: false,
+    errorMessage: null,
+    noticeMessage: null,
+    loadVersion: 0,
+    previewVersion: 0,
+  },
 };
 const viewSource = {
   getState() {
@@ -61,6 +76,7 @@ const viewSource = {
         workflowOverride: state.workflowOverride,
         destinationDrafts: state.destinationDrafts,
         duplicateDrafts: state.duplicateDrafts,
+        activity: state.activity,
       }),
     };
   },
@@ -137,15 +153,63 @@ function syncShell() {
   if (folderFreshness) folderFreshness.textContent = shell.toolbarFreshnessLabel;
   if (organizeCount) organizeCount.textContent = String(shell.organizeCount);
   if (binCount) binCount.textContent = String(shell.duplicateBinCount);
+  const activityBusy = state.route === "activity"
+    && (state.activity.loadStatus === "loading" || state.activity.pendingUndo);
   elements.app.inert = state.pendingMutation;
-  elements.app.setAttribute("aria-busy", String(state.pendingMutation || state.loadStatus === "loading"));
+  elements.app.setAttribute("aria-busy", String(
+    state.pendingMutation || state.loadStatus === "loading" || activityBusy,
+  ));
   if (elements.dialog.open) elements.dialog.inert = state.pendingMutation;
+}
+
+function replaceActivityEmptyState(title, description, { retry = false } = {}) {
+  const empty = elements.app.querySelector(".activity-list .empty-state");
+  if (!empty) return;
+  const heading = empty.querySelector("h2");
+  const copy = empty.querySelector("p");
+  if (heading) heading.textContent = title;
+  if (copy) copy.textContent = description;
+  if (retry) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.dataset.action = "retry-activity";
+    button.textContent = "Try again";
+    empty.append(button);
+  }
+}
+
+function decorateActivityPage() {
+  if (state.route !== "activity") return;
+  if (state.activity.loadStatus === "loading") {
+    replaceActivityEmptyState("Loading Activity…", "Loading completed file moves.");
+  } else if (state.activity.loadStatus === "error") {
+    replaceActivityEmptyState(
+      "Activity could not be loaded.",
+      state.activity.errorMessage || "Try again.",
+      { retry: true },
+    );
+  } else if (state.activity.loadStatus === "ready" && !state.activity.entries.length) {
+    replaceActivityEmptyState("No file moves recorded.", "Completed moves will appear here.");
+  }
+  if (state.activity.noticeMessage && state.activity.loadStatus === "ready") {
+    const list = elements.app.querySelector(".activity-list");
+    if (list) {
+      const notice = document.createElement("p");
+      notice.className = "activity-notice";
+      notice.setAttribute("role", "status");
+      notice.textContent = state.activity.noticeMessage;
+      list.prepend(notice);
+    }
+  }
+  const undo = elements.app.querySelector('[data-action="undo-move"]');
+  if (undo) undo.disabled = state.activity.pendingUndo;
 }
 
 function render(options = {}) {
   state.route = routeFromHash();
   elements.app.innerHTML = renderRoute(buildRouteViewModel(viewSource, state.route), state.route);
   elements.app.setAttribute("aria-busy", "false");
+  decorateActivityPage();
   document.title = `${state.route === "duplicate-bin" ? "Duplicate Bin" : state.route[0].toUpperCase() + state.route.slice(1)} · Loci Flow`;
   syncShell();
   if (options.focusChanges) {
@@ -159,9 +223,12 @@ function render(options = {}) {
 
 function navigate(route, options = {}) {
   if (!routes.has(route)) return;
+  const previousRoute = state.route;
+  if (previousRoute === "activity" && route !== "activity") discardActivityPreview();
   state.route = route;
   if (window.location.hash !== `#/${route}`) window.location.hash = `#/${route}`;
   render(options);
+  if (route === "activity" && previousRoute !== "activity") loadActivity();
 }
 
 function setDialog(type, payload = {}) {
@@ -194,11 +261,55 @@ function refreshDialog(focusAttribute, focusValue) {
 }
 
 function closeDialog({ restoreFocus = true } = {}) {
+  if (state.activeDialog === "activity-undo") state.activity.activeUndoPreview = null;
   if (elements.dialog.open) elements.dialog.close();
   state.activeDialog = null;
   dialogPayload = {};
   if (restoreFocus) dialogTrigger?.focus?.();
   dialogTrigger = null;
+}
+
+function discardActivityPreview() {
+  state.activity.previewVersion += 1;
+  state.activity.activeUndoPreview = null;
+  state.activity.pendingUndo = false;
+  if (state.activeDialog === "activity-undo") closeDialog();
+}
+
+function setUndoDialog(preview, trigger) {
+  state.activeDialog = "activity-undo";
+  state.activity.activeUndoPreview = preview;
+  dialogPayload = {};
+  dialogTrigger = trigger;
+  elements.dialogEyebrow.textContent = "Activity";
+  elements.dialogTitle.textContent = "Undo this move?";
+  const noun = preview.files_to_restore === 1 ? "file" : "files";
+  const destination = preview.files_to_restore === 1
+    ? "its previous folder"
+    : "their previous folders";
+  elements.dialogDescription.textContent = `${preview.files_to_restore} ${noun} will return to ${destination}.`;
+  elements.dialogContent.replaceChildren();
+  elements.dialogActions.replaceChildren();
+  const cancel = document.createElement("button");
+  cancel.type = "button";
+  cancel.dataset.action = "close-dialog";
+  cancel.textContent = "Cancel";
+  const confirm = document.createElement("button");
+  confirm.type = "button";
+  confirm.className = "button button-primary";
+  confirm.dataset.action = "confirm-activity-undo";
+  confirm.textContent = "Undo move";
+  elements.dialogActions.append(cancel, confirm);
+  if (!elements.dialog.open) elements.dialog.showModal();
+  window.requestAnimationFrame(() => cancel.focus());
+}
+
+function setUndoDialogPending(value) {
+  state.activity.pendingUndo = value;
+  elements.dialog.querySelectorAll("button, input, select").forEach((control) => {
+    control.disabled = value;
+  });
+  syncShell();
 }
 
 function setPending(value) {
@@ -220,6 +331,91 @@ async function loadCurrent({ clearOverride = true } = {}) {
     );
   }
   render();
+}
+
+async function loadActivity({ noticeMessage = null } = {}) {
+  if (state.route !== "activity") return;
+  const version = ++state.activity.loadVersion;
+  state.activity.loadStatus = "loading";
+  state.activity.entries = [];
+  state.activity.errorMessage = null;
+  state.activity.noticeMessage = noticeMessage;
+  render();
+  try {
+    const payload = await dataSource.loadActivity();
+    if (version !== state.activity.loadVersion || state.route !== "activity") return;
+    state.activity.entries = payload.activity;
+    const ids = new Set(payload.activity.map((entry) => entry.id));
+    state.activity.expandedIds = new Set(
+      [...state.activity.expandedIds].filter((id) => ids.has(id)),
+    );
+    state.activity.loadStatus = "ready";
+  } catch {
+    if (version !== state.activity.loadVersion || state.route !== "activity") return;
+    state.activity.entries = [];
+    state.activity.expandedIds = new Set();
+    state.activity.loadStatus = "error";
+    state.activity.errorMessage = "Try again.";
+  }
+  render();
+}
+
+function toggleActivity(activityId) {
+  const ids = new Set(state.activity.expandedIds);
+  if (ids.has(activityId)) ids.delete(activityId);
+  else ids.add(activityId);
+  state.activity.expandedIds = ids;
+  render();
+}
+
+async function previewActivityUndo(target) {
+  if (state.activity.pendingUndo) return;
+  const entry = state.activity.entries.find((item) => item.undoable === true);
+  if (!entry) return;
+  const version = ++state.activity.previewVersion;
+  state.activity.pendingUndo = true;
+  state.activity.noticeMessage = null;
+  render();
+  const trigger = elements.app.querySelector('[data-action="undo-move"]') || target;
+  try {
+    const preview = await dataSource.previewUndo(entry.id);
+    if (version !== state.activity.previewVersion || state.route !== "activity") return;
+    state.activity.pendingUndo = false;
+    render();
+    setUndoDialog(preview, elements.app.querySelector('[data-action="undo-move"]') || trigger);
+  } catch (error) {
+    if (version !== state.activity.previewVersion || state.route !== "activity") return;
+    state.activity.pendingUndo = false;
+    const message = activityErrorMessage(error);
+    announce(message);
+    await loadActivity({ noticeMessage: message });
+  }
+}
+
+async function confirmActivityUndo() {
+  const preview = state.activity.activeUndoPreview;
+  if (!preview || state.activity.pendingUndo) return;
+  setUndoDialogPending(true);
+  announce("Restoring files…");
+  state.activity.activeUndoPreview = null;
+  try {
+    await dataSource.confirmUndo(preview.operation_id, preview.confirmation_token);
+    closeDialog({ restoreFocus: false });
+    await loadActivity({ noticeMessage: "Files restored." });
+    announce("Files restored.");
+  } catch (error) {
+    const uncertain = isUncertainUndoError(error);
+    const message = uncertain
+      ? "The result could not be loaded. Reload Activity before trying again."
+      : activityErrorMessage(error);
+    closeDialog({ restoreFocus: false });
+    await loadActivity({ noticeMessage: message });
+    announce(message);
+  } finally {
+    state.activity.pendingUndo = false;
+    if (state.route === "activity") render();
+    else syncShell();
+  }
 }
 
 async function checkFiles() {
@@ -436,6 +632,18 @@ function actionFor(target) {
   if (action === "open-standards") return navigate("standards", { focusMain: true });
   if (action === "check-files" || action === "check-again") return checkFiles();
   if (action === "reload-choices") return loadCurrent();
+  if (action === "retry-activity") return loadActivity();
+  if (action === "toggle-activity") return toggleActivity(target.dataset.activityId);
+  if (action === "expand-all-activity") {
+    state.activity.expandedIds = new Set(state.activity.entries.map((entry) => entry.id));
+    return render();
+  }
+  if (action === "collapse-all-activity") {
+    state.activity.expandedIds = new Set();
+    return render();
+  }
+  if (action === "undo-move") return previewActivityUndo(target);
+  if (action === "confirm-activity-undo") return confirmActivityUndo();
   if (action === "set-style") {
     announce("Only the current deterministic organization plan is available.");
     return;
@@ -492,6 +700,12 @@ function actionFor(target) {
 }
 
 document.addEventListener("click", (event) => {
+  const routeLink = event.target.closest("[data-route]");
+  if (routeLink?.dataset.route === "activity" && state.route === "activity") {
+    event.preventDefault();
+    loadActivity();
+    return;
+  }
   const target = event.target.closest("[data-action]");
   if (target) actionFor(target);
 });
@@ -499,6 +713,7 @@ document.addEventListener("click", (event) => {
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && elements.dialog.open) {
     event.preventDefault();
+    if (state.activeDialog === "activity-undo" && state.activity.pendingUndo) return;
     closeDialog();
     return;
   }
@@ -527,10 +742,18 @@ document.addEventListener("keydown", (event) => {
   }
 });
 
-window.addEventListener("hashchange", () => render({ focusMain: true }));
+window.addEventListener("hashchange", () => {
+  const previousRoute = state.route;
+  const nextRoute = routeFromHash();
+  if (previousRoute === "activity" && nextRoute !== "activity") discardActivityPreview();
+  state.route = nextRoute;
+  render({ focusMain: true });
+  if (nextRoute === "activity" && previousRoute !== "activity") loadActivity();
+});
 window.addEventListener("beforeunload", () => dataSource.dispose());
 
 if (!window.location.hash) window.location.hash = "#/home";
 state.route = routeFromHash();
 render();
 loadCurrent();
+if (state.route === "activity") loadActivity();

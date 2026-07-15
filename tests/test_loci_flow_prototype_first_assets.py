@@ -86,7 +86,8 @@ class LociFlowPrototypeFirstAssetTests(unittest.TestCase):
         tree = (LIVE / "tree.js").read_text(encoding="utf-8")
         for required in (
             'import { createLociFlowApiClient } from "./api.js";',
-            'import { createBackendDataSource } from "./data_source.js";',
+            "createBackendDataSource,",
+            '} from "./data_source.js";',
             "buildRouteViewModel(viewSource, state.route)",
             "buildDialogViewModel(viewSource)",
         ):

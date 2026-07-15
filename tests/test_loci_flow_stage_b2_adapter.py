@@ -419,7 +419,6 @@ class LociFlowStageB2AdapterTests(unittest.TestCase):
             "websocket",
             "eventsource",
             "serviceworker",
-            "/api/activity",
             "/api/undo",
             "/api/organization/move",
             "movement-preview",

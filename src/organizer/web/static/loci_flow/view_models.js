@@ -61,6 +61,29 @@ const ORGANIZATION_STYLE = Object.freeze({
   }),
 });
 
+const MOVEMENT_STATUS_LABELS = Object.freeze({
+  verified: "Completed",
+  partial_movement: "Partly completed",
+  movement_failed: "Failed",
+  verification_failed: "Could not confirm",
+  prepared: "Needs attention",
+  moving: "Needs attention",
+  moved_unverified: "Needs attention",
+  interrupted: "Needs attention",
+  recovery_required: "Needs attention",
+});
+
+const RESTORE_STATUS_LABELS = Object.freeze({
+  restored: "Restored",
+  partial_undo: "Partly completed",
+  undo_failed: "Failed",
+  undo_verification_failed: "Could not confirm",
+  prepared: "Needs attention",
+  undoing: "Needs attention",
+  restored_unverified: "Needs attention",
+  interrupted: "Needs attention",
+});
+
 function iconForKind(kind = "") {
   return KIND_ICON_MAP[String(kind).toLowerCase()] || "unknown";
 }
@@ -133,6 +156,11 @@ function contractModel(store, page) {
   const kept = contract.organization.keptByStandards.map(normalizeKept);
   const allItems = [...recommendations, ...choicesNeeded, ...kept];
   const selectedItemId = state.selectedItemId || allItems[0]?.id || null;
+  const activity = {
+    ...contract.activity,
+    entries: [...contract.activity.entries],
+    expandedIds: [...(contract.activity.expandedIds || [])],
+  };
   return {
     mode: "production_fixture",
     scenarioId: contract.id,
@@ -153,9 +181,15 @@ function contractModel(store, page) {
       selectedItem: allItems.find((item) => item.id === selectedItemId) || null,
     },
     duplicateBin: { ...contract.duplicateBin },
-    activity: { ...contract.activity },
+    activity,
     standards: { ...contract.standards },
     settings: { ...contract.settings },
+    getState() {
+      return {
+        activityMoves: activity.entries,
+        expandedActivityIds: activity.expandedIds,
+      };
+    },
   };
 }
 
@@ -200,6 +234,81 @@ export function formatLocalTimestamp(value) {
     hour: "numeric",
     minute: "2-digit",
   }).format(timestamp);
+}
+
+function countLabel(count, singular, plural = `${singular}s`) {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
+function activitySummary(entry) {
+  const completed = entry.type === "organization" ? entry.files_moved : entry.files_restored;
+  const incomplete = entry.files_failed + entry.files_unattempted;
+  const completeLabel = entry.type === "organization"
+    ? countLabel(completed, "file moved", "files moved")
+    : countLabel(completed, "file restored", "files restored");
+  if (!incomplete) return completeLabel;
+  const incompleteLabel = entry.type === "organization"
+    ? countLabel(incomplete, "file did not move", "files did not move")
+    : countLabel(incomplete, "file did not restore", "files did not restore");
+  return `${completeLabel} · ${incompleteLabel}`;
+}
+
+function activityPath(detail, type) {
+  return type === "organization"
+    ? `${detail.source} → ${detail.destination}`
+    : `${detail.moved_from} → ${detail.restored_to}`;
+}
+
+function activityDetails(entry) {
+  const successfulStatus = entry.type === "organization" ? "moved" : "restored";
+  const successes = [];
+  const problems = [];
+  for (const detail of entry.details) {
+    const path = activityPath(detail, entry.type);
+    if (detail.status === successfulStatus) successes.push(path);
+    else {
+      let label = "Needs attention";
+      if (detail.status === "failed") {
+        label = entry.type === "organization" ? "Did not move" : "Did not restore";
+      } else if (new Set(["pending", "unattempted"]).has(detail.status)) {
+        label = "Not attempted";
+      }
+      problems.push(`${path} — ${label}`);
+    }
+  }
+  return {
+    filesMoved: entry.type === "organization" ? successes : [],
+    namesChanged: [],
+    foldersCreated: [],
+    copiesMoved: [],
+    filesRestored: entry.type === "restore" ? successes : [],
+    problems,
+  };
+}
+
+function verificationLabel(value) {
+  if (value === "passed") return "Verified";
+  if (value === "failed") return "Could not confirm";
+  return null;
+}
+
+export function buildProductionActivityEntries(entries = []) {
+  return entries.map((entry) => ({
+    id: entry.id,
+    type: entry.type,
+    title: entry.title,
+    status: entry.type === "organization"
+      ? MOVEMENT_STATUS_LABELS[entry.status]
+      : RESTORE_STATUS_LABELS[entry.status],
+    time: entry.completed_at || entry.started_at
+      ? formatLocalTimestamp(entry.completed_at || entry.started_at)
+      : "Time unavailable",
+    summary: activitySummary(entry),
+    verificationLabel: verificationLabel(entry.verification_status),
+    undoable: entry.undoable,
+    relatedMovementId: entry.related_operation_id,
+    details: activityDetails(entry),
+  }));
 }
 
 function defaultOrganization() {
@@ -423,6 +532,7 @@ export function buildProductionStageB1Contract({
   workflowOverride = null,
   destinationDrafts = {},
   duplicateDrafts = {},
+  activity = null,
 } = {}) {
   const backend = snapshot?.backendState || null;
   const scopeName = backend?.scope.display_name || "Selected folder";
@@ -450,7 +560,16 @@ export function buildProductionStageB1Contract({
     workflow: workflowFor(snapshot, workflowOverride),
     organization,
     duplicateBin: { connected: false, items: [] },
-    activity: { connected: false, entries: [] },
+    activity: activity
+      ? {
+        connected: true,
+        loadStatus: activity.loadStatus,
+        entries: buildProductionActivityEntries(activity.entries || []),
+        expandedIds: [...(activity.expandedIds || [])],
+        errorMessage: activity.errorMessage || null,
+        noticeMessage: activity.noticeMessage || null,
+      }
+      : { connected: false, entries: [], expandedIds: [] },
     standards: { connected: false, items: [] },
     settings: { connected: true },
   };

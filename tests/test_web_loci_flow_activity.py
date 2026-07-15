@@ -74,11 +74,11 @@ class WebLociFlowActivityTests(unittest.TestCase):
             "Move files — not connected yet",
         ):
             self.assertIn(wording, combined)
-        self.assertIn("expandedActivityIds: new Set()", app)
+        self.assertIn("expandedIds: new Set()", app)
         self.assertIn("entry.undoable", views)
-        self.assertIn("await loadActivity()", app)
-        self.assertIn("announce(\"File move undone.", app)
-        self.assertIn('disabled: "disabled"', views)
+        self.assertIn("await dataSource.loadActivity()", app)
+        self.assertIn('announce("Files restored.")', app)
+        self.assertIn("undo.disabled = state.activity.pendingUndo", app)
         for forbidden in ("fixtures.json", "localStorage", "sessionStorage", "/api/organization/move"):
             self.assertNotIn(forbidden, combined)
 
