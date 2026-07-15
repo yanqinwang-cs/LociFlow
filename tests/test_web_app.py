@@ -26,7 +26,7 @@ class WebAppTests(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self) -> None:
         self.temporary_directory.cleanup()
 
-    async def test_launch_authenticates_once_and_redirects_to_clean_home(self) -> None:
+    async def test_launch_authenticates_once_and_redirects_to_loci_flow(self) -> None:
         async with _client(self.app) as client:
             unauthenticated = await client.get("/")
             wrong = await client.get("/launch/wrong", follow_redirects=False)
@@ -43,10 +43,10 @@ class WebAppTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(unauthenticated.status_code, 403)
         self.assertEqual(wrong.status_code, 403)
         self.assertEqual(launched.status_code, 303)
-        self.assertEqual(launched.headers["location"], "/")
+        self.assertEqual(launched.headers["location"], "/loci-flow")
         self.assertEqual(home.status_code, 200)
         self.assertEqual(replay.status_code, 403)
-        self.assertIn(self.root.name, home.text)
+        self.assertIn("Home · Loci Flow", home.text)
         self.assertNotIn(str(self.root), home.text)
         self.assertNotIn(self.token, home.text)
 
@@ -249,33 +249,20 @@ class WebAppTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual((await client.get(path)).status_code, 404)
             self.assertEqual((await client.post("/healthz")).status_code, 405)
 
-    async def test_home_is_accessible_and_has_no_future_controls(self) -> None:
+    async def test_authenticated_root_redirects_without_legacy_home(self) -> None:
         async with _client(self.app) as client:
             await client.get(f"/launch/{self.token}", follow_redirects=False)
-            response = await client.get("/")
+            response = await client.get("/", follow_redirects=False)
+            shell = await client.get(response.headers["location"])
 
-        html = response.text
-        self.assertIn('<html lang="en">', html)
-        self.assertIn("<title>Home · bootAI</title>", html)
-        self.assertEqual(html.count("<h1"), 1)
-        self.assertIn("<main ", html)
-        self.assertIn("Selected folder", html)
-        self.assertIn("Ready to scan", html)
-        self.assertIn("does not approve choices or move files", html)
-        self.assertIn(self.root.name, html)
-        self.assertNotIn(str(self.root), html)
-        self.assertIn("<form", html)
-        self.assertIn("Scan now", html)
-        self.assertNotIn("onclick=", html)
-        self.assertNotIn("<script>", html)
-        self.assertNotIn("https://", html)
-        self.assertNotIn("http://", html)
-        for unfinished_control in (
-            "Review plans",
-            "Apply changes",
-            "Restore files",
-        ):
-            self.assertNotIn(unfinished_control, html)
+        self.assertEqual(response.status_code, 303)
+        self.assertEqual(response.headers["location"], "/loci-flow")
+        self.assertEqual(response.headers["cache-control"], "no-store")
+        self.assertEqual(shell.status_code, 200)
+        self.assertIn("<title>Home · Loci Flow</title>", shell.text)
+        self.assertIn("Sample files only. Your files are not changed.", shell.text)
+        self.assertNotIn("<title>Home · bootAI</title>", shell.text)
+        self.assertNotIn(str(self.root), shell.text)
 
     async def test_static_assets_and_generic_missing_page_are_local(self) -> None:
         async with _client(self.app) as client:

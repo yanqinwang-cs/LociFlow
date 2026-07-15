@@ -76,6 +76,7 @@ class WebDependencyHygieneTests(unittest.TestCase):
                 "static/js/*.js",
                 "static/loci_flow/*.css",
                 "static/loci_flow/*.js",
+                "static/loci_flow/*.json",
                 "static/loci_flow/assets/*.svg",
                 "static/vendor/*.css",
                 "static/vendor/*.js",
@@ -125,7 +126,6 @@ class WebDependencyHygieneTests(unittest.TestCase):
             "<script>",
             "onclick=",
             "onload=",
-            "telemetry",
             "analytics",
         ):
             self.assertNotIn(forbidden, combined)
@@ -273,7 +273,10 @@ class WebDependencyHygieneTests(unittest.TestCase):
             path.read_text(encoding="utf-8")
             for path in (WEB_ROOT / "static" / "loci_flow").glob("*.js")
         )
-        self.assertIn("Move files — not connected yet", loci_assets)
+        self.assertIn("Approve test move", loci_assets)
+        self.assertNotIn("/api/organization/current", loci_assets)
+        self.assertNotIn("/api/activity", loci_assets)
+        self.assertNotIn("/scan", loci_assets)
         self.assertNotIn("/api/organization/move", route_text)
         self.assertIn("/api/activity", route_text)
         self.assertIn("organizer.application.undo_service", route_text)

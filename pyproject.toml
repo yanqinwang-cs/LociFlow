@@ -32,6 +32,7 @@ where = ["src"]
     "static/js/*.js",
     "static/loci_flow/*.css",
     "static/loci_flow/*.js",
+    "static/loci_flow/*.json",
     "static/loci_flow/assets/*.svg",
     "static/vendor/*.css",
     "static/vendor/*.js",

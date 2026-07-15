@@ -50,7 +50,7 @@ def create_home_router(templates: Jinja2Templates) -> APIRouter:
             return _session_error(request, templates)
         initialize_authenticated_session(request.session)
         return RedirectResponse(
-            url="/",
+            url="/loci-flow",
             status_code=303,
             headers={"Cache-Control": "no-store"},
         )
@@ -59,25 +59,13 @@ def create_home_router(templates: Jinja2Templates) -> APIRouter:
     async def home(request: Request) -> Response:
         if not is_authenticated(request.session):
             return _session_error(request, templates)
-        try:
-            saved_requested = _home_saved_requested(request)
-        except ValueError as error:
-            raise HTTPException(status_code=400, detail="home request unavailable") from error
-        context = _scan_context(request)
-        plan_summary = context.get("plan_summary")
-        context["saved_feedback"] = bool(
-            saved_requested
-            and plan_summary is not None
-            and not plan_summary.dirty
-            and plan_summary.saved_plan_relative is not None
+        if request.query_params:
+            raise HTTPException(status_code=400, detail="home request unavailable")
+        return RedirectResponse(
+            url="/loci-flow",
+            status_code=303,
+            headers={"Cache-Control": "no-store"},
         )
-        response = templates.TemplateResponse(
-            request=request,
-            name="home.html",
-            context=context,
-        )
-        response.headers["Cache-Control"] = "no-store"
-        return response
 
     @router.get("/scans", include_in_schema=False)
     async def scans(request: Request) -> Response:
@@ -254,15 +242,6 @@ def _scan_surface(request: Request) -> ConsumerSurface:
         allowed={ConsumerSurface.HOME, ConsumerSurface.SCANS},
         default=ConsumerSurface.HOME,
     )
-
-
-def _home_saved_requested(request: Request) -> bool:
-    if set(request.query_params) - {"saved"}:
-        raise ValueError("unsupported home query")
-    values = request.query_params.getlist("saved")
-    if len(values) > 1 or (values and values[0] != "1"):
-        raise ValueError("invalid home save feedback")
-    return bool(values)
 
 
 def _session_error(

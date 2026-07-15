@@ -9,18 +9,21 @@ class ConsumerNavigationTests(ConsumerWebFixture, unittest.IsolatedAsyncioTestCa
     async def test_navigation_and_settings_are_truthful(self) -> None:
         client = await self.authenticated_client()
         try:
+            root = await client.get("/")
             responses = {
                 path: await client.get(path)
-                for path in ("/", "/duplicates", "/organize", "/attention", "/scans", "/settings", "/review/advanced")
+                for path in ("/duplicates", "/organize", "/attention", "/scans", "/settings", "/review/advanced")
             }
         finally:
             await client.aclose()
 
         for response in responses.values():
             self.assertEqual(response.status_code, 200)
+        self.assertEqual(root.status_code, 303)
+        self.assertEqual(root.headers["location"], "/loci-flow")
         for label in ("Home", "Duplicates", "Organize", "Scans", "Settings"):
-            self.assertIn(f">{label}</a>", responses["/"].text)
-        self.assertNotIn('href="/attention" aria-current', responses["/"].text)
+            self.assertIn(f">{label}</a>", responses["/scans"].text)
+        self.assertNotIn('href="/attention" aria-current', responses["/scans"].text)
         self.assertIn('href="/duplicates" aria-current="page"', responses["/duplicates"].text)
         self.assertIn('href="/organize" aria-current="page"', responses["/organize"].text)
         self.assertIn('href="/scans" aria-current="page"', responses["/scans"].text)

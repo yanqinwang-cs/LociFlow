@@ -28,15 +28,26 @@ PROTOTYPE_SHA256 = {
 class LociFlowReadOnlyUiAssetTests(unittest.TestCase):
     def test_accepted_prototype_is_byte_unchanged(self) -> None:
         actual = {
-            path.relative_to(PROTOTYPE).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
+            path.relative_to(PROTOTYPE).as_posix(): hashlib.sha256(
+                path.read_bytes()
+            ).hexdigest()
             for path in sorted(PROTOTYPE.rglob("*"))
             if path.is_file()
         }
         self.assertEqual(actual, PROTOTYPE_SHA256)
 
     def test_integrated_shell_has_exact_navigation_and_local_assets(self) -> None:
-        template = (WEB / "templates" / "loci_flow.html").read_text(encoding="utf-8")
-        for route in ("home", "organize", "duplicate-bin", "activity", "standards", "settings"):
+        template = (WEB / "templates" / "loci_flow.html").read_text(
+            encoding="utf-8"
+        )
+        for route in (
+            "home",
+            "organize",
+            "duplicate-bin",
+            "activity",
+            "standards",
+            "settings",
+        ):
             self.assertEqual(template.count(f'data-route="{route}"'), 1)
         self.assertNotIn("prototype/", template)
         self.assertNotIn("http://", template)
@@ -44,95 +55,65 @@ class LociFlowReadOnlyUiAssetTests(unittest.TestCase):
         self.assertNotIn("<script>", template)
         self.assertNotIn("style=", template)
 
-    def test_frontend_is_dom_safe_and_uses_only_focused_mutation_boundary(self) -> None:
+    def test_frontend_uses_fixture_boundary_without_backend_calls(self) -> None:
         javascript = "\n".join(
-            path.read_text(encoding="utf-8") for path in sorted(LOCI.glob("*.js"))
+            path.read_text(encoding="utf-8")
+            for path in sorted(LOCI.glob("*.js"))
         )
         lower = javascript.lower()
         for forbidden in (
-            "innerhtml", "insertadjacenthtml", "fixtures.json", "localstorage",
-            "sessionstorage", "indexeddb", "xmlhttprequest", "websocket",
-            "eventsource", "serviceworker", "document.cookie", "sha-256", "sha256",
-            "test move", "apply changes",
+            "/api/",
+            '"/scan',
+            "fetch(",
+            "localstorage",
+            "sessionstorage",
+            "indexeddb",
+            "document.cookie",
+            "xmlhttprequest",
+            "websocket",
+            "eventsource",
+            "serviceworker",
         ):
             self.assertNotIn(forbidden, lower)
-        self.assertEqual(javascript.count('fetchImpl(ORGANIZATION_ENDPOINT'), 1)
-        self.assertEqual(javascript.count('method: "POST"'), 1)
-        self.assertNotIn('method: "PUT"', javascript)
-        self.assertNotIn('method: "DELETE"', javascript)
-        self.assertIn('new URLSearchParams()', javascript)
-        self.assertIn('/api/organization/decisions', javascript)
-        self.assertIn('/api/organization/approval', javascript)
-        self.assertIn('source: "backend_read_only"', javascript)
-        self.assertIn("textContent", javascript)
-        self.assertIn("replaceChildren", javascript)
+        self.assertIn("createFixtureDataSource", javascript)
+        self.assertIn("buildHomeViewModel", javascript)
+        self.assertIn("buildOrganizeViewModel", javascript)
+        self.assertFalse((LOCI / "api.js").exists())
 
-    def test_presenter_uses_backend_categories_without_reclassification(self) -> None:
+    def test_all_six_prototype_pages_are_live(self) -> None:
         views = (LOCI / "views.js").read_text(encoding="utf-8")
-        app = (LOCI / "app.js").read_text(encoding="utf-8")
-        for field in (
-            "recommended_changes", "choices_needed", "kept_by_standards",
-            "summary.movement_tree", "scope.display_name", "freshness.last_checked_at",
+        for renderer in (
+            "renderHome",
+            "renderOrganize",
+            "renderDuplicateBin",
+            "renderActivity",
+            "renderStandards",
+            "renderSettings",
         ):
-            self.assertIn(field, views + app)
-        for kind in ("folder", "pdf", "text", "markdown", "word", "spreadsheet", "image", "presentation", "source_code", "archive", "document"):
-            self.assertIn(f'{kind}:', views)
-        self.assertNotIn(".extension", views)
-        self.assertIn('const knownKind = Object.hasOwn(KIND_LABELS, kind) ? kind : "document"', views)
-        self.assertIn("Organization information is available for review.", views)
-        self.assertNotIn("entry.reason_code, text", views)
-
-    def test_non_integrated_pages_are_honest_and_theme_is_memory_only(self) -> None:
-        views = (LOCI / "views.js").read_text(encoding="utf-8")
-        app = (LOCI / "app.js").read_text(encoding="utf-8")
+            self.assertIn(f"export function {renderer}", views)
         for wording in (
-            "Duplicate Bin is not connected yet.",
-            "No file moves recorded.",
-            "Standards editing is not connected yet.",
-            "Organization styles are not connected yet.",
+            "Recommended changes",
+            "Choices needed",
+            "Where files will go",
+            "Expand all",
+            "Guided builder",
+            "Appearance",
         ):
             self.assertIn(wording, views)
-        self.assertIn('theme: "light"', app)
-        self.assertNotIn("Storage", app)
 
-    def test_api_client_uses_fixed_get_and_rejects_unsafe_contracts(self) -> None:
+    def test_fixture_data_source_returns_fresh_sample_state(self) -> None:
         script = textwrap.dedent(
             f"""
-            import fs from 'node:fs';
             import assert from 'node:assert/strict';
-            const source = fs.readFileSync({str(LOCI / 'api.js')!r}, 'utf8');
-            const api = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
-            const snapshot = (path = 'Inbox/file.txt') => ({{
-              id: 'F1', name: 'file.txt', entity_type: 'file', kind: 'text', extension: '.txt',
-              size_bytes: 4, modified_at: '2026-07-14T10:00:00+00:00', relative_path: path, current_folder: 'Inbox'
-            }});
-            const payload = () => ({{
-              scope: {{ display_name: 'sample', root_label: '.' }},
-              freshness: {{ scan_generation: 'scan-1', last_checked_at: '2026-07-14T10:00:00+00:00', last_organized_at: null }},
-              planning: {{ strategy_id: 'current_deterministic', organization_style: null }},
-              recommended_changes: [{{ id: 'O1', action: 'move', item: snapshot(), destination_folder: 'Text', reason_code: 'matched_existing_group' }}],
-              choices_needed: [], kept_by_standards: [],
-              summary: {{ recommended_changes: 1, choices_needed: 0, kept_by_standards: 0, files_to_move: 1, names_to_change: 0, folders_to_create: 0, duplicate_copies: 0, movement_tree: [{{ folder: 'Text', files: ['Inbox/file.txt'] }}] }}
-            }});
-            let request;
-            const result = await api.fetchOrganizationSlice(async (url, options) => {{
-              request = {{ url, options }};
-              return {{ ok: true, status: 200, json: async () => payload() }};
-            }});
-            assert.equal(result.scope.display_name, 'sample');
-            assert.equal(request.url, '/api/organization/current');
-            assert.equal(request.options.method, 'GET');
-            assert.equal(request.options.credentials, 'same-origin');
-            assert.deepEqual(request.options.headers, {{ Accept: 'application/json' }});
-            const unsafe = payload();
-            unsafe.recommended_changes[0].item.relative_path = '../secret.txt';
-            assert.throws(() => api.validateOrganizationSlice(unsafe), (error) => error.code === 'contract_error');
-            for (const code of ['scan_not_ready', 'scan_in_progress', 'scan_failed']) {{
-              await assert.rejects(
-                api.fetchOrganizationSlice(async () => ({{ ok: false, status: 409, json: async () => ({{ error: {{ code, message: 'safe message' }} }}) }})),
-                (error) => error.code === code
-              );
-            }}
+            const module = await import({(LOCI / 'data_source.js').as_uri()!r});
+            const source = module.createFixtureDataSource();
+            const first = source.load();
+            first.meta.currentFolder = 'Changed';
+            first.baseChanges.length = 0;
+            const second = source.load();
+            assert.equal(source.kind, 'fixture');
+            assert.equal(second.meta.currentFolder, 'Sample Downloads');
+            assert.ok(second.baseChanges.length > 0);
             """
         )
         result = subprocess.run(

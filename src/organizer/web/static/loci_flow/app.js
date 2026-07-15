@@ -1,400 +1,375 @@
-import {
-  acceptRecommendedChanges,
-  approveOrganizationPlan,
-  executeActivityUndo,
-  fetchActivity,
-  fetchOrganizationSlice,
-  OrganizationApiError,
-  previewActivityUndo,
-  updateOrganizationDecision,
-} from "./api.js";
-import {
-  formatDate,
-  renderApproval,
-  renderActivity,
-  renderHome,
-  renderLoadState,
-  renderOrganize,
-  renderReady,
-  renderSettings,
-  renderUnintegrated,
-} from "./views.js";
+import { createFixtureDataSource } from "./data_source.js";
+import { createStore } from "./store.js";
+import { renderDialog, renderRoute } from "./views.js";
+import { buildDialogViewModel, buildRouteViewModel } from "./view_models.js";
 
-const POLL_INTERVAL_MS = 1500;
-const ROUTES = new Set(["home", "organize", "duplicate-bin", "activity", "standards", "settings"]);
-const state = {
-  source: "backend_read_only",
-  loadStatus: "loading",
-  organizationSlice: null,
-  selectedItemId: null,
-  route: "home",
-  theme: "light",
-  busy: false,
-  approvalOpen: false,
-  showApprovedSummary: false,
-  mutationError: "",
-  duplicateDrafts: new Map(),
-  activityStatus: "idle",
-  activity: [],
-  expandedActivityIds: new Set(),
-  activityBusy: false,
-  undoPreview: null,
-  activityError: "",
+const fixtureDataSource = createFixtureDataSource();
+const store = createStore(fixtureDataSource.load());
+const routes = new Set(["home", "organize", "duplicate-bin", "activity", "standards", "settings"]);
+const elements = {
+  app: document.querySelector("#app"),
+  main: document.querySelector("#main-content"),
+  nav: document.querySelector(".primary-nav"),
+  live: document.querySelector("#status-live"),
+  dialog: document.querySelector("#dialog"),
+  dialogEyebrow: document.querySelector("#dialog-eyebrow"),
+  dialogTitle: document.querySelector("#dialog-title"),
+  dialogDescription: document.querySelector("#dialog-description"),
+  dialogContent: document.querySelector("#dialog-content"),
+  dialogActions: document.querySelector("#dialog-actions"),
 };
 
-let errorCode = "";
-let pollTimer = null;
-const app = document.querySelector("#app");
-const liveRegion = document.querySelector("#status-live");
+let dialogType = null;
+let dialogPayload = {};
+let dialogTrigger = null;
 
 function routeFromHash() {
-  const value = window.location.hash.replace(/^#\/?/, "").split(/[/?]/)[0];
-  return ROUTES.has(value) ? value : "home";
-}
-
-function clearPoll() {
-  if (pollTimer !== null) {
-    window.clearTimeout(pollTimer);
-    pollTimer = null;
-  }
-}
-
-function schedulePoll() {
-  clearPoll();
-  if (errorCode !== "scan_in_progress" || state.route !== "home") return;
-  pollTimer = window.setTimeout(() => loadOrganization({ announce: false }), POLL_INTERVAL_MS);
+  const value = window.location.hash.startsWith("#/") ? window.location.hash.slice(2) : "home";
+  return routes.has(value) ? value : "home";
 }
 
 function announce(message) {
-  liveRegion.textContent = "";
-  window.requestAnimationFrame(() => { liveRegion.textContent = message; });
-}
-
-function firstVisibleId() {
-  return state.organizationSlice?.recommended_changes[0]?.id
-    || state.organizationSlice?.choices_needed[0]?.id
-    || null;
-}
-
-function ensureValidSelection() {
-  if (!state.organizationSlice || !state.selectedItemId) return;
-  const exists = state.organizationSlice.recommended_changes.some((entry) => entry.id === state.selectedItemId)
-    || state.organizationSlice.choices_needed.some((entry) => entry.id === state.selectedItemId)
-    || state.organizationSlice.kept_by_standards.some((entry) => `standard:${entry.item.id}` === state.selectedItemId);
-  if (!exists) state.selectedItemId = null;
+  elements.live.textContent = "";
+  window.requestAnimationFrame(() => { elements.live.textContent = message; });
 }
 
 function syncShell() {
-  const titles = {
-    home: "Home", organize: "Organize", "duplicate-bin": "Duplicate Bin",
-    activity: "Activity", standards: "Standards", settings: "Settings",
-  };
-  document.title = `${titles[state.route]} · Loci Flow`;
+  const state = store.getState();
   document.documentElement.dataset.theme = state.theme;
-  document.querySelectorAll("[data-route]").forEach((link) => {
-    if (link.dataset.route === state.route) link.setAttribute("aria-current", "page");
-    else link.removeAttribute("aria-current");
+  document.querySelectorAll('[data-action="set-theme"]').forEach((control) => {
+    control.setAttribute("aria-pressed", String(control.dataset.themeValue === state.theme));
   });
-  document.querySelectorAll("[data-action='set-theme']").forEach((button) => {
-    button.setAttribute("aria-pressed", button.dataset.themeValue === state.theme ? "true" : "false");
+  elements.nav.querySelectorAll("[data-route]").forEach((link) => {
+    link.setAttribute("aria-current", link.dataset.route === state.route ? "page" : "false");
   });
-  const title = document.querySelector("[data-folder-title]");
-  const freshness = document.querySelector("[data-folder-freshness]");
-  const count = document.querySelector("[data-organize-count]");
-  if (state.organizationSlice) {
-    title.textContent = state.organizationSlice.scope.display_name;
-    freshness.textContent = `Last checked ${formatDate(state.organizationSlice.freshness.last_checked_at)}`;
-    const total = state.organizationSlice.review?.summary.choices_remaining
-      ?? state.organizationSlice.summary.recommended_changes + state.organizationSlice.summary.choices_needed;
-    count.textContent = String(total);
-    count.hidden = total === 0;
-  } else {
-    title.textContent = "Selected folder";
-    freshness.textContent = state.loadStatus === "loading" ? "Loading organization information…" : "Organization information unavailable";
-    count.hidden = true;
-  }
+  const organizeCount = elements.nav.querySelector("[data-organize-count]");
+  const binCount = elements.nav.querySelector("[data-bin-count]");
+  if (organizeCount) organizeCount.textContent = String(state.changes.filter((change) => change.decision === "pending").length);
+  if (binCount) binCount.textContent = String(state.duplicateBinItems.length);
 }
 
-function render() {
+function render(options = {}) {
+  const route = routeFromHash();
+  if (store.getState().route !== route) store.setRoute(route);
+  elements.app.innerHTML = renderRoute(buildRouteViewModel(store, route), route);
+  elements.app.setAttribute("aria-busy", "false");
+  document.title = `${route === "duplicate-bin" ? "Duplicate Bin" : route[0].toUpperCase() + route.slice(1)} · Loci Flow`;
   syncShell();
-  app.setAttribute("aria-busy", state.loadStatus === "loading" || state.busy || state.activityBusy ? "true" : "false");
-  if (state.route === "activity") {
-    app.replaceChildren(renderActivity(state.activity, {
-      status: state.activityStatus,
-      expandedIds: state.expandedActivityIds,
-      busy: state.activityBusy,
-      preview: state.undoPreview,
-      errorMessage: state.activityError,
-    }));
-    return;
+  if (options.focusChanges) {
+    window.requestAnimationFrame(() => document.querySelector("#changes-to-confirm")?.focus({ preventScroll: false }));
   }
-  if (state.loadStatus !== "ready" || !state.organizationSlice) {
-    app.replaceChildren(renderLoadState(state.loadStatus, errorCode));
-    return;
-  }
-  ensureValidSelection();
-  if (state.route === "home") app.replaceChildren(renderHome(state.organizationSlice));
-  else if (state.route === "organize" && state.organizationSlice.review.status === "ready_to_move") {
-    app.replaceChildren(renderReady(state.organizationSlice, state.showApprovedSummary));
-  } else if (state.route === "organize" && state.approvalOpen) {
-    app.replaceChildren(renderApproval(state.organizationSlice, state.busy, state.mutationError));
-  } else if (state.route === "organize") {
-    app.replaceChildren(renderOrganize(state.organizationSlice, state.selectedItemId, {
-      busy: state.busy,
-      duplicateDrafts: state.duplicateDrafts,
-      errorMessage: state.mutationError,
-    }));
-  } else if (state.route === "settings") app.replaceChildren(renderSettings(state.theme));
-  else app.replaceChildren(renderUnintegrated(state.route));
+  if (options.focusMain) elements.main.focus({ preventScroll: true });
+  if (options.focusDetails) window.requestAnimationFrame(() => document.querySelector("#details-heading")?.focus({ preventScroll: true }));
 }
 
-async function loadActivity({ announce: shouldAnnounce = false } = {}) {
-  state.activityStatus = "loading";
-  state.activityError = "";
-  render();
-  try {
-    const result = await fetchActivity();
-    state.activity = result.activity;
-    state.activityStatus = "ready";
-    state.expandedActivityIds = new Set(
-      [...state.expandedActivityIds].filter((id) => state.activity.some((entry) => entry.id === id)),
-    );
-    if (shouldAnnounce) announce("Activity loaded.");
-  } catch (error) {
-    state.activity = [];
-    state.activityStatus = "error";
-    state.activityError = error instanceof Error ? error.message : "Activity is unavailable.";
-    if (shouldAnnounce) announce("Activity is unavailable.");
-  }
-  render();
+function navigate(route, options = {}) {
+  if (!routes.has(route)) return;
+  store.setRoute(route);
+  if (window.location.hash !== `#/${route}`) window.location.hash = `#/${route}`;
+  render(options);
 }
 
-async function openUndoPreview(operationId) {
-  if (state.activityBusy) return;
-  state.activityBusy = true;
-  state.activityError = "";
-  render();
-  try {
-    state.undoPreview = await previewActivityUndo(operationId);
-  } catch (error) {
-    state.activityError = error instanceof Error ? error.message : "Undo is unavailable.";
-    await loadActivity();
-    announce("Undo is unavailable for this move.");
-  } finally {
-    state.activityBusy = false;
-    render();
-    if (state.undoPreview) window.requestAnimationFrame(() => document.querySelector("[data-action='confirm-undo']")?.focus());
-  }
+function setDialog(type, payload = {}) {
+  const view = renderDialog(buildDialogViewModel(store), type, payload);
+  dialogType = type;
+  dialogPayload = payload;
+  elements.dialogEyebrow.textContent = view.eyebrow;
+  elements.dialogTitle.textContent = view.title;
+  elements.dialogDescription.textContent = view.description;
+  elements.dialogContent.innerHTML = view.content;
+  elements.dialogActions.innerHTML = view.actions;
 }
 
-async function confirmUndo() {
-  if (state.activityBusy || !state.undoPreview) return;
-  state.activityBusy = true;
-  state.activityError = "";
-  render();
-  try {
-    await executeActivityUndo({
-      operationId: state.undoPreview.operation_id,
-      confirmationToken: state.undoPreview.confirmation_token,
-    });
-    state.undoPreview = null;
-    await loadActivity();
-    announce("File move undone. Activity has been updated.");
-  } catch (error) {
-    state.activityError = error instanceof Error ? error.message : "Undo could not be completed.";
-    announce("Undo could not be completed.");
-  } finally {
-    state.activityBusy = false;
-    render();
-  }
+function openDialog(type, payload = {}, trigger = document.activeElement) {
+  dialogTrigger = trigger;
+  setDialog(type, payload);
+  if (!elements.dialog.open) elements.dialog.showModal();
+  window.requestAnimationFrame(() => {
+    elements.dialog.querySelector("input:checked, select, button:not([disabled])")?.focus();
+  });
 }
 
-async function loadOrganization({ announce: shouldAnnounce = true } = {}) {
-  clearPoll();
-  state.loadStatus = "loading";
-  state.mutationError = "";
-  errorCode = "";
-  render();
-  try {
-    state.organizationSlice = await fetchOrganizationSlice();
-    state.loadStatus = "ready";
-    state.approvalOpen = false;
-    state.duplicateDrafts.clear();
-    if (shouldAnnounce) announce("Current organization information loaded.");
-  } catch (error) {
-    state.organizationSlice = null;
-    errorCode = error instanceof OrganizationApiError ? error.code : "organization_unavailable";
-    state.loadStatus = ["scan_not_ready", "scan_in_progress", "scan_failed"].includes(errorCode)
-      ? errorCode
-      : "error";
-    if (shouldAnnounce) announce("Organization information is unavailable.");
-  }
-  render();
-  schedulePoll();
+function closeDialog({ restoreFocus = true } = {}) {
+  if (elements.dialog.open) elements.dialog.close();
+  dialogType = null;
+  dialogPayload = {};
+  if (restoreFocus) dialogTrigger?.focus?.();
+  dialogTrigger = null;
 }
 
-async function mutate(operation, successMessage) {
-  if (state.busy) return;
-  state.busy = true;
-  state.mutationError = "";
-  render();
-  try {
-    state.organizationSlice = await operation();
-    state.duplicateDrafts.clear();
-    announce(successMessage);
-  } catch (error) {
-    const code = error instanceof OrganizationApiError ? error.code : "organization_unavailable";
-    const reloadCodes = new Set([
-      "scan_generation_mismatch", "decision_revision_mismatch", "source_changed",
-      "overwrite_detected", "unsafe_destination", "duplicate_group_changed",
-    ]);
-    if (reloadCodes.has(code)) {
-      errorCode = code;
-      state.organizationSlice = null;
-      state.loadStatus = "error";
-    } else {
-      state.mutationError = error instanceof Error ? error.message : "The organization choice was not saved.";
-    }
-    announce("The organization request was not accepted.");
-  } finally {
-    state.busy = false;
-    render();
-  }
+function checkedFolder(name) {
+  const value = elements.dialog.querySelector(`input[name="${name}"]:checked`)?.value || "Sample Downloads";
+  return value.split("|");
 }
 
-function requestContext() {
+function standardBuilderValue() {
   return {
-    scanGeneration: state.organizationSlice.freshness.scan_generation,
-    expectedRevision: state.organizationSlice.review.decision_revision,
+    action: elements.dialog.querySelector('input[name="standard-action"]:checked')?.value || "Sort similar files",
+    recognize: elements.dialog.querySelector("#standard-recognize")?.value || "Person name",
+    grouping: elements.dialog.querySelector('input[name="standard-grouping"]:checked')?.value || "Create a folder for each value",
+    fileType: Boolean(elements.dialog.querySelector("#standard-file-type")?.checked),
+    folder: checkedFolder("standard-folder"),
   };
 }
 
-function focusSelected() {
-  window.requestAnimationFrame(() => {
-    const target = Array.from(document.querySelectorAll("[data-select-id]"))
-      .find((element) => element.dataset.selectId === state.selectedItemId);
-    target?.focus();
-  });
+function suggestedStandardValue() {
+  return {
+    name: elements.dialog.querySelector("#suggestion-name")?.value.trim() || "Untitled Standard",
+    description: elements.dialog.querySelector("#suggestion-description")?.value.trim() || "Review this organization instruction.",
+    appliesTo: (elements.dialog.querySelector("#suggestion-folder")?.value || "Sample Downloads")
+      .split("›")
+      .map((part) => part.trim())
+      .filter(Boolean),
+  };
 }
 
-function continueOrganizing() {
-  state.selectedItemId = firstVisibleId();
-  if (state.route === "organize") {
-    render();
-    focusSelected();
-    return;
+function afterChoice(message) {
+  announce(message);
+  render({ focusDetails: true });
+}
+
+function actionFor(target, event) {
+  const action = target.dataset.action;
+  if (!action) return;
+
+  if (action === "history-back") return window.history.back();
+  if (action === "history-forward") return window.history.forward();
+  if (action === "set-theme") {
+    store.setTheme(target.dataset.themeValue);
+    announce(`${target.textContent.trim()} appearance selected.`);
+    return render();
   }
-  window.location.hash = "/organize";
+  if (action === "continue-organizing") {
+    store.openOrganize();
+    return navigate("organize", { focusChanges: true });
+  }
+  if (action === "open-duplicate-bin") return navigate("duplicate-bin", { focusMain: true });
+  if (action === "open-activity") return navigate("activity", { focusMain: true });
+  if (action === "open-standards") return navigate("standards", { focusMain: true });
+  if (action === "check-files" || action === "check-again") {
+    store.startCheck();
+    announce(`${store.waitingChanges().length} sample changes are ready to organize.`);
+    return navigate("home", { focusMain: true });
+  }
+  if (action === "set-style") {
+    store.setOrganizationStyle(target.dataset.style);
+    announce(`${target.textContent.trim().split("\n")[0]} style selected. No file moved.`);
+    return render({ focusChanges: true });
+  }
+  if (action === "filter-changes") {
+    store.setActionFilter(target.dataset.type);
+    return render({ focusChanges: true });
+  }
+  if (action === "accept-recommended") {
+    const ids = store.acceptRecommended();
+    announce(`${ids.length} recommended changes accepted. No file moved.`);
+    return render({ focusChanges: true });
+  }
+  if (action === "toggle-change") {
+    store.selectChange(target.dataset.changeId, { additive: true, range: event.shiftKey });
+    return render({ focusDetails: true });
+  }
+  if (action === "activate-change") {
+    store.selectChange(target.dataset.changeId, { additive: event.metaKey || event.ctrlKey, range: event.shiftKey });
+    return render({ focusDetails: true });
+  }
+  if (action === "select-all-visible") {
+    target.checked ? store.selectAllVisible() : store.clearSelection();
+    return render({ focusDetails: true });
+  }
+  if (action === "bulk-accept") {
+    const ids = store.bulkAction("accept");
+    return afterChoice(`${ids.length} compatible changes accepted together. No file moved.`);
+  }
+  if (action === "bulk-keep") {
+    const ids = store.bulkAction("keep");
+    return afterChoice(`${ids.length} changes kept together. No file moved.`);
+  }
+  if (action === "bulk-remove") {
+    const ids = store.bulkAction("remove");
+    return afterChoice(`${ids.length} changes removed together. No file moved.`);
+  }
+  if (action === "bulk-folder") return openDialog("folder", { bulk: true }, target);
+  if (action === "decide-change") {
+    store.decideChange(target.dataset.changeId, target.dataset.choice);
+    return afterChoice("Choice saved. No file moved.");
+  }
+  if (action === "open-folder") {
+    store.selectChange(target.dataset.changeId);
+    return openDialog("folder", { changeId: target.dataset.changeId }, target);
+  }
+  if (action === "confirm-folder") {
+    const folder = checkedFolder("change-folder-choice");
+    const ids = store.bulkAction("change-folder", folder);
+    closeDialog({ restoreFocus: false });
+    announce(`${ids.length} ${ids.length === 1 ? "change uses" : "changes use"} the chosen folder. No file moved.`);
+    return render({ focusDetails: true });
+  }
+  if (action === "dismiss-reuse") {
+    store.dismissReuseSuggestion();
+    return render({ focusDetails: true });
+  }
+  if (action === "review-and-approve") {
+    if (!store.beginApproval()) return;
+    render({ focusChanges: true });
+    return openDialog("approval", {}, target);
+  }
+  if (action === "approve-test-move") {
+    const batch = store.approveTestMove();
+    closeDialog({ restoreFocus: false });
+    if (!batch) return;
+    announce("Test move complete. No real files were changed.");
+    return navigate("organize", { focusMain: true });
+  }
+  if (action === "verify-test-move") {
+    const result = store.verifyTestMove();
+    if (!result) return;
+    announce(result.passed ? "Test move verified. No real files were changed." : "The sample checks found a problem.");
+    return render({ focusMain: true });
+  }
+  if (action === "complete-workflow") {
+    if (!store.completeWorkflow()) return;
+    announce("Everything is organized.");
+    return navigate("home", { focusMain: true });
+  }
+  if (action === "toggle-bin") {
+    store.toggleBinSelection(target.dataset.binId);
+    return render();
+  }
+  if (action === "select-all-bin") {
+    target.checked ? store.selectAllBin() : store.clearBinSelection();
+    return render();
+  }
+  if (action === "restore-one") {
+    const ids = store.restoreDuplicates([target.dataset.binId]);
+    announce(`${ids.length} file restored to its stored folder.`);
+    return render();
+  }
+  if (action === "restore-selected") {
+    const ids = store.restoreDuplicates();
+    announce(`${ids.length} ${ids.length === 1 ? "file" : "files"} restored to stored folders.`);
+    return render();
+  }
+  if (action === "toggle-activity") {
+    store.toggleActivity(target.dataset.activityId);
+    return render();
+  }
+  if (action === "expand-all-activity") {
+    store.setAllActivityExpanded(true);
+    return render();
+  }
+  if (action === "collapse-all-activity") {
+    store.setAllActivityExpanded(false);
+    return render();
+  }
+  if (action === "undo-move") {
+    if (!store.undoLatestMove()) return;
+    announce("The latest file move was undone in the sample.");
+    return navigate("home", { focusMain: true });
+  }
+  if (action === "interpret-preference") {
+    const text = document.querySelector("#preference-input")?.value || "";
+    store.interpretPreference(text);
+    announce("Preference interpreted for review. No Standard was activated.");
+    return render();
+  }
+  if (action === "clarify-preference") {
+    store.clarifyInterpretation(target.dataset.interpretChoice);
+    announce("Clarification saved. Suggested Standards are ready to review.");
+    return render();
+  }
+  if (action === "remove-suggested-standard") {
+    store.removeSuggestedStandard(target.dataset.suggestionId);
+    return render();
+  }
+  if (action === "edit-suggested-standard") return openDialog("standard-builder", { suggestedStandardId: target.dataset.suggestionId }, target);
+  if (action === "save-suggested-standard") {
+    store.updateSuggestedStandard(target.dataset.suggestionId, suggestedStandardValue());
+    closeDialog({ restoreFocus: false });
+    announce("Suggested Standard updated. It is not active yet.");
+    return render();
+  }
+  if (action === "confirm-suggested-standards") {
+    const count = store.confirmSuggestedStandards();
+    announce(`${count} Standards added. No file moved.`);
+    return render();
+  }
+  if (action === "cancel-interpretation") {
+    store.cancelInterpretation();
+    return render();
+  }
+  if (action === "open-standard-builder") return openDialog("standard-builder", { standardId: target.dataset.standardId || null }, target);
+  if (action === "save-standard") {
+    const standard = store.saveStandard(standardBuilderValue());
+    closeDialog({ restoreFocus: false });
+    announce(`${standard.name} saved. No file moved.`);
+    return navigate("standards", { focusMain: true });
+  }
+  if (action === "toggle-standard") {
+    store.toggleStandard(target.dataset.standardId);
+    announce("Standard updated. No file moved.");
+    return render();
+  }
+  if (action === "open-standard-conflict") return openDialog("standard-conflict", {}, target);
+  if (action === "set-settings-section") {
+    store.setSettingsSection(target.dataset.section);
+    return render();
+  }
+  if (action === "toggle-notification") {
+    store.toggleNotification(target.dataset.settingKey);
+    return render();
+  }
+  if (action === "reset-prototype") {
+    store.reset();
+    closeDialog({ restoreFocus: false });
+    announce("The starting sample has been restored.");
+    return navigate("home", { focusMain: true });
+  }
+  if (action === "close-dialog") return closeDialog();
 }
 
 document.addEventListener("click", (event) => {
-  const control = event.target.closest("[data-action]");
-  if (control) {
-    const action = control.dataset.action;
-    if (action === "history-back") window.history.back();
-    else if (action === "history-forward") window.history.forward();
-    else if (action === "set-theme") {
-      state.theme = control.dataset.themeValue === "dark" ? "dark" : "light";
-      render();
-      announce(`${state.theme === "dark" ? "Dark" : "Light"} theme enabled.`);
-    } else if (action === "continue-organizing") continueOrganizing();
-    else if (action === "retry-load") loadOrganization();
-    else if (action === "retry-activity") loadActivity({ announce: true });
-    else if (action === "toggle-activity") {
-      const id = control.dataset.activityId;
-      if (state.expandedActivityIds.has(id)) state.expandedActivityIds.delete(id);
-      else state.expandedActivityIds.add(id);
-      render();
-    } else if (action === "expand-all-activity") {
-      state.expandedActivityIds = new Set(state.activity.map((entry) => entry.id));
-      render();
-    } else if (action === "collapse-all-activity") {
-      state.expandedActivityIds.clear();
-      render();
-    } else if (action === "preview-undo") openUndoPreview(control.dataset.operationId);
-    else if (action === "cancel-undo") {
-      state.undoPreview = null;
-      state.activityError = "";
-      render();
-    } else if (action === "confirm-undo") confirmUndo();
-    else if (action === "recommendation-decision") {
-      mutate(() => updateOrganizationDecision({
-        ...requestContext(), kind: "recommendation",
-        changeId: control.dataset.changeId, decision: control.dataset.decision,
-      }), "Recommendation decision saved.");
-    } else if (action === "choice-option") {
-      mutate(() => updateOrganizationDecision({
-        ...requestContext(), kind: "choice",
-        choiceId: control.dataset.choiceId, optionId: control.dataset.optionId,
-      }), "Organization choice saved.");
-    } else if (action === "start-duplicate-choice") {
-      const existing = state.organizationSlice.review.choices.find((item) => item.choice_id === control.dataset.choiceId);
-      state.duplicateDrafts.set(control.dataset.choiceId, new Set(existing?.selected_copy_ids || []));
-      render();
-    } else if (action === "save-duplicate-choice") {
-      const selected = state.duplicateDrafts.get(control.dataset.choiceId) || new Set();
-      mutate(() => updateOrganizationDecision({
-        ...requestContext(), kind: "choice", choiceId: control.dataset.choiceId,
-        optionId: "choose-for-bin", copyIds: [...selected],
-      }), "Duplicate choice saved.");
-    } else if (action === "accept-all-recommended") {
-      const expectedChangeIds = state.organizationSlice.review.recommendations
-        .filter((item) => item.decision === "undecided")
-        .map((item) => item.change_id);
-      mutate(() => acceptRecommendedChanges({ ...requestContext(), expectedChangeIds }), "Recommended changes accepted.");
-    } else if (action === "open-approval") {
-      state.approvalOpen = true;
-      state.mutationError = "";
-      render();
-    } else if (action === "close-approval") {
-      state.approvalOpen = false;
-      state.mutationError = "";
-      render();
-    } else if (action === "approve-organization") {
-      mutate(() => approveOrganizationPlan(requestContext()), "Organization plan approved.");
-    } else if (action === "toggle-approved-summary") {
-      state.showApprovedSummary = !state.showApprovedSummary;
-      render();
+  const target = event.target.closest("[data-action]");
+  if (target) actionFor(target, event);
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && elements.dialog.open) {
+    event.preventDefault();
+    closeDialog();
+    return;
+  }
+  if (elements.dialog.open && event.key === "Tab") {
+    const focusable = [...elements.dialog.querySelectorAll('button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])')];
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable.at(-1);
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
     }
     return;
   }
-  const selected = event.target.closest("[data-select-id]");
-  if (selected) {
-    state.selectedItemId = selected.dataset.selectId;
-    render();
-    focusSelected();
+  const activeRow = event.target.closest("[data-change-row]");
+  if (!activeRow || !["ArrowDown", "ArrowUp"].includes(event.key)) return;
+  const rows = [...document.querySelectorAll("[data-change-row]")];
+  const index = rows.indexOf(activeRow);
+  const next = event.key === "ArrowDown" ? rows[index + 1] : rows[index - 1];
+  if (next) {
+    event.preventDefault();
+    next.querySelector(".change-name")?.focus();
   }
-});
-
-document.addEventListener("change", (event) => {
-  const input = event.target.closest("[data-action='toggle-duplicate-copy']");
-  if (!input) return;
-  const choice = state.organizationSlice.choices_needed.find((item) => item.id === input.dataset.choiceId);
-  const selected = state.duplicateDrafts.get(input.dataset.choiceId) || new Set();
-  if (input.checked) selected.add(input.dataset.copyId);
-  else selected.delete(input.dataset.copyId);
-  if (choice && selected.size >= choice.copies.length) {
-    selected.delete(input.dataset.copyId);
-    input.checked = false;
-    announce("Leave at least one duplicate copy unselected.");
-  }
-  state.duplicateDrafts.set(input.dataset.choiceId, selected);
-  render();
 });
 
 window.addEventListener("hashchange", () => {
-  clearPoll();
-  state.route = routeFromHash();
-  state.approvalOpen = false;
-  render();
-  if (state.route === "activity") loadActivity();
-  if (state.route === "organize" && state.selectedItemId) focusSelected();
-  schedulePoll();
-  document.querySelector("#main-content")?.focus();
+  store.setRoute(routeFromHash());
+  render({ focusMain: true });
 });
-window.addEventListener("beforeunload", clearPoll);
 
-state.route = routeFromHash();
+store.subscribe(syncShell);
+if (!window.location.hash) window.location.hash = "#/home";
+store.setRoute(routeFromHash());
 render();
-loadOrganization();
-if (state.route === "activity") loadActivity();

@@ -37,8 +37,9 @@ class WebLociFlowReadOnlyUiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.headers["cache-control"], "no-store")
         self.assertNotIn(str(self.root), response.text)
         self.assertNotIn(self.token, response.text)
-        self.assertIn("Read-only", response.text)
-        self.assertIn("Backend read-only", response.text)
+        self.assertIn("Prototype", response.text)
+        self.assertIn("Sample files only. Your files are not changed.", response.text)
+        self.assertNotIn("Backend", response.text)
 
     async def test_shell_rejects_all_query_parameters_and_non_get(self) -> None:
         async with _client(self.app) as client:
@@ -61,7 +62,11 @@ class WebLociFlowReadOnlyUiTests(unittest.IsolatedAsyncioTestCase):
             paths = (
                 "/static/loci_flow/styles.css",
                 "/static/loci_flow/app.js",
-                "/static/loci_flow/api.js",
+                "/static/loci_flow/data_source.js",
+                "/static/loci_flow/view_models.js",
+                "/static/loci_flow/fixtures.json",
+                "/static/loci_flow/store.js",
+                "/static/loci_flow/tree.js",
                 "/static/loci_flow/views.js",
                 "/static/loci_flow/assets/loci-flow-mark.svg",
                 "/static/loci_flow/assets/file-icons.svg",

@@ -1,572 +1,292 @@
-const ICON_SPRITE = "/static/loci_flow/assets/file-icons.svg";
-const SVG_NAMESPACE = ["http:", "", "www.w3.org", "2000", "svg"].join("/");
+import { breadcrumb, escapeHtml, fileIcon, renderMovementTree } from "./tree.js";
 
-const KIND_LABELS = Object.freeze({
-  folder: "Folder",
-  pdf: "PDF",
-  text: "Text",
-  markdown: "Markdown",
-  word: "Word document",
-  spreadsheet: "Spreadsheet",
-  image: "Image",
-  presentation: "Presentation",
-  source_code: "Source code",
-  archive: "ZIP/archive",
-  document: "Document",
-});
+const TYPE_LABELS = {
+  move: ["file moves", "Move"],
+  rename: ["name changes", "Rename"],
+  create_folder: ["new folders", "Create folder"],
+  duplicate: ["duplicate copies", "Duplicate copy"],
+};
 
-const ICON_KEYS = Object.freeze({ text: "txt", word: "document", source_code: "code" });
-
-const REASON_LABELS = Object.freeze({
-  matched_existing_group: "A clear destination matches this file.",
-  multiple_safe_destinations: "More than one safe folder fits.",
-  review_risk_requires_choice: "A closer look is recommended.",
-  exact_duplicate_choice: "Identical copies need your decision.",
-  project_folder_protected: "Project folder kept unchanged.",
-  submission_folder_protected: "Submission folder kept unchanged.",
-  shared_folder_protected: "Shared folder kept unchanged.",
-});
-
-const OPTION_LABELS = Object.freeze({
-  keep: "Keep here",
-  keep_all_copies: "Keep all copies",
-  choose_copies_for_duplicate_bin: "Choose copies for Duplicate Bin",
-});
-
-function el(tag, options = {}, children = []) {
-  const node = document.createElement(tag);
-  if (options.className) node.className = options.className;
-  if (options.text !== undefined) node.textContent = String(options.text);
-  for (const [name, value] of Object.entries(options.attrs || {})) {
-    if (value !== null && value !== false) node.setAttribute(name, value === true ? "" : String(value));
-  }
-  for (const [name, value] of Object.entries(options.dataset || {})) node.dataset[name] = String(value);
-  for (const child of Array.isArray(children) ? children : [children]) if (child) node.append(child);
-  return node;
+function button(label, action, options = {}) {
+  const classes = ["button", options.primary ? "button-primary" : "button-secondary", options.quiet ? "button-quiet" : "", options.danger ? "button-danger" : ""].filter(Boolean).join(" ");
+  return `<button type="button" class="${classes}" data-action="${action}" ${options.attrs || ""} ${options.disabled ? "disabled" : ""}>${escapeHtml(label)}</button>`;
 }
 
-function icon(kind, className = "file-icon") {
-  const knownKind = Object.hasOwn(KIND_LABELS, kind) ? kind : "document";
-  const iconKey = ICON_KEYS[knownKind] || knownKind;
-  const svg = document.createElementNS(SVG_NAMESPACE, "svg");
-  const use = document.createElementNS(SVG_NAMESPACE, "use");
-  svg.setAttribute("class", className);
-  svg.setAttribute("aria-hidden", "true");
-  use.setAttribute("href", `${ICON_SPRITE}#${iconKey}`);
-  svg.append(use);
-  return svg;
+function pageHeader(title, subtitle, actions = "") {
+  return `<header class="page-header"><div><p class="eyebrow">Sample Downloads</p><h1>${escapeHtml(title)}</h1><p>${escapeHtml(subtitle)}</p></div>${actions ? `<div class="page-actions">${actions}</div>` : ""}</header>`;
 }
 
-function pageHeader(eyebrow, title, copy, action = null) {
-  const intro = el("div", {}, [
-    el("div", { className: "eyebrow", text: eyebrow }),
-    el("h1", { text: title }),
-    el("p", { text: copy }),
-  ]);
-  return el("header", { className: "page-header" }, action ? [intro, action] : [intro]);
-}
-
-function stageStrip(active) {
-  const stages = ["Check", "Organize", "Approve", "Move", "Verify"];
-  return el("div", { className: "stage-strip", attrs: { "aria-label": "Organization stages" } }, stages.map((label, index) =>
-    el("div", { className: `stage${index < active ? " complete" : index === active ? " active" : ""}`, text: `${index + 1}. ${label}` }),
-  ));
-}
-
-export function formatDate(value) {
-  if (!value) return "No organization history yet";
-  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
-}
-
-function formatBytes(bytes) {
-  if (bytes === 0) return "0 B";
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
-  return `${(bytes / (1024 ** index)).toFixed(index === 0 ? 0 : 1)} ${units[index]}`;
-}
-
-function reasonLabel(code) {
-  return REASON_LABELS[code] || "Organization information is available for review.";
-}
-
-function optionLabel(option) {
-  if (option.action === "move") return `Move to ${option.destination_folder}`;
-  return OPTION_LABELS[option.action] || "Review this option";
-}
-
-function metric(label, count, tone = "") {
-  return el("div", { className: `card metric ${tone}`.trim() }, [el("strong", { text: count }), el("span", { text: label })]);
-}
-
-function scopeCard(slice) {
-  return el("section", { className: "card scope-card", attrs: { "aria-labelledby": "scope-heading" } }, [
-    el("div", { className: "scope-main" }, [
-      icon("folder", "scope-icon"),
-      el("div", { className: "scope-copy" }, [
-        el("div", { className: "eyebrow", text: "Selected scope" }),
-        el("h2", { text: slice.scope.display_name, attrs: { id: "scope-heading" } }),
-        el("p", { text: "This root is fixed by the running bootAI session." }),
-      ]),
-    ]),
-    el("div", { className: "scope-facts" }, [
-      el("div", { className: "fact" }, [el("strong", { text: formatDate(slice.freshness.last_checked_at) }), el("span", { text: "Last checked" })]),
-      el("div", { className: "fact" }, [el("strong", { text: slice.freshness.last_organized_at ? formatDate(slice.freshness.last_organized_at) : "No moves recorded yet" }), el("span", { text: "Last organized" })]),
-    ]),
-  ]);
-}
-
-function summaryList(summary) {
-  const rows = [
-    ["Files to move", summary.files_to_move],
-    ["Names to change", summary.names_to_change],
-    ["Folders to create", summary.folders_to_create],
-    ["Duplicate copies", summary.duplicate_copies],
+function stages(state) {
+  const labels = [
+    ["checking", "Check"],
+    ["organizing", "Organize"],
+    ["approving", "Approve"],
+    ["moving", "Move"],
+    ["verifying", "Verify"],
   ];
-  return el("ul", { className: "summary-list" }, rows.map(([label, value]) => el("li", {}, [el("span", { text: label }), el("strong", { text: value })])));
+  return `<ol class="stages" aria-label="Organization steps">${labels.map(([stage, label], index) => `<li class="${state.workflowStage === stage ? "current" : ""}"><span>${index + 1}</span>${label}</li>`).join("")}</ol>`;
 }
 
-export function renderHome(slice) {
-  const totalChanges = slice.review?.summary.choices_remaining ?? slice.summary.recommended_changes + slice.summary.choices_needed;
-  const continueButton = totalChanges
-    ? el("button", { className: "button primary", text: "Continue organizing", attrs: { type: "button" }, dataset: { action: "continue-organizing" } })
-    : el("a", { className: "button primary", text: "Check again", attrs: { href: "/" } });
-  return el("div", {}, [
-    pageHeader("Organization review", totalChanges ? `${totalChanges} choices are waiting` : "Review is complete", "Live results and temporary decisions from bootAI’s deterministic boundary."),
-    stageStrip(totalChanges ? 1 : -1),
-    scopeCard(slice),
-    el("section", { className: "metric-grid", attrs: { "aria-label": "Organization totals" } }, [
-      metric("Recommended changes", slice.summary.recommended_changes, "recommended"),
-      metric("Choices needed", slice.summary.choices_needed, "choice"),
-      metric("Kept by Standards", slice.summary.kept_by_standards, "protected"),
-      metric("Files to move", slice.review?.summary.files_to_move ?? slice.summary.files_to_move),
-    ]),
-    el("div", { className: "home-grid" }, [
-      el("section", { className: "card card-body next-step" }, [
-        el("div", {}, [
-          el("div", { className: "eyebrow", text: totalChanges ? "Ready to inspect" : "Up to date" }),
-          el("h2", { text: totalChanges ? "See the plan before anything changes" : "Everything is organized" }),
-          el("p", { text: totalChanges ? "Recommendations and choices can be reviewed without moving files." : "You can inspect the complete approved or reviewed result." }),
-        ]),
-        continueButton,
-      ]),
-      el("section", { className: "card", attrs: { "aria-labelledby": "movement-summary-heading" } }, [
-        el("div", { className: "card-header" }, [el("div", {}, [el("h2", { text: "Movement summary", attrs: { id: "movement-summary-heading" } }), el("p", { text: "Counts supplied by the backend" })])]),
-        el("div", { className: "card-body" }, summaryList(slice.summary)),
-      ]),
-    ]),
-    el("div", { className: "history-grid" }, [
-      el("section", { className: "card card-body" }, [el("div", { className: "eyebrow", text: "Duplicate Bin" }), el("h2", { text: "Not connected yet" }), el("p", { text: "Duplicate choices are available under Organize; no copies can be moved in this stage." })]),
-      el("section", { className: "card card-body" }, [el("div", { className: "eyebrow", text: "Last file move" }), el("h2", { text: "No moves recorded yet" }), el("p", { text: "The read-only contract contains no operation history." })]),
-    ]),
-  ]);
+export function renderHome(store) {
+  const state = store.getState();
+  const waiting = state.changes.filter((change) => change.decision === "pending").length;
+  const completed = state.workflowCompleted && state.workflowStage === "idle";
+  const primary = completed
+    ? button("Check again", "check-again", { primary: true })
+    : waiting ? button("Continue organizing", "continue-organizing", { primary: true })
+      : state.changes.length ? button("Continue organizing", "continue-organizing", { primary: true })
+        : button("Check files", "check-files", { primary: true });
+  const status = completed ? "Everything is organized" : waiting ? `${waiting} ${waiting === 1 ? "change is" : "changes are"} waiting` : "Changes are ready to approve";
+  return `${pageHeader("Home", "A clear starting point for the active folder.", primary)}${stages(state)}
+    ${completed ? '<section class="completion-banner" role="status"><strong>Last move completed successfully</strong><span>Today, 6:42 PM</span></section>' : ""}
+    <section class="home-status card" aria-labelledby="file-status-heading"><div><p class="eyebrow">Current state</p><h2 id="file-status-heading">File status</h2><strong class="home-main-status">${escapeHtml(status)}</strong></div><dl class="status-grid"><div><dt>Last checked</dt><dd>${escapeHtml(state.lastChecked)}</dd></div><div><dt>Last organized</dt><dd>${escapeHtml(state.lastOrganized)}</dd></div><div><dt>Next check</dt><dd>${escapeHtml(state.nextCheck)}</dd></div><div><dt>Current folder</dt><dd>${escapeHtml(state.currentFolder)}</dd></div></dl></section>
+    <section class="home-summaries" aria-label="Folder summary">
+      <article class="summary-card"><span class="summary-icon" aria-hidden="true">01</span><div><h2>Organization</h2><strong>${completed ? "Everything is organized" : waiting ? `${waiting} changes waiting` : "Ready to approve"}</strong></div>${completed ? button("Check again", "check-again") : button("Continue organizing", "continue-organizing")}</article>
+      <article class="summary-card"><span class="summary-icon" aria-hidden="true">02</span><div><h2>Duplicate Bin</h2><strong>${state.duplicateBinItems.length} ${state.duplicateBinItems.length === 1 ? "file" : "files"}</strong></div>${button("Open Duplicate Bin", "open-duplicate-bin")}</article>
+      <article class="summary-card"><span class="summary-icon" aria-hidden="true">03</span><div><h2>Last file move</h2><strong>${escapeHtml(state.lastMoveSummary || "No files have moved yet.")}</strong></div>${button("View Activity", "open-activity")}</article>
+    </section>`;
 }
 
-function snapshotForChoice(choice) {
-  return choice.item || choice.copies[0];
+function styleControl(store) {
+  const state = store.getState();
+  return `<section class="style-control card" aria-labelledby="style-heading"><div><p class="eyebrow">Current sample</p><h2 id="style-heading">Organization style</h2></div><fieldset class="segmented style-options" aria-label="Organization style">${Object.entries(store.fixtures.organizationStyles).map(([key, style]) => `<button type="button" data-action="set-style" data-style="${key}" aria-pressed="${state.organizationStyle === key}"><strong>${escapeHtml(style.label)}</strong><span>${escapeHtml(style.summary)}</span></button>`).join("")}</fieldset><p class="style-help">${escapeHtml(store.fixtures.organizationStyles[state.organizationStyle].explanation)}</p></section>`;
 }
 
-function reviewRecommendation(slice, changeId) {
-  return slice.review?.recommendations.find((item) => item.change_id === changeId) || { decision: "undecided" };
-}
-
-function reviewChoice(slice, choiceId) {
-  return slice.review?.choices.find((item) => item.choice_id === choiceId) || { option_id: null, selected_copy_ids: [] };
-}
-
-function changeRow(entry, type, selectedId, slice, ui) {
-  const item = type === "choice" ? snapshotForChoice(entry) : entry.item;
-  const review = type === "recommended" ? reviewRecommendation(slice, entry.id) : reviewChoice(slice, entry.id);
-  const status = type === "recommended"
-    ? review.decision === "accept" ? "Accepted" : review.decision === "keep" ? "Kept here" : "Recommended"
-    : review.option_id ? "Choice saved" : "Choice needed";
-  const subtitle = type === "recommended"
-    ? `Move · ${formatBytes(item.size_bytes)} · ${item.current_folder} → ${entry.destination_folder}`
-    : `${KIND_LABELS[item.kind] || KIND_LABELS.document} · ${formatBytes(item.size_bytes)} · ${reasonLabel(entry.reason_code)}`;
-  const button = el("button", {
-    className: `change-row${entry.id === selectedId ? " selected" : ""}`,
-    attrs: { type: "button", "aria-pressed": entry.id === selectedId ? "true" : "false", "aria-label": `${item.name}, ${KIND_LABELS[item.kind] || KIND_LABELS.document}, ${type === "recommended" ? "recommended change" : "choice needed"}` },
-    dataset: { selectId: entry.id },
-  }, [
-    icon(item.kind),
-    el("span", { className: "row-copy" }, [el("strong", { text: item.name }), el("span", { text: subtitle })]),
-    el("span", { className: `row-status ${type}`, text: status }),
-  ]);
-  if (type === "recommended") {
-    const actions = el("div", { className: "row-actions", attrs: { "aria-label": `Decision for ${item.name}` } }, [
-      el("button", { className: "button compact", text: "Accept", attrs: { type: "button", disabled: ui.busy || slice.review.status === "ready_to_move" }, dataset: { action: "recommendation-decision", changeId: entry.id, decision: "accept" } }),
-      el("button", { className: "button compact", text: "Keep here", attrs: { type: "button", disabled: ui.busy || slice.review.status === "ready_to_move" }, dataset: { action: "recommendation-decision", changeId: entry.id, decision: "keep" } }),
-    ]);
-    return el("div", { className: "decision-row" }, [button, actions]);
-  }
-  const options = el("div", { className: "option-actions", attrs: { "aria-label": `Options for ${item.name}` } }, entry.options.map((option) => {
-    const action = option.id === "choose-for-bin" ? "start-duplicate-choice" : "choice-option";
-    return el("button", {
-      className: `button compact${review.option_id === option.id ? " selected-option" : ""}`,
-      text: optionLabel(option),
-      attrs: { type: "button", "aria-pressed": review.option_id === option.id ? "true" : "false", disabled: ui.busy || slice.review.status === "ready_to_move" },
-      dataset: { action, choiceId: entry.id, optionId: option.id },
-    });
-  }));
-  const children = [button, options];
-  if (entry.choice_type === "exact_duplicate" && ui.duplicateDrafts?.has(entry.id)) {
-    const selected = ui.duplicateDrafts.get(entry.id);
-    const copies = el("fieldset", { className: "copy-picker" }, [
-      el("legend", { text: "Choose copies for future Duplicate Bin" }),
-      ...entry.copies.map((copy) => el("label", {}, [
-        el("input", { attrs: { type: "checkbox", value: copy.id, checked: selected.has(copy.id) ? "checked" : null }, dataset: { action: "toggle-duplicate-copy", choiceId: entry.id, copyId: copy.id } }),
-        el("span", { text: `${copy.name} · ${copy.current_folder}` }),
-      ])),
-      el("p", { className: "inline-note", text: "Select at least one copy and leave at least one unselected." }),
-      el("button", {
-        className: "button primary compact",
-        text: "Save duplicate choice",
-        attrs: { type: "button", disabled: selected.size < 1 || selected.size >= entry.copies.length || ui.busy },
-        dataset: { action: "save-duplicate-choice", choiceId: entry.id },
-      }),
-    ]);
-    children.push(copies);
-  }
-  return el("div", { className: "decision-row" }, children);
-}
-
-function keptRow(kept, selectedId) {
-  const selectionId = `standard:${kept.item.id}`;
-  return el("button", {
-    className: `change-row${selectionId === selectedId ? " selected" : ""}`,
-    attrs: { type: "button", "aria-pressed": selectionId === selectedId ? "true" : "false", "aria-label": `${kept.item.name}, ${KIND_LABELS[kept.item.kind] || KIND_LABELS.document}, kept by ${kept.standard.name}` },
-    dataset: { selectId: selectionId },
-  }, [
-    icon(kept.item.kind),
-    el("span", { className: "row-copy" }, [el("strong", { text: kept.item.name }), el("span", { text: `${kept.standard.name} · ${reasonLabel(kept.reason_code)}` })]),
-    el("span", { className: "row-status protected", text: "Kept" }),
-  ]);
-}
-
-function sectionCard(title, description, count, rows, emptyCopy) {
-  return el("section", { className: "card" }, [
-    el("div", { className: "card-header" }, [
-      el("div", {}, [el("h2", { text: title }), el("p", { text: description })]),
-      el("span", { className: "section-count", text: count, attrs: { "aria-label": `${count} ${title.toLowerCase()}` } }),
-    ]),
-    rows.length ? el("div", { className: "row-list" }, rows) : el("div", { className: "card-body", text: emptyCopy }),
-  ]);
-}
-
-function keptCard(count, rows) {
-  return el("details", { className: "card kept-card" }, [
-    el("summary", {}, [
-      el("span", {}, [el("strong", { text: "Kept by Standards" }), el("small", { text: `${count} files kept in place` })]),
-      el("span", { className: "section-count", text: count }),
-    ]),
-    rows.length ? el("div", { className: "row-list" }, rows) : el("div", { className: "card-body", text: "No files were kept by active Standards." }),
-  ]);
-}
-
-function findSelected(slice, selectedId) {
-  const recommended = slice.recommended_changes.find((entry) => entry.id === selectedId);
-  if (recommended) return { entry: recommended, type: "recommended", item: recommended.item };
-  const choice = slice.choices_needed.find((entry) => entry.id === selectedId);
-  if (choice) return { entry: choice, type: "choice", item: snapshotForChoice(choice) };
-  const kept = slice.kept_by_standards.find((entry) => `standard:${entry.item.id}` === selectedId);
-  if (kept) return { entry: kept, type: "kept", item: kept.item };
-  return null;
-}
-
-function detailsCard(slice, selectedId) {
-  const selected = findSelected(slice, selectedId);
-  if (!selected) return el("section", { className: "card card-body" }, [
-    el("h2", { text: "Change details" }),
-    el("p", { text: "Select a recommended change or choice to inspect its backend-provided metadata." }),
-  ]);
-  const { entry, item, type } = selected;
-  const details = [
-    ["Item", item.name], ["Kind", KIND_LABELS[item.kind] || KIND_LABELS.document],
-    ["Current folder", item.current_folder], ["Relative path", item.relative_path],
-    ["Size", formatBytes(item.size_bytes)], ["Modified", formatDate(item.modified_at)],
-    ["Why", reasonLabel(entry.reason_code)],
-  ];
-  if (type === "recommended") details.splice(4, 0, ["New folder", entry.destination_folder]);
-  if (type === "choice") {
-    if (entry.identical_copy_count !== undefined) {
-      details.splice(4, 0, ["Matching copies", entry.identical_copy_count]);
-      details.push(["Copy locations", entry.copies.map((copy) => copy.current_folder).join(", ")]);
-    }
-    details.push(["Available actions", entry.options.map(optionLabel).join("; ")]);
-  }
-  if (type === "kept") {
-    details.splice(4, 0, ["Standard", entry.standard.name]);
-    details.push(["Status", "Kept in place"]);
-  }
-  return el("section", { className: "card" }, [
-    el("div", { className: "card-header" }, [el("div", {}, [el("h2", { text: "Change details" }), el("p", { text: "Read-only backend metadata" })])]),
-    el("div", { className: "card-body" }, [
-      el("dl", { className: "detail-grid" }, details.map(([term, value]) => el("div", { className: "detail-item" }, [el("dt", { text: term }), el("dd", { text: value })]))),
-      el("p", { className: "inline-note", text: "Decisions are temporary. No file is moved from this screen." }),
-    ]),
-  ]);
-}
-
-function fileKindByPath(slice, relativePath) {
-  for (const change of slice.recommended_changes) if (change.item.relative_path === relativePath) return change.item.kind;
-  return "document";
-}
-
-function movementTree(slice) {
-  const entries = slice.summary.movement_tree.map((entry) => el("li", {}, [
-    el("div", { className: "movement-folder" }, [icon("folder"), el("span", { text: entry.folder })]),
-    el("ul", {}, entry.files.map((relativePath) => el("li", { className: "movement-file" }, [icon(fileKindByPath(slice, relativePath)), el("span", { text: relativePath })]))),
-  ]));
-  return el("section", { className: "card" }, [
-    el("div", { className: "card-header" }, [el("div", {}, [el("h2", { text: "Movement tree" }), el("p", { text: "Backend-provided destinations" })])]),
-    el("div", { className: "card-body" }, entries.length ? el("ul", { className: "movement-tree" }, entries) : el("p", { text: "No file movement is proposed." })),
-  ]);
-}
-
-export function renderOrganize(slice, selectedId, ui = {}) {
-  const state = { busy: false, duplicateDrafts: new Map(), ...ui };
-  const recommendedRows = slice.recommended_changes.map((entry) => changeRow(entry, "recommended", selectedId, slice, state));
-  const choiceRows = slice.choices_needed.map((entry) => changeRow(entry, "choice", selectedId, slice, state));
-  const keptRows = slice.kept_by_standards.map((entry) => keptRow(entry, selectedId));
-  const pendingIds = slice.review.recommendations.filter((item) => item.decision === "undecided").map((item) => item.change_id);
-  const bulk = el("button", {
-    className: "button primary",
-    text: "Accept all recommended changes",
-    attrs: { type: "button", disabled: !pendingIds.length || state.busy || slice.review.status === "ready_to_move" },
-    dataset: { action: "accept-all-recommended" },
-  });
-  const approve = slice.review.summary.ready_for_approval
-    ? el("button", { className: "button primary", text: "Review and approve", attrs: { type: "button", disabled: state.busy }, dataset: { action: "open-approval" } })
-    : null;
-  return el("div", {}, [
-    pageHeader("Temporary decisions", "Organize", "Choose what should happen. No files move while you review.", bulk),
-    stageStrip(1),
-    el("p", { className: "inline-note", text: "Organization styles are not connected yet." }),
-    state.errorMessage ? el("div", { className: "inline-error", text: state.errorMessage, attrs: { role: "alert" } }) : null,
-    el("div", { className: "organize-layout" }, [
-      el("div", { className: "change-stack" }, [
-        sectionCard("Recommended changes", "Clear moves identified by the planner", slice.summary.recommended_changes, recommendedRows, "No recommended changes in this scan."),
-        sectionCard("Choices needed", "Options are shown without saving a decision", slice.summary.choices_needed, choiceRows, "No choices are needed in this scan."),
-        keptCard(slice.summary.kept_by_standards, keptRows),
-      ]),
-      el("aside", { className: "details-column", attrs: { "aria-label": "Organization details" } }, [detailsCard(slice, selectedId), movementTree(slice)]),
-    ]),
-    el("section", { className: "card card-body approval-callout" }, [
-      el("div", {}, [
-        el("div", { className: "eyebrow", text: slice.review.summary.ready_for_approval ? "Ready for final review" : "Choices remaining" }),
-        el("h2", { text: slice.review.summary.ready_for_approval ? "Review the complete plan" : `${slice.review.summary.choices_remaining} decisions still needed` }),
-        el("p", { text: "Approval performs a fresh backend safety check. No files have moved yet." }),
-      ]),
-      approve,
-    ]),
-  ]);
-}
-
-export function renderApproval(slice, busy = false, errorMessage = "") {
-  const summary = slice.review.summary;
-  return el("div", {}, [
-    pageHeader("Final review", "Ready to organize", "Confirm the backend-derived summary before approval."),
-    stageStrip(2),
-    errorMessage ? el("div", { className: "inline-error", text: errorMessage, attrs: { role: "alert" } }) : null,
-    el("section", { className: "card approval-panel" }, [
-      el("h2", { text: `${summary.files_to_move} files will move` }),
-      el("p", { text: `${summary.duplicate_copies_for_future_bin} duplicate copies are marked for Duplicate Bin.` }),
-      el("p", { className: "inline-note", text: "No files have moved yet." }),
-      el("div", { className: "approval-actions" }, [
-        el("button", { className: "button", text: "Back to changes", attrs: { type: "button", disabled: busy }, dataset: { action: "close-approval" } }),
-        el("button", { className: "button primary", text: busy ? "Checking…" : "Approve", attrs: { type: "button", disabled: busy }, dataset: { action: "approve-organization" } }),
-      ]),
-    ]),
-  ]);
-}
-
-export function renderReady(slice, showSummary = false) {
-  const summary = slice.review.approval.summary;
-  return el("div", {}, [
-    pageHeader("Approved plan", "Ready to move", "The organization has been checked and approved."),
-    stageStrip(3),
-    el("section", { className: "card approval-panel" }, [
-      el("h2", { text: "No files have moved yet." }),
-      el("p", { text: `${summary.files_to_move} files are approved to move. ${summary.duplicate_copies_for_future_bin} duplicate copies are marked for future Duplicate Bin handling.` }),
-      showSummary ? el("dl", { className: "detail-grid" }, [
-        ["Files to move", summary.files_to_move],
-        ["Duplicate copies marked", summary.duplicate_copies_for_future_bin],
-        ["Names to change", summary.names_to_change],
-        ["Folders to create", summary.folders_to_create],
-      ].map(([term, value]) => el("div", { className: "detail-item" }, [el("dt", { text: term }), el("dd", { text: value })]))) : null,
-      el("div", { className: "approval-actions" }, [
-        el("a", { className: "button", text: "Back to Home", attrs: { href: "#/home" } }),
-        el("button", { className: "button", text: showSummary ? "Hide approved summary" : "View approved summary", attrs: { type: "button" }, dataset: { action: "toggle-approved-summary" } }),
-        el("button", { className: "button primary", text: "Move files — not connected yet", attrs: { type: "button", disabled: "disabled", "aria-disabled": "true" } }),
-      ]),
-    ]),
-  ]);
-}
-
-const ACTIVITY_STATUS_LABELS = Object.freeze({
-  verified: "Completed",
-  partial_movement: "Partly completed",
-  movement_failed: "Failed",
-  verification_failed: "Could not confirm",
-  restored: "Restored",
-  partial_undo: "Partly completed",
-  undo_failed: "Failed",
-  undo_verification_failed: "Could not confirm",
-  prepared: "Needs attention",
-  moving: "Needs attention",
-  moved_unverified: "Needs attention",
-  undoing: "Needs attention",
-  restored_unverified: "Needs attention",
-  interrupted: "Needs attention",
-  recovery_required: "Needs attention",
-});
-
-function activitySummary(entry) {
-  if (entry.type === "restore") {
-    const parts = [`${entry.files_restored} ${entry.files_restored === 1 ? "file" : "files"} restored`];
-    if (entry.files_failed) parts.push(`${entry.files_failed} failed`);
-    if (entry.files_unattempted) parts.push(`${entry.files_unattempted} not attempted`);
-    return parts.join(" · ");
-  }
-  const parts = [`${entry.files_moved} ${entry.files_moved === 1 ? "file" : "files"} moved`];
-  if (entry.files_failed) parts.push(`${entry.files_failed} failed`);
-  if (entry.files_unattempted) parts.push(`${entry.files_unattempted} not attempted`);
-  return parts.join(" · ");
-}
-
-function activityDetailList(entry) {
-  if (!entry.details.length) return el("p", { className: "activity-none", text: "No file details recorded." });
-  return el("ul", { className: "activity-detail-list" }, entry.details.map((detail) => {
-    const from = entry.type === "restore" ? detail.moved_from : detail.source;
-    const to = entry.type === "restore" ? detail.restored_to : detail.destination;
-    return el("li", {}, [
-      el("span", { text: from }),
-      el("span", { className: "activity-arrow", text: "→", attrs: { "aria-hidden": "true" } }),
-      el("span", { text: to }),
-      el("strong", { text: detail.status }),
-    ]);
-  }));
-}
-
-function activityRow(entry, expanded, busy) {
-  const actions = [
-    el("button", {
-      className: "button compact",
-      text: expanded ? "Hide details" : "Details",
-      attrs: { type: "button", "aria-expanded": expanded },
-      dataset: { action: "toggle-activity", activityId: entry.id },
-    }),
-  ];
-  if (entry.undoable) actions.push(el("button", {
-    className: "button primary compact",
-    text: busy ? "Checking…" : "Undo move",
-    attrs: { type: "button", disabled: busy },
-    dataset: { action: "preview-undo", operationId: entry.id },
-  }));
-  return el("article", { className: "card activity-row" }, [
-    el("header", {}, [
-      el("div", {}, [
-        el("h2", { text: entry.title }),
-        el("p", { text: activitySummary(entry) }),
-        el("span", { className: "activity-time", text: `${ACTIVITY_STATUS_LABELS[entry.status] || "Needs attention"} · ${formatDate(entry.completed_at || entry.started_at)}` }),
-      ]),
-      el("div", { className: "activity-actions" }, actions),
-    ]),
-    expanded ? el("div", { className: "activity-details" }, [activityDetailList(entry)]) : null,
-  ]);
-}
-
-function undoDialog(preview, busy, errorMessage) {
-  if (!preview) return null;
-  return el("div", { className: "dialog-backdrop" }, [
-    el("section", { className: "card undo-dialog", attrs: { role: "dialog", "aria-modal": "true", "aria-labelledby": "undo-dialog-title" } }, [
-      el("h2", { text: "Undo this move?", attrs: { id: "undo-dialog-title" } }),
-      el("p", { text: `${preview.files_to_restore} ${preview.files_to_restore === 1 ? "file" : "files"} will return to ${preview.files_to_restore === 1 ? "its" : "their"} previous folders.` }),
-      errorMessage ? el("p", { className: "inline-error", text: errorMessage, attrs: { role: "alert" } }) : null,
-      el("div", { className: "approval-actions" }, [
-        el("button", { className: "button", text: "Cancel", attrs: { type: "button", disabled: busy }, dataset: { action: "cancel-undo" } }),
-        el("button", { className: "button primary", text: busy ? "Restoring…" : "Undo move", attrs: { type: "button", disabled: busy }, dataset: { action: "confirm-undo" } }),
-      ]),
-    ]),
-  ]);
-}
-
-export function renderActivity(activity, ui = {}) {
-  const state = { status: "ready", expandedIds: new Set(), busy: false, preview: null, errorMessage: "", ...ui };
-  const controls = el("div", { className: "activity-actions" }, [
-    el("button", { className: "button compact", text: "Expand all", attrs: { type: "button", disabled: !activity.length }, dataset: { action: "expand-all-activity" } }),
-    el("button", { className: "button compact", text: "Collapse all", attrs: { type: "button", disabled: !activity.length }, dataset: { action: "collapse-all-activity" } }),
-  ]);
-  let content;
-  if (state.status === "loading" || state.status === "idle") content = el("p", { className: "loading", text: "Loading Activity…" });
-  else if (state.status === "error") content = el("section", { className: "error-state" }, [
-    el("h2", { text: "Activity could not be loaded." }),
-    el("p", { text: state.errorMessage || "Try loading Activity again." }),
-    el("button", { className: "button", text: "Try again", attrs: { type: "button" }, dataset: { action: "retry-activity" } }),
-  ]);
-  else if (!activity.length) content = el("section", { className: "empty-state" }, [
-    el("h2", { text: "No file moves recorded." }),
-    el("p", { text: "Completed organization moves and restores will appear here." }),
-  ]);
-  else content = el("section", { className: "activity-list", attrs: { "aria-label": "File movement Activity" } }, activity.map((entry) => activityRow(entry, state.expandedIds.has(entry.id), state.busy)));
-  return el("div", {}, [
-    pageHeader("Durable history", "Activity", "File moves and verified restores for this bootAI root.", controls),
-    content,
-    undoDialog(state.preview, state.busy, state.errorMessage),
-  ]);
-}
-
-const NON_INTEGRATED = Object.freeze({
-  "duplicate-bin": ["Duplicate Bin", "Duplicate Bin movement is not part of this read-only stage. Exact-copy choices appear under Organize."],
-  standards: ["Standards", "Active protections are applied by the backend before this UI receives the plan. Standards editing is not connected here."],
-});
-
-export function renderUnintegrated(route) {
-  const [title, copy] = NON_INTEGRATED[route];
-  return el("div", {}, [
-    pageHeader("Integration boundary", title, "This destination is preserved from the accepted prototype."),
-    el("section", { className: "not-integrated" }, [
-      el("h2", { text: route === "duplicate-bin" ? "Duplicate Bin is not connected yet." : "Standards editing is not connected yet." }),
-      el("p", { text: copy }),
-      el("a", { className: "button", text: "Return to Organize", attrs: { href: "#/organize" } }),
-    ]),
-  ]);
-}
-
-export function renderSettings(theme) {
-  return el("div", {}, [
-    pageHeader("Local display", "Settings", "Only appearance is available. It changes this page in memory and does not alter backend state."),
-    el("div", { className: "settings-grid" }, [
-      el("section", { className: "card settings-card" }, [el("h2", { text: "Appearance" }), el("p", { text: `Current theme: ${theme}. Use the Light and Dark controls in the toolbar.` })]),
-      el("section", { className: "card settings-card" }, [el("h2", { text: "Organization controls" }), el("p", { text: "Scope changes, Standards editing, and movement are intentionally unavailable. Approval stops at Ready to move." })]),
-    ]),
-  ]);
-}
-
-export function renderLoadState(status, errorCode = "") {
-  if (status === "loading") return el("p", { className: "loading", text: "Loading organization information…" });
-  const states = {
-    scan_not_ready: ["Files have not been checked yet", "Use the existing bootAI workflow to check the fixed root, then return here."],
-    scan_in_progress: ["Checking files…", "Loci Flow will check again while this page stays open."],
-    scan_failed: ["File check failed", "Use the existing scan workflow to try again safely."],
-    authentication_required: ["Session unavailable", "Reload bootAI and authenticate before opening Loci Flow."],
-    contract_error: ["Organization response could not be displayed", "The response did not match the committed read-only contract."],
-    network_error: ["bootAI could not be reached", "Check that the local web application is still running."],
-    organization_unavailable: ["Organization information is unavailable", "This scan could not produce the read-only organization view."],
-    scan_generation_mismatch: ["Files have changed", "Check the folder again before continuing."],
-    decision_revision_mismatch: ["Organization choices were updated elsewhere.", "Reload choices before continuing."],
-    source_changed: ["A file changed after it was checked.", "Reload organization before approving."],
-    overwrite_detected: ["A destination file now exists.", "Reload organization before approving."],
-    unsafe_destination: ["A destination is no longer available.", "Reload organization before approving."],
-    duplicate_group_changed: ["Duplicate copies changed after they were checked.", "Reload organization before approving."],
+function changePrimary(change) {
+  const mapping = {
+    move: ["Accept", "accept"],
+    rename: ["Use new name", "use-name"],
+    create_folder: ["Create folder", "create"],
+    duplicate: ["Move to Duplicate Bin", "move-bin"],
   };
-  const code = errorCode || status;
-  const [title, copy] = states[code] || ["Organization information could not be loaded.", "Try loading the current read-only result again."];
-  const action = code === "scan_not_ready"
-    ? el("a", { className: "button primary", text: "Check files", attrs: { href: "/" } })
-    : code === "scan_failed"
-      ? el("a", { className: "button", text: "Try again", attrs: { href: "/" } })
-      : code === "scan_in_progress" || code === "authentication_required"
-        ? null
-        : el("button", { className: "button", text: "Try again", attrs: { type: "button" }, dataset: { action: "retry-load" } });
-  return el("section", { className: "error-state" }, [el("h2", { text: title }), el("p", { text: copy }), action, el("span", { className: "error-code", text: code })]);
+  return mapping[change.type];
+}
+
+function changeRow(change, state) {
+  const selected = state.selectedChangeIds.includes(change.id);
+  const primary = changePrimary(change);
+  return `<div class="change-row ${selected ? "selected" : ""}" data-change-row="${change.id}" role="listitem">
+    <label class="row-check"><input type="checkbox" data-action="toggle-change" data-change-id="${change.id}" ${selected ? "checked" : ""}><span class="visually-hidden">Select ${escapeHtml(change.name)}</span></label>
+    ${fileIcon(change.icon, change.kind)}
+    <button type="button" class="change-name" data-action="activate-change" data-change-id="${change.id}">${escapeHtml(change.name)}</button>
+    <span class="change-description">${escapeHtml(change.changeText)}</span>
+    <span class="change-size">${escapeHtml(change.size)}</span>
+    <button type="button" class="row-action" data-action="decide-change" data-change-id="${change.id}" data-choice="${primary[1]}">${escapeHtml(primary[0])}</button>
+  </div>`;
+}
+
+function actionFilters(store) {
+  const state = store.getState();
+  const counts = store.changeCounts();
+  return `<div class="action-counts" aria-label="Change types"><button type="button" data-action="filter-changes" data-type="all" aria-pressed="${state.actionFilter === "all"}"><strong>${counts.total}</strong>All changes</button>${Object.entries(TYPE_LABELS).map(([type, [label]]) => `<button type="button" data-action="filter-changes" data-type="${type}" aria-pressed="${state.actionFilter === type}"><strong>${counts[type]}</strong>${escapeHtml(label)}</button>`).join("")}</div>`;
+}
+
+function bulkBar(store) {
+  const state = store.getState();
+  const visible = store.waitingChanges();
+  const selected = state.selectedChangeIds.length;
+  return `<div class="bulk-bar"><label><input type="checkbox" data-action="select-all-visible" ${visible.length && visible.every((change) => state.selectedChangeIds.includes(change.id)) ? "checked" : ""}> Select all visible</label><strong>${selected} selected</strong><span class="bulk-spacer"></span>${button("Accept selected", "bulk-accept", { disabled: !selected })}${button("Keep selected", "bulk-keep", { disabled: !selected })}${button("Change folder", "bulk-folder", { disabled: !selected })}${button("Remove changes", "bulk-remove", { disabled: !selected })}</div>`;
+}
+
+function changesPanel(store) {
+  const state = store.getState();
+  const recommended = store.recommendedChanges();
+  const choices = store.choiceChanges();
+  const visibleRecommended = state.actionFilter === "all" ? recommended : recommended.filter((change) => change.type === state.actionFilter);
+  const visibleChoices = state.actionFilter === "all" ? choices : choices.filter((change) => change.type === state.actionFilter);
+  return `<div class="decision-sections" id="changes-to-confirm" tabindex="-1">
+    <section class="changes-panel card" aria-labelledby="recommended-heading"><header class="section-header"><div><p class="eyebrow">Safe to accept together</p><h2 id="recommended-heading">Recommended changes</h2></div>${button(`Accept all recommended changes${recommended.length ? ` (${recommended.length})` : ""}`, "accept-recommended", { primary: true, disabled: !recommended.length })}</header><div class="change-list recommended-list" role="list" aria-label="Recommended changes">${visibleRecommended.length ? visibleRecommended.map((change) => changeRow(change, state)).join("") : '<div class="empty-list"><strong>All recommended changes accepted</strong><span>Accepted changes now appear below.</span></div>'}</div></section>
+    <section class="changes-panel card" aria-labelledby="choices-heading"><header class="section-header"><div><p class="eyebrow">Needs your judgment</p><h2 id="choices-heading">Choices needed</h2></div><span class="choice-count">${choices.length} ${choices.length === 1 ? "choice" : "choices"}</span></header>${actionFilters(store)}${bulkBar(store)}<div class="change-list" role="list" aria-label="Choices needed">${visibleChoices.length ? visibleChoices.map((change) => changeRow(change, state)).join("") : '<div class="empty-list"><strong>No choices remain</strong><span>Review the complete batch when you are ready.</span></div>'}</div></section>
+  </div>`;
+}
+
+function detailActions(change) {
+  if (change.type === "move") return `${button("Accept", "decide-change", { primary: true, attrs: `data-change-id="${change.id}" data-choice="accept"` })}${button("Keep here", "decide-change", { attrs: `data-change-id="${change.id}" data-choice="keep"` })}${button("Change folder", "open-folder", { attrs: `data-change-id="${change.id}"` })}`;
+  if (change.type === "rename") return `${button("Use new name", "decide-change", { primary: true, attrs: `data-change-id="${change.id}" data-choice="use-name"` })}${button("Keep current name", "decide-change", { attrs: `data-change-id="${change.id}" data-choice="keep-name"` })}`;
+  if (change.type === "create_folder") return `${button("Create folder", "decide-change", { primary: true, attrs: `data-change-id="${change.id}" data-choice="create"` })}${button("Do not create", "decide-change", { attrs: `data-change-id="${change.id}" data-choice="skip-folder"` })}`;
+  if (change.type === "duplicate") return `${button("Move to Duplicate Bin", "decide-change", { primary: true, attrs: `data-change-id="${change.id}" data-choice="move-bin"` })}${button("Keep all copies", "decide-change", { attrs: `data-change-id="${change.id}" data-choice="keep-copies"` })}`;
+  return "";
+}
+
+function reuseSuggestion(state) {
+  if (!state.showReuseSuggestion) return "";
+  return `<aside class="reuse-suggestion" aria-label="Organization suggestion"><button type="button" class="dismiss" data-action="dismiss-reuse" aria-label="Dismiss">×</button><strong>Use this organization again?</strong><div>${button("Just this time", "dismiss-reuse")}${button("Suggest next time", "dismiss-reuse")}${button("Save as standard", "open-standard-builder", { primary: true })}</div></aside>`;
+}
+
+function itemDetails(store) {
+  const state = store.getState();
+  const selected = state.selectedChangeIds;
+  if (selected.length > 1) return `<aside class="item-details card" aria-labelledby="details-heading"><p class="eyebrow">Bulk choice</p><h2 id="details-heading">Item details</h2><strong class="detail-title">${selected.length} files selected</strong><p>Use the bulk actions above to update every compatible selected row at once.</p></aside>`;
+  const change = store.activeChange();
+  if (!change) return `<aside class="item-details card" aria-labelledby="details-heading"><p class="eyebrow">Current choice</p><h2 id="details-heading">Item details</h2><div class="empty-details"><strong>No item selected</strong><span>Select a change to see its folders and actions.</span></div>${reuseSuggestion(state)}</aside>`;
+  const standard = store.standardForChange(change);
+  return `<aside class="item-details card" aria-labelledby="details-heading"><p class="eyebrow">Current choice</p><h2 id="details-heading">Item details</h2><div class="detail-title-row">${fileIcon(change.icon, change.kind)}<div><strong class="detail-title">${escapeHtml(change.name)}</strong><span>${escapeHtml(TYPE_LABELS[change.type][1])}</span></div></div><dl class="details-list"><div><dt>Kind</dt><dd>${escapeHtml(change.kind)}</dd></div><div><dt>Size</dt><dd>${escapeHtml(change.size)}</dd></div><div><dt>Current folder</dt><dd>${breadcrumb(change.currentFolder)}</dd></div><div><dt>${change.type === "rename" ? "New name" : "New folder"}</dt><dd>${change.type === "rename" ? escapeHtml(change.newName) : breadcrumb(change.newFolder)}</dd></div><div><dt>Why this change</dt><dd>${escapeHtml(change.reason)}</dd></div>${standard ? `<div><dt>Standard</dt><dd>${escapeHtml(standard.name)}</dd></div>` : ""}</dl><div class="detail-actions">${detailActions(change)}${change.type === "move" ? button("Save as standard", "open-standard-builder", { quiet: true }) : ""}</div>${reuseSuggestion(state)}</aside>`;
+}
+
+function keptByStandards(state) {
+  if (!state.keptByStandards.length) return "";
+  return `<details class="kept-summary card"><summary><span><strong>Kept by Standards</strong><small>${state.keptByStandards.length} ${state.keptByStandards.length === 1 ? "file" : "files"} kept in place</small></span></summary><ul>${state.keptByStandards.map((item) => `<li>${escapeHtml(item.name)} · ${escapeHtml(item.standardName)}</li>`).join("")}</ul></details>`;
+}
+
+function workflowResult(store) {
+  const state = store.getState();
+  if (state.workflowStage === "moving") {
+    return `<section class="workflow-result card" role="status"><p class="eyebrow">Move</p><h2>Test move complete</h2><p>No real files were changed.</p>${button("Verify test move", "verify-test-move", { primary: true })}</section>`;
+  }
+  const counts = state.verificationResult?.counts || { movedFiles: 0, renamedFiles: 0, createdFolders: 0, duplicateBinFiles: 0 };
+  return `<section class="workflow-result card" role="status"><p class="eyebrow">Verify</p><h2>Test move verified</h2><div class="verification-counts"><strong>${counts.movedFiles} ${counts.movedFiles === 1 ? "file" : "files"} moved</strong><span>${counts.renamedFiles} ${counts.renamedFiles === 1 ? "name" : "names"} changed</span><span>${counts.createdFolders} ${counts.createdFolders === 1 ? "folder" : "folders"} created</span><span>${counts.duplicateBinFiles} ${counts.duplicateBinFiles === 1 ? "copy" : "copies"} moved to Duplicate Bin</span></div><p>No real files were changed.</p><div>${button("Done", "complete-workflow", { primary: true })}${button("View Activity", "open-activity")}</div></section>`;
+}
+
+export function renderOrganize(store) {
+  const state = store.getState();
+  if (["moving", "verifying"].includes(state.workflowStage)) {
+    return `${pageHeader("Organize", "The test move and its checks are separate steps.")}${stages(state)}${workflowResult(store)}`;
+  }
+  const approval = store.canReviewAndApprove() ? `${button("Review and approve", "review-and-approve", { primary: true })}<small>No real files will be changed.</small>` : "";
+  return `${pageHeader("Organize", "Choose what happens, then check the compact file map.", approval)}${styleControl(store)}${keptByStandards(state)}<div class="organize-layout"><div class="organize-main">${changesPanel(store)}<section class="movement-panel card" aria-labelledby="movement-heading"><header class="section-header"><div><p class="eyebrow">Accepted changes</p><h2 id="movement-heading">Where files will go</h2></div><span class="panel-note">Shown automatically</span></header>${renderMovementTree(state.changes)}</section></div>${itemDetails(store)}</div>`;
+}
+
+function duplicateRow(item, state) {
+  const selected = state.selectedBinIds.includes(item.id);
+  return `<div class="bin-row" role="row"><span role="cell"><input type="checkbox" data-action="toggle-bin" data-bin-id="${item.id}" aria-label="Select ${escapeHtml(item.name)}" ${selected ? "checked" : ""}></span><span class="bin-name" role="cell">${fileIcon(item.icon, item.kind)}<strong>${escapeHtml(item.name)}</strong></span><span role="cell">${breadcrumb(item.originalFolder)}</span><span role="cell">${escapeHtml(item.dateMoved)}</span><span role="cell">${escapeHtml(item.size)}</span><span role="cell">${escapeHtml(item.kind)}</span><span role="cell">${button("Restore", "restore-one", { attrs: `data-bin-id="${item.id}"` })}</span></div>`;
+}
+
+export function renderDuplicateBin(store) {
+  const state = store.getState();
+  const items = state.duplicateBinItems;
+  return `${pageHeader("Duplicate Bin", "Duplicate copies moved out of the way.", button("Restore selected", "restore-selected", { primary: true, disabled: !state.selectedBinIds.length }))}<section class="bin-card card">${items.length ? `<div class="bin-toolbar"><label><input type="checkbox" data-action="select-all-bin" ${state.selectedBinIds.length === items.length ? "checked" : ""}> Select all</label><strong>${items.length} ${items.length === 1 ? "file" : "files"}</strong></div><div class="bin-table" role="table" aria-label="Duplicate Bin"><div class="bin-row bin-header" role="row"><span role="columnheader"></span><span role="columnheader">Name</span><span role="columnheader">Original folder</span><span role="columnheader">Date moved</span><span role="columnheader">Size</span><span role="columnheader">Kind</span><span role="columnheader"></span></div>${items.map((item) => duplicateRow(item, state)).join("")}</div>` : '<div class="empty-state"><span class="empty-state-icon">0</span><h2>Duplicate Bin is empty</h2><p>Copies moved here during organization will appear here.</p></div>'}</section>`;
+}
+
+function activityCategory(title, items) {
+  return `<section class="activity-category"><div><h3>${escapeHtml(title)}</h3><strong>${items.length}</strong></div>${items.length ? `<details><summary>Show ${items.length} ${items.length === 1 ? "file" : "files"}</summary><ul>${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></details>` : '<span class="none-label">None</span>'}</section>`;
+}
+
+function activityRow(entry, expanded) {
+  const categories = [
+    ["Files moved", entry.details.filesMoved],
+    ["Names changed", entry.details.namesChanged],
+    ["Folders created", entry.details.foldersCreated],
+    ["Copies moved to Duplicate Bin", entry.details.copiesMoved],
+    ["Files restored", entry.details.filesRestored],
+    ["Problems", entry.details.problems],
+  ];
+  return `<article class="activity-row"><header><div><h2>${escapeHtml(entry.title)}</h2><p>${escapeHtml(entry.summary)}</p><span>${escapeHtml(entry.status)} · ${escapeHtml(entry.time)}</span></div><div>${button(expanded ? "Hide details" : "Details", "toggle-activity", { attrs: `data-activity-id="${entry.id}" aria-expanded="${expanded}"` })}${entry.undoable ? button("Undo move", "undo-move", { primary: true }) : ""}</div></header>${expanded ? `<div class="activity-details">${categories.map(([title, items]) => activityCategory(title, items)).join("")}</div>` : ""}</article>`;
+}
+
+export function renderActivity(store) {
+  const state = store.getState();
+  return `${pageHeader("Activity", "File moves and undo.", `${button("Expand all", "expand-all-activity")}${button("Collapse all", "collapse-all-activity")}`)}<section class="activity-list" aria-label="Completed file moves">${state.activityMoves.length ? state.activityMoves.map((entry) => activityRow(entry, state.expandedActivityIds.includes(entry.id))).join("") : '<div class="empty-state"><h2>No file moves yet</h2><p>Completed moves will appear here.</p></div>'}</section>`;
+}
+
+function standardRow(standard) {
+  return `<article class="standard-row"><div><h2>${escapeHtml(standard.name)}</h2><p>${escapeHtml(standard.description)}</p><span>Applies to: ${breadcrumb(standard.appliesTo)}</span></div><strong class="standard-state ${standard.active ? "on" : ""}">${standard.active ? "On" : "Paused"}</strong><div>${button("Edit", "open-standard-builder", { quiet: true, attrs: `data-standard-id="${standard.id}"` })}${button(standard.active ? "Pause" : "Turn on", "toggle-standard", { attrs: `data-standard-id="${standard.id}"` })}</div></article>`;
+}
+
+function suggestedStandards(state) {
+  const interpretation = state.interpretation;
+  if (interpretation.status === "clarification") {
+    return `<div class="interpretation-result clarification-result" role="status"><strong>${escapeHtml(interpretation.clarification.question)}</strong><div>${interpretation.clarification.choices.map((choice) => button(choice.label, "clarify-preference", { attrs: `data-interpret-choice="${escapeHtml(choice.label)}"` })).join("")}</div></div>`;
+  }
+  if (interpretation.status === "unsafe") {
+    return `<div class="interpretation-result unsafe-result" role="status"><strong>This cannot be turned into a safe Standard.</strong><p>Try one of these supported alternatives:</p><ul>${interpretation.alternatives.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>${button("Cancel", "cancel-interpretation")}</div>`;
+  }
+  if (interpretation.status === "unsupported") {
+    return `<div class="interpretation-result" role="status"><strong>Try a more specific organization preference.</strong><p>Name what should stay together, what may be renamed, or which folder should stay unchanged.</p>${button("Cancel", "cancel-interpretation")}</div>`;
+  }
+  if (interpretation.status !== "suggested") return "";
+  return `<div class="interpretation-result" role="status"><p>Loci Flow interpreted your request as:</p><h3>Suggested Standards</h3><div class="suggested-list">${interpretation.suggestions.map((suggestion, index) => `<article class="suggested-standard"><span>${index + 1}</span><div><strong>${escapeHtml(suggestion.name)}</strong><p>${escapeHtml(suggestion.description)}</p><small>Applies to: ${breadcrumb(suggestion.appliesTo)}</small></div><div>${button("Edit", "edit-suggested-standard", { quiet: true, attrs: `data-suggestion-id="${suggestion.id}"` })}${button("Remove", "remove-suggested-standard", { attrs: `data-suggestion-id="${suggestion.id}"` })}</div></article>`).join("")}</div><div class="interpretation-actions">${button("Cancel", "cancel-interpretation")}${button("Use these Standards", "confirm-suggested-standards", { primary: true, disabled: !interpretation.suggestions.length })}</div></div>`;
+}
+
+function interpretationPanel(state) {
+  return `<section class="interpretation-panel card" aria-labelledby="interpretation-heading"><div><p class="eyebrow">Fixture-driven interpretation</p><h2 id="interpretation-heading">Describe an organization preference</h2><p>Loci Flow turns your description into Standards for you to review.</p></div><label><span class="visually-hidden">Organization preference</span><textarea id="preference-input" rows="2" placeholder="Keep my coding projects together and rename only standalone files without breaking imports.">${escapeHtml(state.interpretation.text)}</textarea></label>${button("Interpret preference", "interpret-preference", { primary: true })}${suggestedStandards(state)}</section>`;
+}
+
+export function renderStandards(store) {
+  const state = store.getState();
+  return `${pageHeader("Standards", "Reusable instructions for future organization.", button("Add standard", "open-standard-builder", { primary: true }))}${interpretationPanel(state)}<section class="standards-intro card"><div><strong>Simple and reusable</strong><span>Standards use familiar choices and sample folders.</span></div>${button("See a sample disagreement", "open-standard-conflict", { quiet: true })}</section><section class="standards-list" aria-label="Saved standards">${state.standards.map(standardRow).join("")}</section>`;
+}
+
+export const SETTINGS_SECTIONS = [
+  ["appearance", "Appearance"],
+  ["notifications", "Notifications"],
+  ["local-ai", "Local AI"],
+  ["privacy", "Privacy"],
+  ["advanced", "Advanced"],
+];
+
+function settingSwitch(label, help, key, checked) {
+  return `<label class="setting-row"><span><strong>${escapeHtml(label)}</strong><small>${escapeHtml(help)}</small></span><input type="checkbox" data-action="toggle-notification" data-setting-key="${key}" ${checked ? "checked" : ""}></label>`;
+}
+
+function settingsContent(store) {
+  const state = store.getState();
+  const section = state.settingsSection;
+  if (section === "appearance") return `<header><h2>Appearance</h2><p>Use one synchronized choice throughout the app.</p></header><div class="settings-card"><fieldset class="segmented settings-theme" aria-label="Appearance"><button type="button" data-action="set-theme" data-theme-value="light" aria-pressed="${state.theme === "light"}">Light</button><button type="button" data-action="set-theme" data-theme-value="dark" aria-pressed="${state.theme === "dark"}">Dark</button></fieldset></div>`;
+  if (section === "notifications") return `<header><h2>Notifications</h2><p>Sample choices only. Browser permission is not requested.</p></header><div class="settings-card">${settingSwitch("Organization ready", "Let me know when choices are waiting.", "organizationReady", state.settings.notifications.organizationReady)}${settingSwitch("Move completed", "Let me know when a file move finishes.", "moveCompleted", state.settings.notifications.moveCompleted)}${settingSwitch("Move failed", "Let me know when a file could not be moved.", "moveFailed", state.settings.notifications.moveFailed)}</div>`;
+  if (section === "local-ai") return `<header><h2>Local AI</h2><p>Optional advice remains narrow and local.</p></header><div class="settings-card statements"><p><strong>Off by default</strong></p><p><strong>Local Ollama only</strong></p><p>No connection is made in this prototype.</p></div>`;
+  if (section === "privacy") return `<header><h2>Privacy</h2><p>Clear boundaries for this prototype.</p></header><div class="settings-card statements"><p><strong>Sample files only</strong></p><p>No real files are accessed.</p><p>No telemetry.</p><p>No data is sent online.</p></div>`;
+  return `<header><h2>Advanced</h2><p>Return the authored sample state when needed.</p></header><div class="settings-card advanced-actions"><div><strong>Reset prototype</strong><span>Return navigation and choices to their starting state.</span>${button("Reset prototype", "reset-prototype", { danger: true })}</div><div><strong>Restore sample data</strong><span>Restore the same starting sample.</span>${button("Restore sample data", "reset-prototype")}</div></div>`;
+}
+
+export function renderSettings(store) {
+  const section = store.getState().settingsSection;
+  return `${pageHeader("Settings", "A small set of clear app preferences.")}<div class="settings-layout"><nav class="settings-nav" aria-label="Settings sections">${SETTINGS_SECTIONS.map(([id, label]) => `<button type="button" data-action="set-settings-section" data-section="${id}" aria-current="${section === id ? "page" : "false"}">${escapeHtml(label)}</button>`).join("")}</nav><section class="settings-content">${settingsContent(store)}</section></div>`;
+}
+
+export function renderRoute(store, route) {
+  if (route === "organize") return renderOrganize(store);
+  if (route === "duplicate-bin") return renderDuplicateBin(store);
+  if (route === "activity") return renderActivity(store);
+  if (route === "standards") return renderStandards(store);
+  if (route === "settings") return renderSettings(store);
+  return renderHome(store);
+}
+
+function folderPicker(store, name = "standard-folder") {
+  return `<div class="folder-picker" role="radiogroup" aria-label="Sample folders">${store.fixtures.folderChoices.map((parts, index) => `<label><input type="radio" name="${name}" value="${escapeHtml(parts.join("|"))}" ${index === 1 ? "checked" : ""}>${fileIcon("folder", "Folder")}${breadcrumb(parts)}</label>`).join("")}</div>`;
+}
+
+export function renderDialog(store, type, payload = {}) {
+  if (type === "folder") return {
+    eyebrow: "Choose a sample folder",
+    title: "Change folder",
+    description: "Select a clear folder from the sample.",
+    content: folderPicker(store, "change-folder-choice"),
+    actions: `${button("Cancel", "close-dialog")}${button("Confirm folder", "confirm-folder", { primary: true, attrs: `data-change-id="${payload.changeId}"` })}`,
+  };
+  if (type === "standard-builder" && payload.suggestedStandardId) {
+    const suggestion = store.getState().interpretation.suggestions.find((item) => item.id === payload.suggestedStandardId);
+    if (suggestion) return {
+      eyebrow: "Suggested Standard",
+      title: "Edit suggested standard",
+      description: "Review the interpreted instruction before it becomes active.",
+      content: `<div class="suggestion-editor"><label class="builder-field"><span>Name</span><input id="suggestion-name" type="text" value="${escapeHtml(suggestion.name)}"></label><label class="builder-field"><span>Description</span><textarea id="suggestion-description" rows="3">${escapeHtml(suggestion.description)}</textarea></label><label class="builder-field"><span>Applies to</span><input id="suggestion-folder" type="text" value="${escapeHtml(suggestion.appliesTo.join(" › "))}"></label></div>`,
+      actions: `${button("Cancel", "close-dialog")}${button("Update suggestion", "save-suggested-standard", { primary: true, attrs: `data-suggestion-id="${payload.suggestedStandardId}"` })}`,
+    };
+  }
+  if (type === "standard-builder") return {
+    eyebrow: "Guided builder",
+    title: payload.standardId ? "Edit standard" : "Add standard",
+    description: "Choose familiar instructions and sample folders.",
+    content: `<fieldset class="builder-section choice-cards"><legend>What should Loci Flow do?</legend>${["Keep a folder unchanged", "Keep files together", "Keep current file names", "Use existing folders only", "Sort similar files"].map((label) => `<label><input type="radio" name="standard-action" value="${label}" ${label === "Sort similar files" ? "checked" : ""}><span>${label}</span></label>`).join("")}</fieldset><div class="builder-grid"><label class="builder-field"><span>What should Loci Flow recognize?</span><select id="standard-recognize"><option>Course code</option><option selected>Person name</option><option>Project code</option><option>Year</option></select></label><div class="preset-examples"><strong>Examples</strong><span>Course code: CS2030S, MA2001</span><span>Person name: Aisha, Benjamin Tan</span><span>Project code: Elarian, PRJ-204</span><span>Year: 2025, 2026</span></div></div><fieldset class="builder-section choice-cards compact"><legend>How should these files be grouped?</legend>${["Create a folder for each value", "Move into an existing matching folder", "Keep matching files together"].map((label, index) => `<label><input type="radio" name="standard-grouping" value="${label}" ${index === 0 ? "checked" : ""}><span>${label}</span></label>`).join("")}</fieldset><label class="second-level"><input type="checkbox" id="standard-file-type"> <span><strong>Add another level</strong><small>File type · Aisha_Lab03.py → Aisha › Code</small></span></label><fieldset class="builder-section"><legend>Where should this work?</legend>${folderPicker(store)}</fieldset>`,
+    actions: `${button("Cancel", "close-dialog")}${button("Save standard", "save-standard", { primary: true })}`,
+  };
+  if (type === "standard-conflict") return {
+    eyebrow: "Choose which instruction to use",
+    title: "These standards do not agree",
+    description: "Pick the plain-language result you want.",
+    content: `<div class="standard-comparison"><section><span>Existing</span><strong>Keep all student files together</strong></section><section><span>New</span><strong>Group student files by file type</strong></section></div><div class="conflict-actions">${button("Use the new standard here", "close-dialog")}${button("Change the existing standard", "close-dialog")}${button("Use both in different folders", "close-dialog")}${button("Keep the existing standard", "close-dialog")}</div>`,
+    actions: button("Cancel", "close-dialog"),
+  };
+  if (type === "approval") {
+    const counts = store.approvalSummary();
+    return {
+    eyebrow: "Final approval",
+    title: "Ready to organize",
+    description: "No real files will be changed.",
+    content: `<div class="approval-summary"><p><strong>${counts.movedFiles}</strong><span>${counts.movedFiles === 1 ? "file will move" : "files will move"}</span></p><p><strong>${counts.renamedFiles}</strong><span>${counts.renamedFiles === 1 ? "name will change" : "names will change"}</span></p><p><strong>${counts.createdFolders}</strong><span>${counts.createdFolders === 1 ? "folder will be created" : "folders will be created"}</span></p><p><strong>${counts.duplicateBinFiles}</strong><span>${counts.duplicateBinFiles === 1 ? "copy will move" : "copies will move"} to Duplicate Bin</span></p></div>`,
+    actions: `${button("Back to changes", "close-dialog")}${button("Approve test move", "approve-test-move", { primary: true })}`,
+    };
+  };
+  return { eyebrow: "Loci Flow", title: "Confirm", description: "Choose what happens next.", content: "", actions: button("Close", "close-dialog") };
 }

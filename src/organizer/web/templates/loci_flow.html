@@ -3,47 +3,35 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="description" content="Loci Flow temporary organization review.">
+    <meta name="description" content="Loci Flow organization prototype using sample files only.">
     <meta name="csrf-token" content="{{ csrf_token }}">
     <meta name="color-scheme" content="light dark">
     <title>Home · Loci Flow</title>
-    <link
-      rel="stylesheet"
-      href="{{ request.app.url_path_for('static', path='/loci_flow/styles.css') }}"
-    >
-    <script
-      type="module"
-      src="{{ request.app.url_path_for('static', path='/loci_flow/app.js') }}"
-    ></script>
+    <link rel="stylesheet" href="{{ request.app.url_path_for('static', path='/loci_flow/styles.css') }}">
   </head>
   <body>
     <a class="skip-link" href="#main-content">Skip to main content</a>
-    <div class="read-only-notice" role="note">
-      <span class="read-only-badge">Read-only movement</span>
-      <span>Review and approve the plan. No files can move in this stage.</span>
+    <div class="prototype-notice" role="note">
+      <span class="prototype-badge">Prototype</span>
+      <span>Sample files only. Your files are not changed.</span>
     </div>
     <div class="app-shell">
       <aside class="sidebar" aria-label="Loci Flow">
         <a class="brand" href="#/home" aria-label="Loci Flow Home">
-          <img
-            class="brand-mark"
-            src="{{ request.app.url_path_for('static', path='/loci_flow/assets/loci-flow-mark.svg') }}"
-            alt=""
-          >
+          <img class="brand-mark" src="{{ request.app.url_path_for('static', path='/loci_flow/assets/loci-flow-mark.svg') }}" alt="">
           <span><strong>Loci Flow</strong><small>File organization</small></span>
         </a>
         <nav class="primary-nav" aria-label="Primary navigation">
           <a href="#/home" data-route="home"><span class="nav-icon" aria-hidden="true">H</span><span>Home</span></a>
-          <a href="#/organize" data-route="organize"><span class="nav-icon" aria-hidden="true">O</span><span>Organize</span><span class="nav-count" data-organize-count hidden></span></a>
-          <a href="#/duplicate-bin" data-route="duplicate-bin"><span class="nav-icon" aria-hidden="true">B</span><span>Duplicate Bin</span></a>
+          <a href="#/organize" data-route="organize"><span class="nav-icon" aria-hidden="true">O</span><span>Organize</span><span class="nav-count" data-organize-count>15</span></a>
+          <a href="#/duplicate-bin" data-route="duplicate-bin"><span class="nav-icon" aria-hidden="true">B</span><span>Duplicate Bin</span><span class="nav-count" data-bin-count>3</span></a>
           <a href="#/activity" data-route="activity"><span class="nav-icon" aria-hidden="true">A</span><span>Activity</span></a>
           <a href="#/standards" data-route="standards"><span class="nav-icon" aria-hidden="true">S</span><span>Standards</span></a>
           <a href="#/settings" data-route="settings"><span class="nav-icon" aria-hidden="true">T</span><span>Settings</span></a>
         </nav>
         <footer class="sidebar-footer">
-          <strong>Temporary decisions</strong>
-          <span>The folder is fixed when bootAI starts.</span>
-          <a href="/">Open existing scan workflow</a>
+          <strong>Sample workspace</strong>
+          <span>Everything resets when the page reloads.</span>
         </footer>
       </aside>
       <div class="workspace">
@@ -52,24 +40,30 @@
             <button type="button" class="icon-button" data-action="history-back" aria-label="Go back" title="Go back">←</button>
             <button type="button" class="icon-button" data-action="history-forward" aria-label="Go forward" title="Go forward">→</button>
           </div>
-          <div class="folder-title">
-            <strong data-folder-title>Selected folder</strong>
-            <span data-folder-freshness>Loading organization information…</span>
-          </div>
+          <div class="folder-title"><strong>Sample Downloads</strong><span>Checked today at 6:52 PM</span></div>
           <div class="toolbar-spacer"></div>
           <fieldset class="toolbar-theme" aria-label="Appearance">
             <button type="button" data-action="set-theme" data-theme-value="light" aria-pressed="true">Light</button>
             <button type="button" data-action="set-theme" data-theme-value="dark" aria-pressed="false">Dark</button>
           </fieldset>
-          <span class="source-label">Backend read-only + decisions</span>
+          <span class="sample-label">Sample only</span>
         </header>
         <main id="main-content" tabindex="-1">
-          <div id="app" aria-busy="true">
-            <p class="loading">Loading organization information…</p>
-          </div>
+          <div id="app" aria-busy="true"><p class="loading">Opening the sample…</p></div>
         </main>
       </div>
     </div>
+    <dialog id="dialog" aria-labelledby="dialog-title" aria-describedby="dialog-description">
+      <div class="dialog-frame">
+        <header class="dialog-header">
+          <div><p id="dialog-eyebrow" class="eyebrow"></p><h2 id="dialog-title">Confirm</h2><p id="dialog-description"></p></div>
+          <button type="button" class="icon-button" data-action="close-dialog" aria-label="Close dialog" title="Close">×</button>
+        </header>
+        <div id="dialog-content" class="dialog-content"></div>
+        <footer id="dialog-actions" class="dialog-actions"></footer>
+      </div>
+    </dialog>
     <div id="status-live" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></div>
+    <script type="module" src="{{ request.app.url_path_for('static', path='/loci_flow/app.js') }}"></script>
   </body>
 </html>
