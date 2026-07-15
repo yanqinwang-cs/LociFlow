@@ -114,6 +114,7 @@ function currentDuplicateChoice(choiceId) {
 
 let dialogPayload = {};
 let dialogTrigger = null;
+let activityLoadPromise = null;
 
 function routeFromHash() {
   const value = window.location.hash.startsWith("#/") ? window.location.hash.slice(2) : "home";
@@ -187,8 +188,10 @@ function syncShell() {
   const binCount = elements.nav.querySelector("[data-bin-count]");
   const folderTitle = document.querySelector(".folder-title strong");
   const folderFreshness = document.querySelector(".folder-title span");
+  const movementStatus = document.querySelector(".sample-label");
   if (folderTitle) folderTitle.textContent = shell.scope.displayName;
   if (folderFreshness) folderFreshness.textContent = shell.toolbarFreshnessLabel;
+  if (movementStatus) movementStatus.textContent = shell.movementStatusLabel;
   if (organizeCount) organizeCount.textContent = String(shell.organizeCount);
   if (binCount) binCount.textContent = String(shell.duplicateBinCount);
   const activityBusy = state.route === "activity"
@@ -448,9 +451,19 @@ async function loadCurrent({ clearOverride = true } = {}) {
   render();
 }
 
-async function loadActivity({ noticeMessage = null, force = false } = {}) {
+async function loadActivity({ noticeMessage = null, force = false, refresh = false } = {}) {
   if (state.route !== "activity" && !force) return;
+  if (activityLoadPromise) {
+    if (!refresh && noticeMessage === null) return activityLoadPromise;
+    await activityLoadPromise.catch(() => {});
+    return loadActivity({ noticeMessage, force, refresh: true });
+  }
   const visible = state.route === "activity";
+  if (state.activity.loadStatus === "ready" && !refresh && noticeMessage === null) {
+    if (visible || state.route === "home") render();
+    else syncShell();
+    return;
+  }
   const version = ++state.activity.loadVersion;
   state.activity.loadStatus = "loading";
   state.activity.entries = [];
@@ -458,7 +471,8 @@ async function loadActivity({ noticeMessage = null, force = false } = {}) {
   state.activity.noticeMessage = noticeMessage;
   if (visible) render();
   try {
-    const payload = await dataSource.loadActivity();
+    activityLoadPromise = dataSource.loadActivity();
+    const payload = await activityLoadPromise;
     if (version !== state.activity.loadVersion) return;
     state.activity.entries = payload.activity;
     const ids = new Set(payload.activity.map((entry) => entry.id));
@@ -472,8 +486,10 @@ async function loadActivity({ noticeMessage = null, force = false } = {}) {
     state.activity.expandedIds = new Set();
     state.activity.loadStatus = "error";
     state.activity.errorMessage = "Try again.";
+  } finally {
+    activityLoadPromise = null;
   }
-  if (state.route === "activity") render();
+  if (state.route === "activity" || state.route === "home") render();
   else syncShell();
 }
 
@@ -628,7 +644,7 @@ async function confirmMove() {
     state.movement.errorMessage = null;
   }
   if (execution?.operation_id) {
-    await loadActivity({ force: true });
+    await loadActivity({ force: true, refresh: true });
   }
   if (requestError && isUncertainMovementError(requestError) && !recovered) {
     announce("The move result could not be confirmed. Load the latest organization before trying again.");
@@ -1014,4 +1030,4 @@ if (!window.location.hash) window.location.hash = "#/home";
 state.route = routeFromHash();
 render();
 loadCurrent();
-if (state.route === "activity") loadActivity();
+loadActivity({ force: true });

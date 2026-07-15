@@ -77,7 +77,8 @@ class WebLociFlowActivityTests(unittest.TestCase):
             self.assertIn(wording, combined)
         self.assertIn("expandedIds: new Set()", app)
         self.assertIn("entry.undoable", views)
-        self.assertIn("await dataSource.loadActivity()", app)
+        self.assertIn("activityLoadPromise = dataSource.loadActivity()", app)
+        self.assertIn("const payload = await activityLoadPromise", app)
         self.assertIn('announce("Files restored.")', app)
         self.assertIn("undo.disabled = state.activity.pendingUndo", app)
         for forbidden in ("fixtures.json", "localStorage", "sessionStorage"):

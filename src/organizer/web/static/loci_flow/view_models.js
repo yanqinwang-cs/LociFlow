@@ -375,6 +375,33 @@ function lastMoveSummary(execution) {
   return null;
 }
 
+function lastOrganizedLabel(execution, activityEntries = []) {
+  if (execution?.status === "verified") {
+    const matchingActivity = activityEntries.find((entry) => (
+      entry.type === "organization"
+      && entry.status === "verified"
+      && entry.id === execution.operation_id
+    ));
+    const completedAt = execution.completed_at || matchingActivity?.completed_at;
+    return completedAt ? formatLocalTimestamp(completedAt) : "Completed";
+  }
+  const latestVerified = activityEntries.find((entry) => (
+    entry.type === "organization" && entry.status === "verified"
+  ));
+  if (!latestVerified) return "Not organized yet";
+  return latestVerified.completed_at
+    ? formatLocalTimestamp(latestVerified.completed_at)
+    : "Completed";
+}
+
+function movementStatusLabel(workflow) {
+  if (workflow.stage === "ready_to_move") return "Move ready";
+  if (workflow.stage === "move_in_progress") return "Moving files";
+  if (workflow.stage === "move_completed") return "Move verified";
+  if (workflow.stage === "move_failed") return "Move needs attention";
+  return "No move ready";
+}
+
 function movementWorkflow(backend, movement) {
   const execution = movement?.execution || backend.execution;
   if (movement?.executionPending) {
@@ -676,6 +703,9 @@ export function buildProductionStageB1Contract({
       duplicate: duplicateDrafts,
     })
     : defaultOrganization();
+  const execution = movement?.execution || backend?.execution;
+  const workflow = workflowFor(snapshot, workflowOverride, movement);
+  const activityEntries = activity?.entries || [];
   return {
     id: "backend",
     scope: {
@@ -685,10 +715,10 @@ export function buildProductionStageB1Contract({
     },
     freshness: {
       lastCheckedLabel,
-      lastOrganizedLabel: "Not organized yet",
+      lastOrganizedLabel: lastOrganizedLabel(execution, activityEntries),
       nextCheckLabel: "Not scheduled",
     },
-    workflow: workflowFor(snapshot, workflowOverride, movement),
+    workflow,
     organization,
     duplicateBin: { connected: false, items: [] },
     activity: activity
@@ -699,13 +729,13 @@ export function buildProductionStageB1Contract({
         expandedIds: [...(activity.expandedIds || [])],
         errorMessage: activity.errorMessage || null,
         noticeMessage: activity.noticeMessage || null,
-        lastMoveSummary: lastMoveSummary(movement?.execution || backend?.execution),
+        lastMoveSummary: lastMoveSummary(execution),
       }
       : {
         connected: false,
         entries: [],
         expandedIds: [],
-        lastMoveSummary: lastMoveSummary(movement?.execution || backend?.execution),
+        lastMoveSummary: lastMoveSummary(execution),
       },
     standards: { connected: false, items: [] },
     settings: { connected: true },
@@ -743,6 +773,7 @@ export function buildShellViewModel(sourceState) {
     return {
       ...model,
       toolbarFreshnessLabel: toolbarFreshnessLabel(model.scope.lastCheckedLabel),
+      movementStatusLabel: "Movement off",
       organizeCount: state.changes.filter((change) => change.decision === "pending").length,
       duplicateBinCount: state.duplicateBinItems.length,
     };
@@ -752,6 +783,7 @@ export function buildShellViewModel(sourceState) {
   return {
     ...model,
     toolbarFreshnessLabel: toolbarFreshnessLabel(model.scope.lastCheckedLabel),
+    movementStatusLabel: movementStatusLabel(model.workflow),
     organizeCount: unresolvedRecommendations + unresolvedChoices,
     duplicateBinCount: model.duplicateBin.connected ? model.duplicateBin.items.length : 0,
   };

@@ -85,7 +85,8 @@ class WebLociFlowStageB3Tests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("item.undoable === true", app)
         self.assertIn("activeUndoPreview: null", app)
         self.assertIn("expandedIds: new Set()", app)
-        self.assertIn("await dataSource.loadActivity()", app)
+        self.assertIn("activityLoadPromise = dataSource.loadActivity()", app)
+        self.assertIn("const payload = await activityLoadPromise", app)
         self.assertIn("await dataSource.previewUndo(entry.id)", app)
         self.assertEqual(app.count("await dataSource.confirmUndo("), 1)
         self.assertIn("textContent", app)
@@ -106,7 +107,7 @@ class WebLociFlowStageB3Tests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('import("./fixtures.json"', data_source)
         self.assertNotIn('from "./fixtures.json"', data_source)
 
-    def test_activity_is_loaded_on_activity_navigation_and_reload_only(self) -> None:
+    def test_activity_is_loaded_on_startup_then_reused_by_activity_navigation(self) -> None:
         app = (LOCI / "app.js").read_text(encoding="utf-8")
         load_current = app[app.index("async function loadCurrent"):app.index("async function loadActivity")]
         check_files = app[app.index("async function checkFiles"):app.index("async function handleMutation")]
@@ -114,7 +115,9 @@ class WebLociFlowStageB3Tests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("loadActivity", check_files)
         self.assertIn('if (route === "activity" && previousRoute !== "activity") loadActivity();', app)
         self.assertIn('if (nextRoute === "activity" && previousRoute !== "activity") loadActivity();', app)
-        self.assertIn('if (state.route === "activity") loadActivity();', app)
+        self.assertIn("loadActivity({ force: true });", app)
+        self.assertIn('state.activity.loadStatus === "ready" && !refresh', app)
+        self.assertIn("if (activityLoadPromise)", app)
         self.assertIn('if (previousRoute === "activity" && nextRoute !== "activity") discardActivityPreview();', app)
         self.assertIn('if (action === "retry-activity") return loadActivity();', app)
         self.assertIn('routeLink?.dataset.route === "activity" && state.route === "activity"', app)

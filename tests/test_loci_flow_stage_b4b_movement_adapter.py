@@ -335,7 +335,7 @@ class LociFlowStageB4BMovementAdapterTests(unittest.TestCase):
         self.assertIn("state.movement.executionPending", confirm_move)
         self.assertIn("await dataSource.confirmMovement(", confirm_move)
         self.assertIn("applySnapshot(await dataSource.loadCurrentState())", confirm_move)
-        self.assertIn("await loadActivity({ force: true })", confirm_move)
+        self.assertIn("await loadActivity({ force: true, refresh: true })", confirm_move)
         self.assertIn("isUncertainMovementError", app)
         self.assertIn('state.activeDialog === "movement-confirmation"', app)
         self.assertIn("resetMovementConfirmation()", close_dialog)
