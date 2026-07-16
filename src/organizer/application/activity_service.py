@@ -12,6 +12,20 @@ from organizer.application.activity_models import (
     ActivityList,
     UndoEligibility,
 )
+from organizer.application.duplicate_bin_movement_models import (
+    MOVE_ATTENTION as DUPLICATE_MOVE_ATTENTION,
+    MOVE_FAILED as DUPLICATE_MOVE_FAILED,
+    MOVE_MOVED as DUPLICATE_MOVE_MOVED,
+    MOVE_PENDING as DUPLICATE_MOVE_PENDING,
+    MOVE_UNATTEMPTED as DUPLICATE_MOVE_UNATTEMPTED,
+    MOVE_VERIFIED as DUPLICATE_MOVE_VERIFIED,
+    OP_MOVED as DUPLICATE_OP_MOVED,
+    OP_PARTIAL as DUPLICATE_OP_PARTIAL,
+    DuplicateBinOperationRecord,
+)
+from organizer.application.duplicate_bin_operation_repository import (
+    DuplicateBinOperationRepository,
+)
 from organizer.application.organization_operation_models import (
     MOVE_ATTEMPTING,
     MOVE_FAILED,
@@ -55,6 +69,7 @@ def list_activity_entries(
     *,
     operation_repository: OrganizationOperationRepository,
     undo_repository: OrganizationUndoRepository,
+    duplicate_bin_operation_repository: DuplicateBinOperationRepository | None = None,
 ) -> ActivityList:
     _validate_repositories(operation_repository, undo_repository)
     operations = operation_repository.list_records()
@@ -69,6 +84,16 @@ def list_activity_entries(
         for record in operations
     ]
     entries.extend(_restore_entry(record) for record in undos)
+    if duplicate_bin_operation_repository is not None:
+        if duplicate_bin_operation_repository.root != operation_repository.root:
+            raise ValueError(
+                "Duplicate Bin Activity repository belongs to another root"
+            )
+        entries.extend(
+            _duplicate_bin_entry(record)
+            for record in duplicate_bin_operation_repository.list_records()
+            if record.started_at is not None
+        )
     entries.sort(key=_entry_sort_key, reverse=True)
     return ActivityList(tuple(entries))
 
@@ -310,6 +335,61 @@ def _restore_entry(record: OrganizationUndoRecord) -> ActivityEntry:
                 status=item.result_state,
             )
             for item in record.expected_restores
+        ),
+        ordering_at=record.completed_at or record.started_at or record.created_at,
+    )
+
+
+def _duplicate_bin_entry(record: DuplicateBinOperationRecord) -> ActivityEntry:
+    moved = sum(
+        item.result_state in {DUPLICATE_MOVE_MOVED, DUPLICATE_MOVE_VERIFIED}
+        for item in record.expected_moves
+    )
+    failed = sum(
+        item.result_state in {DUPLICATE_MOVE_FAILED, DUPLICATE_MOVE_ATTENTION}
+        for item in record.expected_moves
+    )
+    unattempted = sum(
+        item.result_state in {DUPLICATE_MOVE_PENDING, DUPLICATE_MOVE_UNATTEMPTED}
+        for item in record.expected_moves
+    )
+    if record.status == DUPLICATE_OP_MOVED:
+        title = f"Moved {moved} {'copy' if moved == 1 else 'copies'} to Duplicate Bin"
+    elif record.status == DUPLICATE_OP_PARTIAL:
+        title = "Duplicate Bin move partly completed"
+    else:
+        title = "Duplicate Bin move needs attention"
+    return ActivityEntry(
+        id=record.operation_id,
+        type="duplicate_bin_move",
+        title=title,
+        status=record.status,
+        started_at=record.started_at,
+        completed_at=record.completed_at,
+        files_expected=len(record.expected_moves),
+        files_moved=moved,
+        files_restored=0,
+        files_failed=failed,
+        files_unattempted=unattempted,
+        verification_status=record.verification.status,
+        # E-B projects completed Duplicate Bin work, but E-C owns restore.
+        undoable=False,
+        related_operation_id=None,
+        details=tuple(
+            ActivityDetail(
+                source=(
+                    str(Path(item.source).parent)
+                    if Path(item.source).parent != Path(".")
+                    else "Selected folder"
+                ),
+                destination="Duplicate Bin",
+                restored_to=None,
+                moved_from=None,
+                status=item.result_state,
+            )
+            for item in record.expected_moves
+            if item.result_state != DUPLICATE_MOVE_PENDING
+            or record.status == DUPLICATE_OP_MOVED
         ),
         ordering_at=record.completed_at or record.started_at or record.created_at,
     )

@@ -20,7 +20,7 @@ from organizer.application.duplicate_bin_models import (
     DUPLICATE_BIN_BATCH_RECORD_TYPE,
     DUPLICATE_BIN_CATALOG_RECORD_TYPE,
     DUPLICATE_BIN_SCHEMA_VERSION,
-    ITEM_APPROVED,
+    ITEM_STATES,
     SUPERSEDABLE_BATCH_STATUSES,
     ActiveDuplicateCopyClaim,
     ApprovedDuplicateBatch,
@@ -155,6 +155,52 @@ class DuplicateBinRepository:
                 status=status,
                 batch_version=target.batch_version + 1,
                 updated_at=updated_at,
+            )
+            batches = tuple(
+                updated_batch if batch.batch_id == batch_id else batch
+                for batch in catalog.batches
+            )
+            updated_catalog = replace(
+                catalog,
+                catalog_version=catalog.catalog_version + 1,
+                batches=batches,
+                active_claims=_all_active_claims(batches),
+            )
+            self._atomic_write(_catalog_to_dict(updated_catalog))
+            return updated_batch
+
+    def save_execution_state(
+        self,
+        batch_id: str,
+        *,
+        expected_version: int,
+        status: str,
+        items: tuple[SelectedDuplicateBinItem, ...],
+        updated_at: str,
+    ) -> ApprovedDuplicateBatch:
+        if status not in BATCH_STATUSES or status in {BATCH_APPROVED, BATCH_SUPERSEDED}:
+            raise DuplicateBinRepositoryError("invalid_duplicate_batch_status")
+        _timestamp(updated_at, "updated_at")
+        with self._lock:
+            catalog = self._load_catalog_unlocked()
+            target = next(
+                (batch for batch in catalog.batches if batch.batch_id == batch_id),
+                None,
+            )
+            if target is None:
+                raise DuplicateBinRepositoryError("duplicate_batch_not_found")
+            if target.batch_version != expected_version:
+                raise DuplicateBinRepositoryError("duplicate_batch_version_conflict")
+            if {item.bin_item_id for item in items} != {
+                item.bin_item_id for item in target.items
+            }:
+                raise DuplicateBinRepositoryError("invalid_duplicate_batch_items")
+            updated_batch = replace(
+                target,
+                status=status,
+                batch_version=target.batch_version + 1,
+                updated_at=updated_at,
+                items=tuple(sorted(items, key=lambda item: item.bin_item_id)),
             )
             batches = tuple(
                 updated_batch if batch.batch_id == batch_id else batch
@@ -540,7 +586,7 @@ def _item_from_dict(data: object) -> SelectedDuplicateBinItem:
     if Path(previous).name != basename:
         raise ValueError("duplicate bin basename does not match previous path")
     state = _string(data["state"], "item state")
-    if state != ITEM_APPROVED:
+    if state not in ITEM_STATES:
         raise ValueError("duplicate bin item state is invalid")
     extension = data["extension"]
     if not isinstance(extension, str) or "/" in extension or "\\" in extension:

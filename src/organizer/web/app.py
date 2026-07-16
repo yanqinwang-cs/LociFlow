@@ -24,6 +24,13 @@ from organizer.web.organization_decision_store import OrganizationDecisionStore
 from organizer.web.scan_jobs import ScanJobController
 from organizer.application.execution_coordinator import OrganizationExecutionCoordinator
 from organizer.application.duplicate_bin_repository import DuplicateBinRepository
+from organizer.application.duplicate_bin_authorization_repository import (
+    DuplicateBinAuthorizationRepository,
+)
+from organizer.application.duplicate_bin_operation_repository import (
+    DuplicateBinOperationRepository,
+)
+from organizer.web.routes.duplicate_bin_api import create_duplicate_bin_api_router
 from organizer.application.organization_operation_repository import (
     OrganizationOperationRepository,
 )
@@ -73,6 +80,10 @@ def create_app(config: WebAppConfig) -> FastAPI:
     app.state.scan_jobs = ScanJobController(config.root)
     app.state.review_explorer = ReviewExplorerStore(config.root)
     app.state.duplicate_bin_batches = DuplicateBinRepository(config.root)
+    app.state.duplicate_bin_authorizations = DuplicateBinAuthorizationRepository(
+        config.root
+    )
+    app.state.duplicate_bin_operations = DuplicateBinOperationRepository(config.root)
     app.state.organization_decisions = OrganizationDecisionStore(
         app.state.duplicate_bin_batches
     )
@@ -83,6 +94,7 @@ def create_app(config: WebAppConfig) -> FastAPI:
     app.include_router(create_consumer_router(templates))
     app.include_router(create_loci_flow_router(templates))
     app.include_router(create_organization_api_router())
+    app.include_router(create_duplicate_bin_api_router())
     app.include_router(create_activity_api_router())
     app.include_router(create_review_router(templates))
     app.mount(

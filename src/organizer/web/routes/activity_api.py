@@ -47,6 +47,9 @@ def create_activity_api_router() -> APIRouter:
             result = list_activity_entries(
                 operation_repository=request.app.state.organization_operations,
                 undo_repository=request.app.state.organization_undos,
+                duplicate_bin_operation_repository=(
+                    request.app.state.duplicate_bin_operations
+                ),
             )
         except (OSError, TypeError, ValueError):
             return _error_response(
@@ -68,6 +71,7 @@ def create_activity_api_router() -> APIRouter:
             form = await _validated_form(request, {"csrf_token"})
             if set(form) != {"csrf_token"}:
                 raise FormDataError("undo preview fields are invalid")
+            _reject_duplicate_bin_undo(operation_id, request)
             preview = preview_organization_undo(
                 operation_id=operation_id,
                 browser_session_id=session_id_for_session(request.session),
@@ -99,6 +103,7 @@ def create_activity_api_router() -> APIRouter:
             )
             if set(form) != {"csrf_token", "confirmation_token", "confirmation"}:
                 raise FormDataError("undo fields are invalid")
+            _reject_duplicate_bin_undo(operation_id, request)
             outcome = undo_organization_operation(
                 operation_id=operation_id,
                 browser_session_id=session_id_for_session(request.session),
@@ -111,6 +116,9 @@ def create_activity_api_router() -> APIRouter:
             activity_list = list_activity_entries(
                 operation_repository=request.app.state.organization_operations,
                 undo_repository=request.app.state.organization_undos,
+                duplicate_bin_operation_repository=(
+                    request.app.state.duplicate_bin_operations
+                ),
             )
             entry = next(
                 item for item in activity_list.activity if item.id == outcome.undo_id
@@ -128,6 +136,14 @@ def create_activity_api_router() -> APIRouter:
         return _json_response({"undo": outcome.to_dict(), "activity": entry.to_dict()})
 
     return router
+
+
+def _reject_duplicate_bin_undo(operation_id: str, request: Request) -> None:
+    try:
+        request.app.state.duplicate_bin_operations.load(operation_id)
+    except ValueError:
+        return
+    raise OrganizationUndoError("operation_not_undoable")
 
 
 def _validate_common_request(request: Request) -> Response | None:
