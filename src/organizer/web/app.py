@@ -23,8 +23,13 @@ from organizer.web.review_explorer import ReviewExplorerStore
 from organizer.web.organization_decision_store import OrganizationDecisionStore
 from organizer.web.scan_jobs import ScanJobController
 from organizer.application.execution_coordinator import OrganizationExecutionCoordinator
-from organizer.application.organization_operation_repository import OrganizationOperationRepository
-from organizer.application.organization_undo_repository import OrganizationUndoRepository
+from organizer.application.duplicate_bin_repository import DuplicateBinRepository
+from organizer.application.organization_operation_repository import (
+    OrganizationOperationRepository,
+)
+from organizer.application.organization_undo_repository import (
+    OrganizationUndoRepository,
+)
 from organizer.web.security import (
     LaunchTokenGate,
     SecurityHeadersMiddleware,
@@ -67,7 +72,10 @@ def create_app(config: WebAppConfig) -> FastAPI:
     app.state.launch_token_gate = LaunchTokenGate(config.launch_token)
     app.state.scan_jobs = ScanJobController(config.root)
     app.state.review_explorer = ReviewExplorerStore(config.root)
-    app.state.organization_decisions = OrganizationDecisionStore()
+    app.state.duplicate_bin_batches = DuplicateBinRepository(config.root)
+    app.state.organization_decisions = OrganizationDecisionStore(
+        app.state.duplicate_bin_batches
+    )
     app.state.organization_execution = OrganizationExecutionCoordinator()
     app.state.organization_operations = OrganizationOperationRepository(config.root)
     app.state.organization_undos = OrganizationUndoRepository(config.root)

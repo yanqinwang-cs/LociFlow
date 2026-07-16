@@ -3,6 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from threading import Lock
 
+from organizer.application.duplicate_bin_approval_service import (
+    DuplicateBinApprovalError,
+    create_or_recover_duplicate_batch,
+)
+from organizer.application.duplicate_bin_models import SafeDuplicateBatchProjection
+from organizer.application.duplicate_bin_repository import DuplicateBinRepository
 from organizer.application.organization_decision_models import (
     OrganizationDecisionSession,
     STATUS_READY_TO_MOVE,
@@ -24,14 +30,19 @@ from organizer.web.scan_jobs import ScanJobSnapshot
 class OrganizationDecisionSnapshot:
     projection: InternalOrganizationProjection
     session: OrganizationDecisionSession
+    duplicate_batch: SafeDuplicateBatchProjection | None = None
 
 
 class OrganizationDecisionStore:
     """Hold immutable, generation-bound Loci decisions per browser session."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        duplicate_bin_repository: DuplicateBinRepository | None = None,
+    ) -> None:
         self._lock = Lock()
         self._sessions: dict[str, OrganizationDecisionSnapshot] = {}
+        self._duplicate_bin_repository = duplicate_bin_repository
 
     def current(
         self,
@@ -155,7 +166,10 @@ class OrganizationDecisionStore:
             )
             if current.session.status == STATUS_READY_TO_MOVE:
                 approved = current.session.approved_plan
-                if approved is not None and approved.decision_revision == expected_revision:
+                if (
+                    approved is not None
+                    and approved.decision_revision == expected_revision
+                ):
                     return current
                 raise OrganizationDecisionError("approval_already_completed")
             self._validate_revision(current.session, expected_revision)
@@ -163,7 +177,28 @@ class OrganizationDecisionStore:
                 current.session,
                 current.projection,
             )
-            snapshot = OrganizationDecisionSnapshot(current.projection, updated)
+            assert updated.approved_plan is not None
+            repository = self._duplicate_bin_repository
+            if repository is None and updated.approved_plan.duplicate_decisions:
+                repository = DuplicateBinRepository(current.projection.root)
+            try:
+                batch = (
+                    create_or_recover_duplicate_batch(
+                        approved_plan=updated.approved_plan,
+                        projection=current.projection,
+                        browser_session_id=browser_session_id,
+                        repository=repository,
+                    )
+                    if repository is not None
+                    else None
+                )
+            except DuplicateBinApprovalError as error:
+                raise OrganizationDecisionError(error.code) from error
+            snapshot = OrganizationDecisionSnapshot(
+                current.projection,
+                updated,
+                batch.safe_projection() if batch is not None else None,
+            )
             self._sessions[browser_session_id] = snapshot
             return snapshot
 

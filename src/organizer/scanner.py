@@ -2,6 +2,7 @@ from pathlib import Path
 
 from organizer.models import FileMetadata
 from organizer.safety import validate_under_root
+from organizer.scope import is_duplicate_bin_path
 
 
 def scan_directory(root: Path, max_depth: int | None = None) -> list[FileMetadata]:
@@ -28,8 +29,19 @@ def _scan_path(
     max_depth: int | None,
 ) -> None:
     try:
+        lexical_relative_path = path.relative_to(root)
+    except ValueError:
+        return
+    if is_duplicate_bin_path(lexical_relative_path):
+        return
+
+    try:
         resolved_path = validate_under_root(path, root)
     except ValueError:
+        return
+
+    relative_path = resolved_path.relative_to(root)
+    if is_duplicate_bin_path(relative_path):
         return
 
     try:
@@ -37,7 +49,6 @@ def _scan_path(
     except FileNotFoundError:
         return
 
-    relative_path = resolved_path.relative_to(root)
     is_dir = resolved_path.is_dir()
     results.append(
         FileMetadata(

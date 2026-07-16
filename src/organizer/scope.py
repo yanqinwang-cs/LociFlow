@@ -1,8 +1,12 @@
 from collections.abc import Sequence
 from dataclasses import dataclass
+import os
 from pathlib import Path
+import unicodedata
+import uuid
 
 from organizer.models import FileMetadata
+from organizer.safety import validate_under_root
 
 DEFAULT_ORGANIZATION_EXTENSIONS = {
     ".pdf",
@@ -102,6 +106,8 @@ EXCLUDED_ORGANIZATION_EXTENSIONS = {
     ".bin",
 }
 PROTECTED_ROOT_NAMES = {"AI_Review", "Organized", "Protected_Workspaces"}
+DUPLICATE_BIN_RELATIVE_ROOT = Path("AI_Review") / "duplicate_bin"
+DUPLICATE_BIN_ITEMS_RELATIVE_ROOT = DUPLICATE_BIN_RELATIVE_ROOT / "items"
 PROTECTED_DIRECTORY_NAMES = {
     ".git",
     "node_modules",
@@ -182,6 +188,96 @@ def is_protected_context_path(relative_path: Path) -> bool:
     return _has_protected_path_part(parts)
 
 
+def is_duplicate_bin_path(relative_path: Path) -> bool:
+    """Return whether a root-relative path is in the reserved Duplicate Bin."""
+
+    prefix = DUPLICATE_BIN_RELATIVE_ROOT.parts
+    return relative_path.parts[: len(prefix)] == prefix
+
+
+def validate_duplicate_bin_item_destination(destination: Path, root: Path) -> Path:
+    """Validate one future Duplicate Bin-owned item destination without creating it."""
+
+    resolved_root = root.resolve(strict=True)
+    if not resolved_root.is_dir():
+        raise ValueError("configured root is not a directory")
+    if not destination.is_absolute():
+        raise ValueError("duplicate bin destination must be absolute")
+    validate_under_root(destination.resolve(strict=False), resolved_root)
+    try:
+        relative = destination.relative_to(resolved_root)
+    except ValueError as error:
+        raise ValueError(
+            "duplicate bin destination is outside the configured root"
+        ) from error
+    parts = relative.parts
+    prefix = DUPLICATE_BIN_ITEMS_RELATIVE_ROOT.parts
+    if len(parts) != len(prefix) + 2 or parts[: len(prefix)] != prefix:
+        raise ValueError("duplicate bin item destination has an invalid layout")
+
+    item_id, basename = parts[-2:]
+    try:
+        parsed_item_id = uuid.UUID(item_id)
+    except ValueError as error:
+        raise ValueError("duplicate bin item ID must be an opaque UUID") from error
+    if str(parsed_item_id) != item_id:
+        raise ValueError("duplicate bin item ID must be a canonical UUID")
+    if (
+        not basename
+        or basename in {".", ".."}
+        or "/" in basename
+        or "\\" in basename
+        or Path(basename).name != basename
+    ):
+        raise ValueError("duplicate bin item basename is unsafe")
+
+    item_directory = destination.parent
+    if os.path.lexists(item_directory) or os.path.lexists(destination):
+        raise ValueError("duplicate bin item destination already exists")
+
+    current = resolved_root
+    for component in parts[:-1]:
+        current = current / component
+        if not os.path.lexists(current):
+            continue
+        if current.is_symlink():
+            raise ValueError("duplicate bin destination contains a symlink")
+        if not current.is_dir():
+            raise ValueError("duplicate bin destination parent is not a directory")
+
+    items_directory = resolved_root / DUPLICATE_BIN_ITEMS_RELATIVE_ROOT
+    if items_directory.exists():
+        if items_directory.is_symlink() or not items_directory.is_dir():
+            raise ValueError("duplicate bin items path is unsafe")
+        normalized_item_id = unicodedata.normalize("NFC", item_id).casefold()
+        for child in items_directory.iterdir():
+            if (
+                unicodedata.normalize("NFC", child.name).casefold()
+                == normalized_item_id
+            ):
+                raise ValueError("duplicate bin item destination collides")
+
+    _validate_platform_path_lengths(destination, basename, resolved_root)
+    return destination
+
+
+def _validate_platform_path_lengths(
+    destination: Path, basename: str, root: Path
+) -> None:
+    try:
+        name_max = os.pathconf(root, "PC_NAME_MAX")
+    except (OSError, ValueError):
+        name_max = -1
+    if name_max >= 0 and len(os.fsencode(basename)) > name_max:
+        raise ValueError("duplicate bin item basename is too long")
+    try:
+        path_max = os.pathconf(root, "PC_PATH_MAX")
+    except (OSError, ValueError):
+        path_max = -1
+    if path_max >= 0 and len(os.fsencode(destination)) > path_max:
+        raise ValueError("duplicate bin item destination is too long")
+
+
 def is_project_context_path(
     relative_path: Path,
     all_metadata: Sequence[FileMetadata],
@@ -253,6 +349,8 @@ def is_actionable_destination_path(
     relative_path: Path,
     all_metadata: Sequence[FileMetadata],
 ) -> bool:
+    if is_duplicate_bin_path(relative_path):
+        return False
     if relative_path.parts and relative_path.parts[0] in {"AI_Review", "Organized"}:
         return True
     return is_actionable_source_path(relative_path, all_metadata)
@@ -272,7 +370,10 @@ def is_generated_or_project_output_context_path(
 def is_generated_asset_context_path(relative_path: Path) -> bool:
     parts = relative_path.parts
     lowered_parts = [part.lower() for part in parts]
-    if any(part.endswith(tuple(GENERATED_ASSET_DIRECTORY_SUFFIXES)) for part in lowered_parts[:-1]):
+    if any(
+        part.endswith(tuple(GENERATED_ASSET_DIRECTORY_SUFFIXES))
+        for part in lowered_parts[:-1]
+    ):
         return True
     if relative_path.name.lower() in GENERATED_ASSET_FILENAMES:
         return True
@@ -366,9 +467,8 @@ def is_protected_or_project_context(
     metadata: FileMetadata,
     all_metadata: Sequence[FileMetadata],
 ) -> bool:
-    return (
-        is_protected_context_path(metadata.relative_path)
-        or is_project_context_path(metadata.relative_path, all_metadata)
+    return is_protected_context_path(metadata.relative_path) or is_project_context_path(
+        metadata.relative_path, all_metadata
     )
 
 
@@ -377,8 +477,12 @@ def _has_web_project_context(
     all_metadata: Sequence[FileMetadata],
 ) -> bool:
     marker_dirs = _marker_directories(all_metadata, WEB_PROJECT_MARKER_NAMES)
-    marker_dirs.update(_prefixed_marker_directories(all_metadata, WEB_PROJECT_MARKER_PREFIXES))
-    marker_dirs.update(_named_directory_paths(all_metadata, WEB_PROJECT_DIRECTORY_NAMES))
+    marker_dirs.update(
+        _prefixed_marker_directories(all_metadata, WEB_PROJECT_MARKER_PREFIXES)
+    )
+    marker_dirs.update(
+        _named_directory_paths(all_metadata, WEB_PROJECT_DIRECTORY_NAMES)
+    )
     file_parent = metadata.relative_path.parent
     return any(_is_same_or_under(file_parent, marker_dir) for marker_dir in marker_dirs)
 
@@ -400,7 +504,9 @@ def _looks_like_generated_asset_name(relative_path: Path) -> bool:
     if ".min" in relative_path.name.lower():
         return True
     compact = stem.replace("-", "").replace("_", "").replace(".", "")
-    return len(compact) >= 12 and all(character in "0123456789abcdef" for character in compact)
+    return len(compact) >= 12 and all(
+        character in "0123456789abcdef" for character in compact
+    )
 
 
 def _marker_directories(
@@ -439,7 +545,10 @@ def _named_directory_paths(
 def _is_same_or_under(path: Path, possible_parent: Path) -> bool:
     normalized_path = _normalize_relative_path(path)
     normalized_parent = _normalize_relative_path(possible_parent)
-    return normalized_path == normalized_parent or normalized_parent in normalized_path.parents
+    return (
+        normalized_path == normalized_parent
+        or normalized_parent in normalized_path.parents
+    )
 
 
 def _normalize_relative_path(path: Path) -> Path:

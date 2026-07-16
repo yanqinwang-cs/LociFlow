@@ -47,9 +47,15 @@ _MAX_ID_COUNT = 500
 _MAX_ID_LENGTH = 2048
 
 _ERRORS = {
-    "scan_generation_mismatch": (409, "The organization review belongs to an earlier scan."),
+    "scan_generation_mismatch": (
+        409,
+        "The organization review belongs to an earlier scan.",
+    ),
     "decision_revision_mismatch": (409, "Organization choices were updated elsewhere."),
-    "review_session_not_found": (409, "The organization review session is unavailable."),
+    "review_session_not_found": (
+        409,
+        "The organization review session is unavailable.",
+    ),
     "unknown_change_id": (404, "That organization change is unavailable."),
     "unknown_choice_id": (404, "That organization choice is unavailable."),
     "invalid_option": (400, "That organization option is invalid."),
@@ -59,15 +65,29 @@ _ERRORS = {
     "unsafe_destination": (409, "A destination is no longer available."),
     "overwrite_detected": (409, "A destination file now exists."),
     "source_changed": (409, "A file changed after it was checked."),
-    "duplicate_group_changed": (409, "Duplicate copies changed after they were checked."),
+    "duplicate_group_changed": (
+        409,
+        "Duplicate copies changed after they were checked.",
+    ),
     "approval_already_completed": (409, "This organization plan is already approved."),
     "approved_plan_not_found": (409, "The approved organization plan is unavailable."),
+    "duplicate_batch_conflict": (
+        409,
+        "A duplicate copy is already part of another file action.",
+    ),
+    "duplicate_batch_unavailable": (
+        409,
+        "The duplicate choices could not be saved safely.",
+    ),
 }
 
 _MOVEMENT_ERRORS = {
     "approved_plan_not_found": (409, "The approved organization plan is unavailable."),
     "approved_plan_stale": (409, "The approved organization plan is stale."),
-    "scan_generation_mismatch": (409, "The organization review belongs to an earlier scan."),
+    "scan_generation_mismatch": (
+        409,
+        "The organization review belongs to an earlier scan.",
+    ),
     "decision_revision_mismatch": (409, "Organization choices were updated elsewhere."),
     "invalid_confirmation": (400, "Movement confirmation is invalid."),
     "invalid_confirmation_token": (409, "Movement confirmation is unavailable."),
@@ -291,7 +311,9 @@ def create_organization_api_router() -> APIRouter:
                 403,
             )
         except (FormDataError, TypeError, ValueError):
-            return _error_response("invalid_request", "The movement request is invalid.", 400)
+            return _error_response(
+                "invalid_request", "The movement request is invalid.", 400
+            )
         return _json_response(preview.to_dict())
 
     @router.post("/api/organization/move", include_in_schema=False)
@@ -339,7 +361,9 @@ def create_organization_api_router() -> APIRouter:
                 403,
             )
         except (FormDataError, TypeError, ValueError):
-            return _error_response("invalid_request", "The movement request is invalid.", 400)
+            return _error_response(
+                "invalid_request", "The movement request is invalid.", 400
+            )
         return _json_response({"operation": result.to_operation_dict()})
 
     return router
@@ -450,8 +474,7 @@ def _id_array(value: str | None) -> tuple[str, ...]:
         not isinstance(data, list)
         or len(data) > _MAX_ID_COUNT
         or not all(
-            isinstance(item, str) and 0 < len(item) <= _MAX_ID_LENGTH
-            for item in data
+            isinstance(item, str) and 0 < len(item) <= _MAX_ID_LENGTH for item in data
         )
     ):
         raise OrganizationDecisionError("invalid_option")
