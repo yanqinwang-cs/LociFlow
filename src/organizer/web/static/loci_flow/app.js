@@ -2,6 +2,8 @@ import { createLociFlowApiClient } from "./api.js";
 import {
   activityErrorMessage,
   createBackendDataSource,
+  duplicateBinErrorMessage,
+  isUncertainDuplicateBinError,
   isUncertainMovementError,
   isUncertainUndoError,
   movementErrorMessage,
@@ -9,6 +11,7 @@ import {
 import { renderDialog, renderRoute } from "./views.js";
 import {
   buildDialogViewModel,
+  buildDuplicateBinConfirmationViewModel,
   buildMovementConfirmationViewModel,
   buildProductionStageB1Contract,
   buildRouteViewModel,
@@ -69,6 +72,29 @@ const state = {
     errorMessage: null,
     previewVersion: 0,
   },
+  duplicateMovement: {
+    previewStatus: "idle",
+    preview: null,
+    confirmationText: "",
+    executionPending: false,
+    execution: null,
+    errorCode: null,
+    errorMessage: null,
+    previewVersion: 0,
+  },
+  duplicateBin: {
+    loadStatus: "loading",
+    items: [],
+    selectedIds: new Set(),
+    previewStatus: "idle",
+    preview: null,
+    confirmationText: "",
+    restorePending: false,
+    errorMessage: null,
+    noticeMessage: null,
+    loadVersion: 0,
+    previewVersion: 0,
+  },
 };
 const viewSource = {
   getState() {
@@ -91,6 +117,8 @@ const viewSource = {
         duplicateDrafts: state.duplicateDrafts,
         activity: state.activity,
         movement: state.movement,
+        duplicateMovement: state.duplicateMovement,
+        duplicateBin: state.duplicateBin,
       }),
     };
   },
@@ -115,6 +143,7 @@ function currentDuplicateChoice(choiceId) {
 let dialogPayload = {};
 let dialogTrigger = null;
 let activityLoadPromise = null;
+let duplicateBinLoadPromise = null;
 
 function routeFromHash() {
   const value = window.location.hash.startsWith("#/") ? window.location.hash.slice(2) : "home";
@@ -155,6 +184,8 @@ function movementPlanKey(snapshot) {
     backend.review.decision_revision,
     backend.review.status,
     backend.review.approval?.approved_at || null,
+    backend.duplicate_batch?.id || null,
+    backend.duplicate_batch?.status || null,
   ]);
 }
 
@@ -165,6 +196,7 @@ function applySnapshot(snapshot, { preserveSelection = true } = {}) {
   state.loadStatus = "ready";
   if (previousPlanKey && previousPlanKey !== nextPlanKey) {
     discardMovementConfirmation();
+    discardDuplicateMovementConfirmation();
     state.movement.execution = null;
     state.movement.errorCode = null;
     state.movement.errorMessage = null;
@@ -201,7 +233,11 @@ function syncShell() {
   const activityBusy = state.route === "activity"
     && (state.activity.loadStatus === "loading" || state.activity.pendingUndo);
   const movementBusy = state.movement.previewStatus === "loading"
-    || state.movement.executionPending;
+    || state.movement.executionPending
+    || state.duplicateMovement.previewStatus === "loading"
+    || state.duplicateMovement.executionPending
+    || state.duplicateBin.previewStatus === "loading"
+    || state.duplicateBin.restorePending;
   elements.app.inert = state.pendingMutation || movementBusy;
   elements.app.setAttribute("aria-busy", String(
     state.pendingMutation || state.loadStatus === "loading" || activityBusy || movementBusy,
@@ -273,10 +309,19 @@ function navigate(route, options = {}) {
   const previousRoute = state.route;
   if (previousRoute === "activity" && route !== "activity") discardActivityPreview();
   if (previousRoute === "organize" && route !== "organize") discardMovementConfirmation();
+  if (previousRoute === "organize" && route !== "organize") {
+    discardDuplicateMovementConfirmation();
+  }
+  if (previousRoute === "duplicate-bin" && route !== "duplicate-bin") {
+    discardDuplicateRestoreConfirmation();
+  }
   state.route = route;
   if (window.location.hash !== `#/${route}`) window.location.hash = `#/${route}`;
   render(options);
   if (route === "activity" && previousRoute !== "activity") loadActivity();
+  if (route === "duplicate-bin" && previousRoute !== "duplicate-bin") {
+    loadDuplicateBin({ refresh: true });
+  }
 }
 
 function setDialog(type, payload = {}) {
@@ -311,6 +356,12 @@ function refreshDialog(focusAttribute, focusValue) {
 function closeDialog({ restoreFocus = true } = {}) {
   if (state.activeDialog === "activity-undo") state.activity.activeUndoPreview = null;
   if (state.activeDialog === "movement-confirmation") resetMovementConfirmation();
+  if (state.activeDialog === "duplicate-movement-confirmation") {
+    resetDuplicateMovementConfirmation();
+  }
+  if (state.activeDialog === "duplicate-restore-confirmation") {
+    resetDuplicateRestoreConfirmation();
+  }
   if (elements.dialog.open) elements.dialog.close();
   state.activeDialog = null;
   dialogPayload = {};
@@ -328,6 +379,38 @@ function resetMovementConfirmation() {
 function discardMovementConfirmation() {
   resetMovementConfirmation();
   if (state.activeDialog !== "movement-confirmation") return;
+  if (elements.dialog.open) elements.dialog.close();
+  state.activeDialog = null;
+  dialogPayload = {};
+  dialogTrigger = null;
+}
+
+function resetDuplicateMovementConfirmation() {
+  state.duplicateMovement.previewVersion += 1;
+  state.duplicateMovement.previewStatus = "idle";
+  state.duplicateMovement.preview = null;
+  state.duplicateMovement.confirmationText = "";
+}
+
+function discardDuplicateMovementConfirmation() {
+  resetDuplicateMovementConfirmation();
+  if (state.activeDialog !== "duplicate-movement-confirmation") return;
+  if (elements.dialog.open) elements.dialog.close();
+  state.activeDialog = null;
+  dialogPayload = {};
+  dialogTrigger = null;
+}
+
+function resetDuplicateRestoreConfirmation() {
+  state.duplicateBin.previewVersion += 1;
+  state.duplicateBin.previewStatus = "idle";
+  state.duplicateBin.preview = null;
+  state.duplicateBin.confirmationText = "";
+}
+
+function discardDuplicateRestoreConfirmation() {
+  resetDuplicateRestoreConfirmation();
+  if (state.activeDialog !== "duplicate-restore-confirmation") return;
   if (elements.dialog.open) elements.dialog.close();
   state.activeDialog = null;
   dialogPayload = {};
@@ -391,6 +474,65 @@ function setMovementDialogPending() {
   if (confirm) confirm.textContent = "Moving files…";
 }
 
+function setDuplicateBinDialog(preview, kind, trigger) {
+  const restore = kind === "restore";
+  const owner = restore ? state.duplicateBin : state.duplicateMovement;
+  const type = restore ? "duplicate-restore-confirmation" : "duplicate-movement-confirmation";
+  const view = buildDuplicateBinConfirmationViewModel(
+    preview,
+    owner.confirmationText,
+    kind,
+  );
+  state.activeDialog = type;
+  owner.previewStatus = "ready";
+  owner.preview = preview;
+  dialogPayload = {};
+  dialogTrigger = trigger;
+  elements.dialogEyebrow.textContent = view.eyebrow;
+  elements.dialogTitle.textContent = view.title;
+  elements.dialogDescription.textContent = view.description;
+  elements.dialogContent.replaceChildren();
+  const instruction = document.createElement("p");
+  instruction.textContent = view.instruction;
+  const field = document.createElement("label");
+  field.className = "builder-field";
+  const label = document.createElement("span");
+  label.textContent = "Confirmation phrase";
+  const input = document.createElement("input");
+  input.type = "text";
+  input.autocomplete = "off";
+  input.spellcheck = false;
+  input.dataset.action = restore
+    ? "duplicate-restore-confirmation-input"
+    : "duplicate-movement-confirmation-input";
+  input.value = view.confirmationText;
+  field.append(label, input);
+  elements.dialogContent.append(instruction, field);
+  elements.dialogActions.replaceChildren();
+  const cancel = document.createElement("button");
+  cancel.type = "button";
+  cancel.dataset.action = restore ? "cancel-duplicate-restore" : "cancel-duplicate-move";
+  cancel.textContent = view.cancelLabel;
+  const confirm = document.createElement("button");
+  confirm.type = "button";
+  confirm.className = "button button-primary";
+  confirm.dataset.action = restore ? "confirm-duplicate-restore" : "confirm-duplicate-move";
+  confirm.textContent = view.confirmLabel;
+  confirm.disabled = !view.canConfirm;
+  elements.dialogActions.append(cancel, confirm);
+  if (!elements.dialog.open) elements.dialog.showModal();
+  window.requestAnimationFrame(() => input.focus());
+}
+
+function setDuplicateBinDialogPending(kind) {
+  elements.dialog.querySelectorAll("button, input, select").forEach((control) => {
+    control.disabled = true;
+  });
+  const action = kind === "restore" ? "confirm-duplicate-restore" : "confirm-duplicate-move";
+  const confirm = elements.dialog.querySelector(`[data-action="${action}"]`);
+  if (confirm) confirm.textContent = kind === "restore" ? "Restoring…" : "Moving copies…";
+}
+
 function discardActivityPreview() {
   state.activity.previewVersion += 1;
   state.activity.activeUndoPreview = null;
@@ -404,12 +546,14 @@ function setUndoDialog(preview, trigger) {
   dialogPayload = {};
   dialogTrigger = trigger;
   elements.dialogEyebrow.textContent = "Activity";
-  elements.dialogTitle.textContent = "Undo this move?";
-  const noun = preview.files_to_restore === 1 ? "file" : "files";
-  const destination = preview.files_to_restore === 1
+  const copies = preview.copies_to_restore !== undefined;
+  const count = copies ? preview.copies_to_restore : preview.files_to_restore;
+  elements.dialogTitle.textContent = copies ? "Restore these copies?" : "Undo this move?";
+  const noun = count === 1 ? (copies ? "copy" : "file") : (copies ? "copies" : "files");
+  const destination = count === 1
     ? "its previous folder"
     : "their previous folders";
-  elements.dialogDescription.textContent = `${preview.files_to_restore} ${noun} will return to ${destination}.`;
+  elements.dialogDescription.textContent = `${count} ${noun} will return to ${destination}.`;
   elements.dialogContent.replaceChildren();
   elements.dialogActions.replaceChildren();
   const cancel = document.createElement("button");
@@ -420,7 +564,7 @@ function setUndoDialog(preview, trigger) {
   confirm.type = "button";
   confirm.className = "button button-primary";
   confirm.dataset.action = "confirm-activity-undo";
-  confirm.textContent = "Undo move";
+  confirm.textContent = copies ? "Restore copies" : "Undo move";
   elements.dialogActions.append(cancel, confirm);
   if (!elements.dialog.open) elements.dialog.showModal();
   window.requestAnimationFrame(() => cancel.focus());
@@ -497,6 +641,55 @@ async function loadActivity({ noticeMessage = null, force = false, refresh = fal
   else syncShell();
 }
 
+async function loadDuplicateBin({ noticeMessage = null, refresh = false } = {}) {
+  if (duplicateBinLoadPromise) {
+    if (!refresh && noticeMessage === null) return duplicateBinLoadPromise;
+    await duplicateBinLoadPromise.catch(() => {});
+    return loadDuplicateBin({ noticeMessage, refresh: true });
+  }
+  if (state.duplicateBin.loadStatus === "ready" && !refresh && noticeMessage === null) {
+    if (state.route === "duplicate-bin" || state.route === "home") render();
+    else syncShell();
+    return;
+  }
+  const version = ++state.duplicateBin.loadVersion;
+  state.duplicateBin.loadStatus = "loading";
+  state.duplicateBin.errorMessage = null;
+  state.duplicateBin.noticeMessage = noticeMessage;
+  if (state.route === "duplicate-bin") render();
+  try {
+    duplicateBinLoadPromise = dataSource.loadDuplicateBin();
+    const payload = await duplicateBinLoadPromise;
+    if (version !== state.duplicateBin.loadVersion) return;
+    state.duplicateBin.items = payload.items;
+    const available = new Set(
+      payload.items.filter((item) => item.restore_available).map((item) => item.id),
+    );
+    const selected = new Set(
+      [...state.duplicateBin.selectedIds].filter((id) => available.has(id)),
+    );
+    if (
+      selected.size !== state.duplicateBin.selectedIds.size
+      || [...selected].some((id) => !state.duplicateBin.selectedIds.has(id))
+    ) {
+      state.duplicateBin.selectedIds = selected;
+      discardDuplicateRestoreConfirmation();
+    }
+    state.duplicateBin.loadStatus = "ready";
+  } catch (error) {
+    if (version !== state.duplicateBin.loadVersion) return;
+    state.duplicateBin.items = [];
+    state.duplicateBin.selectedIds = new Set();
+    state.duplicateBin.loadStatus = "error";
+    state.duplicateBin.errorMessage = duplicateBinErrorMessage(error);
+    discardDuplicateRestoreConfirmation();
+  } finally {
+    duplicateBinLoadPromise = null;
+  }
+  if (state.route === "duplicate-bin" || state.route === "home") render();
+  else syncShell();
+}
+
 function toggleActivity(activityId) {
   const ids = new Set(state.activity.expandedIds);
   if (ids.has(activityId)) ids.delete(activityId);
@@ -507,7 +700,10 @@ function toggleActivity(activityId) {
 
 async function previewActivityUndo(target) {
   if (state.activity.pendingUndo) return;
-  const entry = state.activity.entries.find((item) => item.undoable === true);
+  const requestedId = target?.dataset.activityId;
+  const entry = state.activity.entries.find(
+    (item) => item.id === requestedId && item.undoable === true,
+  );
   if (!entry) return;
   const version = ++state.activity.previewVersion;
   state.activity.pendingUndo = true;
@@ -536,17 +732,28 @@ async function confirmActivityUndo() {
   announce("Restoring files…");
   state.activity.activeUndoPreview = null;
   try {
-    await dataSource.confirmUndo(preview.operation_id, preview.confirmation_token);
+    await dataSource.confirmUndo(
+      preview.operation_id,
+      preview.confirmation_token,
+      preview.confirmation,
+    );
     closeDialog({ restoreFocus: false });
-    await loadActivity({ noticeMessage: "Files restored." });
-    announce("Files restored.");
+    await Promise.allSettled([
+      loadActivity({ noticeMessage: "Files restored.", force: true, refresh: true }),
+      loadDuplicateBin({ refresh: true }),
+    ]);
+    if (preview.copies_to_restore !== undefined) announce("Copies restored.");
+    else announce("Files restored.");
   } catch (error) {
     const uncertain = isUncertainUndoError(error);
     const message = uncertain
       ? "The result could not be loaded. Reload Activity before trying again."
       : activityErrorMessage(error);
     closeDialog({ restoreFocus: false });
-    await loadActivity({ noticeMessage: message });
+    await Promise.allSettled([
+      loadActivity({ noticeMessage: message, force: true, refresh: true }),
+      loadDuplicateBin({ refresh: true }),
+    ]);
     announce(message);
   } finally {
     state.activity.pendingUndo = false;
@@ -572,6 +779,22 @@ function executionAnnouncement(execution) {
   if (execution.status === "partial_movement") return "The move partly completed.";
   if (execution.status === "movement_failed") return "The files did not move.";
   return "The move needs attention.";
+}
+
+function duplicateMovementAnnouncement(execution) {
+  if (!execution) return "The Duplicate Bin move result could not be confirmed.";
+  if (execution.status === "moved") {
+    return execution.copies_moved === 1
+      ? "1 copy moved to Duplicate Bin."
+      : `${execution.copies_moved} copies moved to Duplicate Bin.`;
+  }
+  if (execution.status === "partially_moved") {
+    return "Some copies were moved. Review the result in Duplicate Bin and Activity.";
+  }
+  if (new Set(["prepared", "moving", "moved_unverified"]).has(execution.status)) {
+    return "The Duplicate Bin move is still in progress.";
+  }
+  return "The Duplicate Bin move needs attention in Activity.";
 }
 
 async function previewMove(target) {
@@ -660,9 +883,195 @@ async function confirmMove() {
   render({ focusMain: true });
 }
 
+async function previewDuplicateBinMove(target) {
+  const batch = state.backendSnapshot.backendState?.duplicate_batch;
+  if (
+    !batch
+    || state.duplicateMovement.previewStatus === "loading"
+    || state.duplicateMovement.executionPending
+    || state.pendingMutation
+    || state.activity.pendingUndo
+    || state.duplicateBin.restorePending
+  ) return;
+  discardDuplicateMovementConfirmation();
+  state.duplicateMovement.errorCode = null;
+  state.duplicateMovement.errorMessage = null;
+  const version = ++state.duplicateMovement.previewVersion;
+  state.duplicateMovement.previewStatus = "loading";
+  render();
+  announce("Preparing the Duplicate Bin move…");
+  try {
+    const preview = await dataSource.previewDuplicateBinMove(batch.id);
+    if (version !== state.duplicateMovement.previewVersion || state.route !== "organize") return;
+    state.duplicateMovement.previewStatus = "ready";
+    state.duplicateMovement.preview = preview;
+    state.duplicateMovement.confirmationText = "";
+    render();
+    const trigger = elements.app.querySelector(
+      '[data-action="preview-duplicate-bin-move"]',
+    ) || target;
+    setDuplicateBinDialog(preview, "movement", trigger);
+  } catch (error) {
+    if (version !== state.duplicateMovement.previewVersion) return;
+    state.duplicateMovement.previewStatus = "error";
+    state.duplicateMovement.preview = null;
+    state.duplicateMovement.errorCode = error?.code || "request_failed";
+    state.duplicateMovement.errorMessage = duplicateBinErrorMessage(error);
+    announce(state.duplicateMovement.errorMessage);
+    render({ focusMain: true });
+  }
+}
+
+async function confirmDuplicateBinMove() {
+  const preview = state.duplicateMovement.preview;
+  if (
+    !preview
+    || state.duplicateMovement.executionPending
+    || state.duplicateMovement.confirmationText !== preview.confirmation
+  ) return;
+  state.duplicateMovement.executionPending = true;
+  state.duplicateMovement.errorCode = null;
+  state.duplicateMovement.errorMessage = null;
+  setDuplicateBinDialogPending("movement");
+  syncShell();
+  announce("Moving copies to Duplicate Bin…");
+  let requestError = null;
+  try {
+    const result = await dataSource.confirmDuplicateBinMove(
+      preview.confirmation_token,
+      state.duplicateMovement.confirmationText,
+    );
+    state.duplicateMovement.execution = result.operation;
+  } catch (error) {
+    requestError = error;
+  }
+  closeDialog({ restoreFocus: false });
+  state.duplicateMovement.executionPending = false;
+  await Promise.allSettled([
+    loadCurrent(),
+    loadDuplicateBin({ refresh: true }),
+    loadActivity({ force: true, refresh: true }),
+  ]);
+  const batchStatus = state.backendSnapshot.backendState?.duplicate_batch?.status;
+  const recovered = state.duplicateMovement.execution
+    || (batchStatus && batchStatus !== "approved");
+  if (requestError && !recovered) {
+    state.duplicateMovement.errorCode = requestError?.code || "request_failed";
+    state.duplicateMovement.errorMessage = duplicateBinErrorMessage(requestError);
+  }
+  if (requestError && isUncertainDuplicateBinError(requestError) && !recovered) {
+    announce("The move result could not be loaded. Reload Organize before trying again.");
+  } else if (requestError && !recovered) {
+    announce(state.duplicateMovement.errorMessage);
+  } else {
+    announce(duplicateMovementAnnouncement(state.duplicateMovement.execution));
+  }
+  render({ focusMain: true });
+}
+
+function setDuplicateBinSelection(ids) {
+  const available = new Set(
+    state.duplicateBin.items.filter((item) => item.restore_available).map((item) => item.id),
+  );
+  const selected = new Set(ids);
+  if ([...selected].some((id) => !available.has(id))) return;
+  state.duplicateBin.selectedIds = selected;
+  discardDuplicateRestoreConfirmation();
+  render();
+}
+
+function toggleDuplicateBinItem(itemId) {
+  const selected = new Set(state.duplicateBin.selectedIds);
+  if (selected.has(itemId)) selected.delete(itemId);
+  else selected.add(itemId);
+  setDuplicateBinSelection(selected);
+}
+
+function selectAllDuplicateBinItems() {
+  const available = state.duplicateBin.items
+    .filter((item) => item.restore_available)
+    .map((item) => item.id);
+  const allSelected = available.length > 0
+    && available.every((id) => state.duplicateBin.selectedIds.has(id));
+  setDuplicateBinSelection(allSelected ? [] : available);
+}
+
+async function previewDuplicateBinRestore(target, itemId = null) {
+  if (itemId) setDuplicateBinSelection([itemId]);
+  const selected = [...state.duplicateBin.selectedIds].sort();
+  if (!selected.length || state.duplicateBin.previewStatus === "loading" || state.duplicateBin.restorePending) {
+    return;
+  }
+  discardDuplicateRestoreConfirmation();
+  const version = ++state.duplicateBin.previewVersion;
+  state.duplicateBin.previewStatus = "loading";
+  state.duplicateBin.noticeMessage = null;
+  render();
+  announce("Preparing to restore selected copies…");
+  try {
+    const preview = await dataSource.previewDuplicateBinRestore(selected);
+    if (version !== state.duplicateBin.previewVersion || state.route !== "duplicate-bin") return;
+    state.duplicateBin.previewStatus = "ready";
+    state.duplicateBin.preview = preview;
+    state.duplicateBin.confirmationText = "";
+    render();
+    const trigger = elements.app.querySelector('[data-action="restore-selected"]') || target;
+    setDuplicateBinDialog(preview, "restore", trigger);
+  } catch (error) {
+    if (version !== state.duplicateBin.previewVersion) return;
+    state.duplicateBin.previewStatus = "error";
+    state.duplicateBin.noticeMessage = duplicateBinErrorMessage(error);
+    await loadDuplicateBin({ noticeMessage: state.duplicateBin.noticeMessage, refresh: true });
+    announce(state.duplicateBin.noticeMessage);
+  }
+}
+
+async function confirmDuplicateBinRestore() {
+  const preview = state.duplicateBin.preview;
+  if (
+    !preview
+    || state.duplicateBin.restorePending
+    || state.duplicateBin.confirmationText !== preview.confirmation
+  ) return;
+  state.duplicateBin.restorePending = true;
+  setDuplicateBinDialogPending("restore");
+  syncShell();
+  announce("Restoring selected copies…");
+  let result = null;
+  let requestError = null;
+  try {
+    result = await dataSource.confirmDuplicateBinRestore(
+      preview.confirmation_token,
+      state.duplicateBin.confirmationText,
+    );
+  } catch (error) {
+    requestError = error;
+  }
+  closeDialog({ restoreFocus: false });
+  state.duplicateBin.restorePending = false;
+  state.duplicateBin.selectedIds = new Set();
+  const message = requestError
+    ? duplicateBinErrorMessage(requestError)
+    : result?.restore.status === "restored"
+      ? "Selected copies were restored."
+      : "Some copies could not be restored. Review the result.";
+  await Promise.allSettled([
+    loadDuplicateBin({ noticeMessage: message, refresh: true }),
+    loadActivity({ force: true, refresh: true }),
+  ]);
+  announce(
+    requestError && isUncertainDuplicateBinError(requestError)
+      ? "The restore result could not be loaded. Reload Duplicate Bin before trying again."
+      : message,
+  );
+  render({ focusMain: true });
+}
+
 async function checkFiles() {
   if (state.scanPolling || state.pendingMutation) return;
   discardMovementConfirmation();
+  discardDuplicateMovementConfirmation();
+  discardDuplicateRestoreConfirmation();
   state.movement.execution = null;
   state.movement.errorCode = null;
   state.movement.errorMessage = null;
@@ -888,12 +1297,14 @@ function actionFor(target) {
   if (action === "check-files" || action === "check-again") return checkFiles();
   if (action === "reload-choices") {
     discardMovementConfirmation();
+    discardDuplicateMovementConfirmation();
     state.movement.execution = null;
     state.movement.errorCode = null;
     state.movement.errorMessage = null;
     return loadCurrent();
   }
   if (action === "retry-activity") return loadActivity();
+  if (action === "reload-duplicate-bin") return loadDuplicateBin({ refresh: true });
   if (action === "toggle-activity") return toggleActivity(target.dataset.activityId);
   if (action === "expand-all-activity") {
     state.activity.expandedIds = new Set(state.activity.entries.map((entry) => entry.id));
@@ -908,6 +1319,17 @@ function actionFor(target) {
   if (action === "preview-move") return previewMove(target);
   if (action === "confirm-move") return confirmMove();
   if (action === "cancel-move") return closeDialog();
+  if (action === "preview-duplicate-bin-move") return previewDuplicateBinMove(target);
+  if (action === "confirm-duplicate-move") return confirmDuplicateBinMove();
+  if (action === "cancel-duplicate-move") return closeDialog();
+  if (action === "toggle-bin") return toggleDuplicateBinItem(target.dataset.binId);
+  if (action === "select-all-bin") return selectAllDuplicateBinItems();
+  if (action === "restore-selected") return previewDuplicateBinRestore(target);
+  if (action === "restore-one") {
+    return previewDuplicateBinRestore(target, target.dataset.binId);
+  }
+  if (action === "confirm-duplicate-restore") return confirmDuplicateBinRestore();
+  if (action === "cancel-duplicate-restore") return closeDialog();
   if (action === "set-style") {
     announce("Only the current deterministic organization plan is available.");
     return;
@@ -975,15 +1397,31 @@ document.addEventListener("click", (event) => {
 });
 
 document.addEventListener("input", (event) => {
-  const input = event.target.closest('[data-action="movement-confirmation-input"]');
-  if (!input || state.activeDialog !== "movement-confirmation") return;
-  state.movement.confirmationText = input.value;
-  const view = buildMovementConfirmationViewModel(
-    state.movement.preview,
-    state.movement.confirmationText,
+  const input = event.target.closest("[data-action$='confirmation-input']");
+  if (!input) return;
+  if (state.activeDialog === "movement-confirmation") {
+    state.movement.confirmationText = input.value;
+    const view = buildMovementConfirmationViewModel(
+      state.movement.preview,
+      state.movement.confirmationText,
+    );
+    const confirm = elements.dialog.querySelector('[data-action="confirm-move"]');
+    if (confirm) confirm.disabled = !view.canConfirm || state.movement.executionPending;
+    return;
+  }
+  const restore = state.activeDialog === "duplicate-restore-confirmation";
+  const movement = state.activeDialog === "duplicate-movement-confirmation";
+  if (!restore && !movement) return;
+  const owner = restore ? state.duplicateBin : state.duplicateMovement;
+  owner.confirmationText = input.value;
+  const view = buildDuplicateBinConfirmationViewModel(
+    owner.preview,
+    owner.confirmationText,
+    restore ? "restore" : "movement",
   );
-  const confirm = elements.dialog.querySelector('[data-action="confirm-move"]');
-  if (confirm) confirm.disabled = !view.canConfirm || state.movement.executionPending;
+  const action = restore ? "confirm-duplicate-restore" : "confirm-duplicate-move";
+  const confirm = elements.dialog.querySelector(`[data-action="${action}"]`);
+  if (confirm) confirm.disabled = !view.canConfirm || owner.executionPending || owner.restorePending;
 });
 
 document.addEventListener("keydown", (event) => {
@@ -991,6 +1429,14 @@ document.addEventListener("keydown", (event) => {
     event.preventDefault();
     if (state.activeDialog === "activity-undo" && state.activity.pendingUndo) return;
     if (state.activeDialog === "movement-confirmation" && state.movement.executionPending) return;
+    if (
+      state.activeDialog === "duplicate-movement-confirmation"
+      && state.duplicateMovement.executionPending
+    ) return;
+    if (
+      state.activeDialog === "duplicate-restore-confirmation"
+      && state.duplicateBin.restorePending
+    ) return;
     closeDialog();
     return;
   }
@@ -1024,9 +1470,18 @@ window.addEventListener("hashchange", () => {
   const nextRoute = routeFromHash();
   if (previousRoute === "activity" && nextRoute !== "activity") discardActivityPreview();
   if (previousRoute === "organize" && nextRoute !== "organize") discardMovementConfirmation();
+  if (previousRoute === "organize" && nextRoute !== "organize") {
+    discardDuplicateMovementConfirmation();
+  }
+  if (previousRoute === "duplicate-bin" && nextRoute !== "duplicate-bin") {
+    discardDuplicateRestoreConfirmation();
+  }
   state.route = nextRoute;
   render({ focusMain: true });
   if (nextRoute === "activity" && previousRoute !== "activity") loadActivity();
+  if (nextRoute === "duplicate-bin" && previousRoute !== "duplicate-bin") {
+    loadDuplicateBin({ refresh: true });
+  }
 });
 window.addEventListener("beforeunload", () => dataSource.dispose());
 
@@ -1035,3 +1490,4 @@ state.route = routeFromHash();
 render();
 loadCurrent();
 loadActivity({ force: true });
+loadDuplicateBin();

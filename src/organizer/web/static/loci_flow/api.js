@@ -3,10 +3,17 @@ const DECISIONS_URL = "/api/organization/decisions";
 const APPROVAL_URL = "/api/organization/approval";
 const MOVEMENT_PREVIEW_URL = "/api/organization/move/preview";
 const MOVEMENT_URL = "/api/organization/move";
+const DUPLICATE_BIN_URL = "/api/duplicate-bin";
+const DUPLICATE_BIN_MOVEMENT_PREVIEW_URL = "/api/duplicate-bin/move/preview";
+const DUPLICATE_BIN_MOVEMENT_URL = "/api/duplicate-bin/move";
+const DUPLICATE_BIN_RESTORE_PREVIEW_URL = "/api/duplicate-bin/restore/preview";
+const DUPLICATE_BIN_RESTORE_URL = "/api/duplicate-bin/restore";
 const SCAN_URL = "/scan?surface=home";
 const ACTIVITY_URL = "/api/activity";
 const MOVEMENT_CONFIRMATION = "MOVE APPROVED FILES";
 const UNDO_CONFIRMATION = "UNDO FILE MOVE";
+const DUPLICATE_BIN_MOVEMENT_CONFIRMATION = "MOVE COPIES TO DUPLICATE BIN";
+const DUPLICATE_BIN_RESTORE_CONFIRMATION = "RESTORE COPIES";
 
 export class LociFlowApiError extends Error {
   constructor(code, message, status = 0) {
@@ -233,6 +240,100 @@ export async function getActivity(fetchImpl = defaultFetch) {
   return responseJson(response);
 }
 
+function requiredServerId(value, code = "invalid_duplicate_bin_contract") {
+  if (!isCanonicalOperationId(value)) {
+    throw new LociFlowApiError(code, "Duplicate Bin information is invalid.");
+  }
+  return value;
+}
+
+function requiredConfirmation(payload, expected, code) {
+  if (typeof payload?.confirmationToken !== "string" || !payload.confirmationToken) {
+    throw new LociFlowApiError(code, "Duplicate Bin confirmation is invalid.");
+  }
+  if (payload.confirmation !== expected) {
+    throw new LociFlowApiError("invalid_confirmation", "The confirmation phrase does not match.");
+  }
+}
+
+export function previewDuplicateBinMove(batchId, fetchImpl = defaultFetch, csrfToken) {
+  return postJson(
+    DUPLICATE_BIN_MOVEMENT_PREVIEW_URL,
+    {
+      csrf_token: requiredToken(csrfToken),
+      batch_id: requiredServerId(batchId),
+    },
+    fetchImpl,
+  );
+}
+
+export function confirmDuplicateBinMove(payload, fetchImpl = defaultFetch, csrfToken) {
+  requiredConfirmation(
+    payload,
+    DUPLICATE_BIN_MOVEMENT_CONFIRMATION,
+    "invalid_duplicate_bin_movement_contract",
+  );
+  return postJson(
+    DUPLICATE_BIN_MOVEMENT_URL,
+    {
+      csrf_token: requiredToken(csrfToken),
+      confirmation_token: payload.confirmationToken,
+      confirmation: payload.confirmation,
+    },
+    fetchImpl,
+  );
+}
+
+export async function getDuplicateBin(fetchImpl = defaultFetch) {
+  const response = await fetchImpl(DUPLICATE_BIN_URL, {
+    ...baseOptions(),
+    method: "GET",
+  });
+  return responseJson(response);
+}
+
+export function previewDuplicateBinRestore(itemIds, fetchImpl = defaultFetch, csrfToken) {
+  if (
+    !Array.isArray(itemIds)
+    || itemIds.length === 0
+    || new Set(itemIds).size !== itemIds.length
+  ) {
+    throw new LociFlowApiError(
+      "invalid_duplicate_bin_restore_contract",
+      "Select at least one copy to restore.",
+    );
+  }
+  itemIds.forEach((itemId) => requiredServerId(
+    itemId,
+    "invalid_duplicate_bin_restore_contract",
+  ));
+  return postJson(
+    DUPLICATE_BIN_RESTORE_PREVIEW_URL,
+    {
+      csrf_token: requiredToken(csrfToken),
+      item_ids: JSON.stringify(itemIds),
+    },
+    fetchImpl,
+  );
+}
+
+export function confirmDuplicateBinRestore(payload, fetchImpl = defaultFetch, csrfToken) {
+  requiredConfirmation(
+    payload,
+    DUPLICATE_BIN_RESTORE_CONFIRMATION,
+    "invalid_duplicate_bin_restore_contract",
+  );
+  return postJson(
+    DUPLICATE_BIN_RESTORE_URL,
+    {
+      csrf_token: requiredToken(csrfToken),
+      confirmation_token: payload.confirmationToken,
+      confirmation: payload.confirmation,
+    },
+    fetchImpl,
+  );
+}
+
 export const fetchActivity = getActivity;
 
 export async function previewActivityUndo(
@@ -253,9 +354,13 @@ export async function undoActivityOperation(
   confirmationToken,
   fetchImpl = defaultFetch,
   csrfToken,
+  confirmation = UNDO_CONFIRMATION,
 ) {
   const id = requiredOperationId(operationId);
   if (typeof confirmationToken !== "string" || !confirmationToken) {
+    throw new LociFlowApiError("invalid_activity_contract", "Activity information is invalid.");
+  }
+  if (!new Set([UNDO_CONFIRMATION, DUPLICATE_BIN_RESTORE_CONFIRMATION]).has(confirmation)) {
     throw new LociFlowApiError("invalid_activity_contract", "Activity information is invalid.");
   }
   return postJson(
@@ -263,7 +368,7 @@ export async function undoActivityOperation(
     {
       csrf_token: requiredToken(csrfToken),
       confirmation_token: confirmationToken,
-      confirmation: UNDO_CONFIRMATION,
+      confirmation,
     },
     fetchImpl,
   );
@@ -275,6 +380,7 @@ export function executeActivityUndo(payload, fetchImpl = defaultFetch, csrfToken
     payload.confirmationToken,
     fetchImpl,
     csrfToken,
+    payload.confirmation || UNDO_CONFIRMATION,
   );
 }
 
@@ -300,12 +406,31 @@ export function createLociFlowApiClient(fetchImpl = defaultFetch) {
     moveApprovedOrganization: (payload, csrfToken) => (
       moveApprovedOrganization(payload, fetchImpl, csrfToken)
     ),
+    previewDuplicateBinMove: (batchId, csrfToken) => (
+      previewDuplicateBinMove(batchId, fetchImpl, csrfToken)
+    ),
+    confirmDuplicateBinMove: (payload, csrfToken) => (
+      confirmDuplicateBinMove(payload, fetchImpl, csrfToken)
+    ),
+    getDuplicateBin: () => getDuplicateBin(fetchImpl),
+    previewDuplicateBinRestore: (itemIds, csrfToken) => (
+      previewDuplicateBinRestore(itemIds, fetchImpl, csrfToken)
+    ),
+    confirmDuplicateBinRestore: (payload, csrfToken) => (
+      confirmDuplicateBinRestore(payload, fetchImpl, csrfToken)
+    ),
     getActivity: () => getActivity(fetchImpl),
     previewActivityUndo: (operationId, csrfToken) => (
       previewActivityUndo(operationId, fetchImpl, csrfToken)
     ),
-    undoActivityOperation: (operationId, confirmationToken, csrfToken) => (
-      undoActivityOperation(operationId, confirmationToken, fetchImpl, csrfToken)
+    undoActivityOperation: (operationId, confirmationToken, csrfToken, confirmation) => (
+      undoActivityOperation(
+        operationId,
+        confirmationToken,
+        fetchImpl,
+        csrfToken,
+        confirmation,
+      )
     ),
   });
 }

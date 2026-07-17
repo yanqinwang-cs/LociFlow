@@ -267,12 +267,18 @@ function contractKeptByStandards(model) {
 function contractReadyToMove(model) {
   const summary = model.organization.movementSummary;
   const action = model.workflow.primaryAction;
-  return `${pageHeader("Organize", "The organization has been checked and approved.", "", model.scope.displayName)}${stages({ workflowStage: "moving" })}<section class="workflow-result card" role="status"><p class="eyebrow">Move</p><h2>Ready to move</h2><p>The organization has been checked and approved.<br>No files have moved yet.</p><div class="verification-counts"><strong>${summary.filesToMove} ${summary.filesToMove === 1 ? "file" : "files"} to move</strong><span>${summary.namesToChange} ${summary.namesToChange === 1 ? "name" : "names"} to change</span><span>${summary.foldersToCreate} ${summary.foldersToCreate === 1 ? "folder" : "folders"} to create</span><span>${summary.duplicateCopies} duplicate ${summary.duplicateCopies === 1 ? "copy" : "copies"} set aside</span></div><div>${button(action.label, action.action, { primary: true, disabled: !action.enabled })}</div><p>No files have moved yet.</p></section>`;
+  return `${pageHeader("Organize", "The organization has been checked and approved.", "", model.scope.displayName)}${stages({ workflowStage: "moving" })}<section class="workflow-result card" role="status"><p class="eyebrow">Move</p><h2>Ready to move</h2><p>The organization has been checked and approved.<br>No files have moved yet.</p><div class="verification-counts"><strong>${summary.filesToMove} ${summary.filesToMove === 1 ? "file" : "files"} to move</strong><span>${summary.namesToChange} ${summary.namesToChange === 1 ? "name" : "names"} to change</span><span>${summary.foldersToCreate} ${summary.foldersToCreate === 1 ? "folder" : "folders"} to create</span><span>${summary.duplicateCopies} duplicate ${summary.duplicateCopies === 1 ? "copy" : "copies"} set aside</span></div><div>${button(action.label, action.action, { primary: true, disabled: !action.enabled })}</div><p>No files have moved yet.</p></section>${contractDuplicateMovement(model)}`;
+}
+
+function contractDuplicateMovement(model) {
+  const movement = model.organization.duplicateMovement;
+  if (!movement || movement.stage === "unavailable") return "";
+  return `<section class="workflow-result card" role="status"><p class="eyebrow">Duplicate Bin</p><h2>${escapeHtml(movement.status)}</h2>${movement.message ? `<p>${escapeHtml(movement.message)}</p>` : ""}<div>${button(movement.action.label, movement.action.action, { primary: movement.stage === "ready", disabled: !movement.action.enabled })}</div></section>`;
 }
 
 function contractMovementResult(model) {
   const action = model.workflow.primaryAction;
-  return `${pageHeader("Organize", model.workflow.message, "", model.scope.displayName)}${stages({ workflowStage: contractStage(model.workflow) })}<section class="workflow-result card" role="status"><p class="eyebrow">Move</p><h2>${escapeHtml(model.workflow.status)}</h2><p>${escapeHtml(model.workflow.message)}</p><div>${button(action.label, action.action, { primary: true, disabled: !action.enabled })}</div></section>`;
+  return `${pageHeader("Organize", model.workflow.message, "", model.scope.displayName)}${stages({ workflowStage: contractStage(model.workflow) })}<section class="workflow-result card" role="status"><p class="eyebrow">Move</p><h2>${escapeHtml(model.workflow.status)}</h2><p>${escapeHtml(model.workflow.message)}</p><div>${button(action.label, action.action, { primary: true, disabled: !action.enabled })}</div></section>${contractDuplicateMovement(model)}`;
 }
 
 function contractStaleResult(model) {
@@ -303,16 +309,34 @@ export function renderOrganize(store) {
 
 function duplicateRow(item, state) {
   const selected = state.selectedBinIds.includes(item.id);
-  return `<div class="bin-row" role="row"><span role="cell"><input type="checkbox" data-action="toggle-bin" data-bin-id="${item.id}" aria-label="Select ${escapeHtml(item.name)}" ${selected ? "checked" : ""}></span><span class="bin-name" role="cell">${fileIcon(item.icon, item.kind)}<strong>${escapeHtml(item.name)}</strong></span><span role="cell">${breadcrumb(item.originalFolder)}</span><span role="cell">${escapeHtml(item.dateMoved)}</span><span role="cell">${escapeHtml(item.size)}</span><span role="cell">${escapeHtml(item.kind)}</span><span role="cell">${button("Restore", "restore-one", { attrs: `data-bin-id="${item.id}"` })}</span></div>`;
+  const attention = item.attentionMessage
+    ? `<small role="status">${escapeHtml(item.attentionMessage)}</small>`
+    : "";
+  return `<div class="bin-row" role="row"><span role="cell"><input type="checkbox" data-action="toggle-bin" data-bin-id="${item.id}" aria-label="Select ${escapeHtml(item.name)}" ${selected ? "checked" : ""} ${item.restoreAvailable ? "" : "disabled"}></span><span class="bin-name" role="cell">${fileIcon(item.icon, item.kind)}<strong>${escapeHtml(item.name)}</strong>${attention}</span><span role="cell">${breadcrumb(item.previousFolder)}</span><span role="cell">${escapeHtml(item.dateMoved)}</span><span role="cell">${escapeHtml(item.size)}</span><span role="cell">${escapeHtml(item.kind)}</span><span role="cell">${button("Restore", "restore-one", { attrs: `data-bin-id="${item.id}"`, disabled: !item.restoreAvailable })}</span></div>`;
 }
 
 export function renderDuplicateBin(store) {
+  if (!store?.duplicateBin) {
+    const state = store.getState();
+    const items = state.duplicateBinItems;
+    return `${pageHeader("Duplicate Bin", "Duplicate copies moved out of the way.", button("Restore selected", "restore-selected", { primary: true, disabled: !state.selectedBinIds.length }))}<section class="bin-card card">${items.length ? `<div class="bin-toolbar"><label><input type="checkbox" data-action="select-all-bin" ${state.selectedBinIds.length === items.length ? "checked" : ""}> Select all</label><strong>${items.length} ${items.length === 1 ? "file" : "files"}</strong></div><div class="bin-table" role="table" aria-label="Duplicate Bin"><div class="bin-row bin-header" role="row"><span role="columnheader"></span><span role="columnheader">Name</span><span role="columnheader">Original folder</span><span role="columnheader">Date moved</span><span role="columnheader">Size</span><span role="columnheader">Kind</span><span role="columnheader"></span></div>${items.map((item) => `<div class="bin-row" role="row"><span role="cell"><input type="checkbox" data-action="toggle-bin" data-bin-id="${item.id}" aria-label="Select ${escapeHtml(item.name)}" ${state.selectedBinIds.includes(item.id) ? "checked" : ""}></span><span class="bin-name" role="cell">${fileIcon(item.icon, item.kind)}<strong>${escapeHtml(item.name)}</strong></span><span role="cell">${breadcrumb(item.originalFolder)}</span><span role="cell">${escapeHtml(item.dateMoved)}</span><span role="cell">${escapeHtml(item.size)}</span><span role="cell">${escapeHtml(item.kind)}</span><span role="cell">${button("Restore", "restore-one", { attrs: `data-bin-id="${item.id}"` })}</span></div>`).join("")}</div>` : '<div class="empty-state"><span class="empty-state-icon">0</span><h2>Duplicate Bin is empty</h2><p>Copies moved here during organization will appear here.</p></div>'}</section>`;
+  }
   if (store?.mode === "production_fixture" && !store.duplicateBin.connected) {
     return `${pageHeader("Duplicate Bin", "Duplicate copies moved out of the way.", "", store.scope.displayName)}<section class="bin-card card"><div class="empty-state"><span class="empty-state-icon">0</span><h2>Duplicate Bin is not connected yet.</h2><p>No files are shown here.</p></div></section>`;
   }
   const state = store.getState();
   const items = state.duplicateBinItems;
-  return `${pageHeader("Duplicate Bin", "Duplicate copies moved out of the way.", button("Restore selected", "restore-selected", { primary: true, disabled: !state.selectedBinIds.length }))}<section class="bin-card card">${items.length ? `<div class="bin-toolbar"><label><input type="checkbox" data-action="select-all-bin" ${state.selectedBinIds.length === items.length ? "checked" : ""}> Select all</label><strong>${items.length} ${items.length === 1 ? "file" : "files"}</strong></div><div class="bin-table" role="table" aria-label="Duplicate Bin"><div class="bin-row bin-header" role="row"><span role="columnheader"></span><span role="columnheader">Name</span><span role="columnheader">Original folder</span><span role="columnheader">Date moved</span><span role="columnheader">Size</span><span role="columnheader">Kind</span><span role="columnheader"></span></div>${items.map((item) => duplicateRow(item, state)).join("")}</div>` : '<div class="empty-state"><span class="empty-state-icon">0</span><h2>Duplicate Bin is empty</h2><p>Copies moved here during organization will appear here.</p></div>'}</section>`;
+  const available = items.filter((item) => item.restoreAvailable);
+  if (store.duplicateBin.loadStatus === "loading") {
+    return `${pageHeader("Duplicate Bin", "Duplicate copies moved out of the way.")}<section class="bin-card card"><div class="empty-state"><h2>Loading Duplicate Bin…</h2><p>Loading copies that were moved aside.</p></div></section>`;
+  }
+  if (store.duplicateBin.loadStatus === "error") {
+    return `${pageHeader("Duplicate Bin", "Duplicate copies moved out of the way.")}<section class="bin-card card"><div class="empty-state"><h2>Duplicate Bin could not be loaded.</h2><p>${escapeHtml(store.duplicateBin.errorMessage || "Reload before trying again.")}</p>${button("Try again", "reload-duplicate-bin")}</div></section>`;
+  }
+  const notice = store.duplicateBin.noticeMessage
+    ? `<p class="activity-notice" role="status">${escapeHtml(store.duplicateBin.noticeMessage)}</p>`
+    : "";
+  return `${pageHeader("Duplicate Bin", "Duplicate copies moved out of the way.", button(store.duplicateBin.restorePending ? "Restoring…" : "Restore selected", "restore-selected", { primary: true, disabled: !state.selectedBinIds.length || store.duplicateBin.restorePending }))}${notice}<section class="bin-card card">${items.length ? `<div class="bin-toolbar"><label><input type="checkbox" data-action="select-all-bin" ${state.selectedBinIds.length === available.length && available.length ? "checked" : ""} ${available.length ? "" : "disabled"}> Select all</label><strong>${items.length} ${items.length === 1 ? "file" : "files"}</strong></div><div class="bin-table" role="table" aria-label="Duplicate Bin"><div class="bin-row bin-header" role="row"><span role="columnheader"></span><span role="columnheader">Name</span><span role="columnheader">Previous folder</span><span role="columnheader">Date moved</span><span role="columnheader">Size</span><span role="columnheader">Kind</span><span role="columnheader"></span></div>${items.map((item) => duplicateRow(item, state)).join("")}</div>` : '<div class="empty-state"><span class="empty-state-icon">0</span><h2>Duplicate Bin is empty</h2><p>Copies moved here during organization will appear here.</p></div>'}</section>`;
 }
 
 function activityCategory(title, items) {
@@ -328,7 +352,7 @@ function activityRow(entry, expanded) {
     ["Files restored", entry.details.filesRestored],
     ["Problems", entry.details.problems],
   ];
-  return `<article class="activity-row"><header><div><h2>${escapeHtml(entry.title)}</h2><p>${escapeHtml(entry.summary)}</p><span>${escapeHtml(entry.status)} · ${escapeHtml(entry.time)}</span></div><div>${button(expanded ? "Hide details" : "Details", "toggle-activity", { attrs: `data-activity-id="${entry.id}" aria-expanded="${expanded}"` })}${entry.undoable ? button("Undo move", "undo-move", { primary: true }) : ""}</div></header>${expanded ? `<div class="activity-details">${categories.map(([title, items]) => activityCategory(title, items)).join("")}</div>` : ""}</article>`;
+  return `<article class="activity-row"><header><div><h2>${escapeHtml(entry.title)}</h2><p>${escapeHtml(entry.summary)}</p><span>${escapeHtml(entry.status)} · ${escapeHtml(entry.time)}</span></div><div>${button(expanded ? "Hide details" : "Details", "toggle-activity", { attrs: `data-activity-id="${entry.id}" aria-expanded="${expanded}"` })}${entry.undoable ? button("Undo move", "undo-move", { primary: true, attrs: `data-activity-id="${entry.id}"` }) : ""}</div></header>${expanded ? `<div class="activity-details">${categories.map(([title, items]) => activityCategory(title, items)).join("")}</div>` : ""}</article>`;
 }
 
 export function renderActivity(store) {

@@ -10,6 +10,8 @@ const MAX_TEXT_LENGTH = 2048;
 const MAX_CONFIRMATION_TOKEN_LENGTH = 512;
 const MOVEMENT_CONFIRMATION = "MOVE APPROVED FILES";
 const UNDO_CONFIRMATION = "UNDO FILE MOVE";
+const DUPLICATE_BIN_MOVEMENT_CONFIRMATION = "MOVE COPIES TO DUPLICATE BIN";
+const DUPLICATE_BIN_RESTORE_CONFIRMATION = "RESTORE COPIES";
 const EXECUTION_STATUSES = new Set([
   "not_ready", "ready", "no_supported_moves", "recovery_required",
   "prepared", "moving", "moved_unverified", "verified", "partial_movement",
@@ -20,7 +22,9 @@ const EXECUTION_TERMINAL_STATUSES = new Set([
   "verified", "partial_movement", "movement_failed", "verification_failed", "interrupted",
 ]);
 const VERIFICATION_STATUSES = new Set(["not_run", "passed", "failed"]);
-const ACTIVITY_TYPES = new Set(["organization", "restore"]);
+const ACTIVITY_TYPES = new Set([
+  "organization", "restore", "duplicate_bin_move", "duplicate_bin_restore",
+]);
 const MOVEMENT_ACTIVITY_STATUSES = new Set([
   "verified", "partial_movement", "movement_failed", "verification_failed",
   "prepared", "moving", "moved_unverified", "interrupted", "recovery_required",
@@ -28,6 +32,27 @@ const MOVEMENT_ACTIVITY_STATUSES = new Set([
 const RESTORE_ACTIVITY_STATUSES = new Set([
   "restored", "partial_undo", "undo_failed", "undo_verification_failed",
   "prepared", "undoing", "restored_unverified", "interrupted",
+]);
+const DUPLICATE_MOVE_ACTIVITY_STATUSES = new Set([
+  "moved", "partially_moved", "movement_failed", "verification_failed",
+  "prepared", "moving", "moved_unverified", "interrupted",
+]);
+const DUPLICATE_RESTORE_ACTIVITY_STATUSES = new Set([
+  "restored", "partially_restored", "restore_failed", "verification_failed",
+  "prepared", "restoring", "restored_unverified", "interrupted",
+]);
+const DUPLICATE_BATCH_STATUSES = new Set([
+  "approved", "moving", "executing", "moved", "partially_moved",
+  "movement_failed", "verification_failed", "completed", "interrupted",
+  "attention", "superseded", "cancelled",
+]);
+const DUPLICATE_MOVE_STATUSES = new Set([
+  "prepared", "moving", "moved_unverified", "moved", "partially_moved",
+  "movement_failed", "verification_failed", "interrupted",
+]);
+const DUPLICATE_RESTORE_STATUSES = new Set([
+  "prepared", "restoring", "restored_unverified", "restored", "partially_restored",
+  "restore_failed", "verification_failed", "interrupted",
 ]);
 const ACTIVITY_ERROR_MESSAGES = Object.freeze({
   operation_not_found: "This move is no longer available.",
@@ -40,6 +65,10 @@ const ACTIVITY_ERROR_MESSAGES = Object.freeze({
   undo_source_changed: "A moved file changed after it was moved.",
   unsafe_undo_path: "This move cannot be undone safely.",
   movement_or_undo_in_progress: "Another file action is running.",
+  no_restorable_items: "No copies from this move are still available to restore.",
+  invalid_confirmation_token: "This confirmation expired. Try again.",
+  invalid_restore_confirmation: "The confirmation phrase does not match.",
+  confirmation_expired: "This confirmation expired. Try again.",
 });
 const MOVEMENT_ERROR_MESSAGES = Object.freeze({
   approved_plan_not_found: "The approved organization is no longer available.",
@@ -57,6 +86,36 @@ const MOVEMENT_ERROR_MESSAGES = Object.freeze({
   overwrite_detected: "A destination file now exists.",
   move_conflict: "The approved moves now conflict.",
   no_supported_moves: "No approved files are ready to move.",
+});
+const DUPLICATE_BIN_ERROR_MESSAGES = Object.freeze({
+  duplicate_batch_not_found: "These approved copies are no longer available.",
+  duplicate_batch_not_approved: "These copies are not ready to move.",
+  duplicate_batch_stale: "These copies changed. Review them again.",
+  duplicate_bin_movement_already_started: "This Duplicate Bin move already started.",
+  duplicate_bin_recovery_required: "This Duplicate Bin move needs attention.",
+  selected_copy_changed: "These copies changed. Review them again.",
+  retained_copy_changed: "These copies changed. Review them again.",
+  retained_copy_missing: "A matching copy is no longer available.",
+  duplicate_member_unsafe: "A selected copy is no longer available.",
+  duplicate_member_changed_during_hash: "These copies changed. Review them again.",
+  unsafe_duplicate_bin_destination: "Duplicate Bin is not available for these copies.",
+  invalid_confirmation_token: "This confirmation expired. Try again.",
+  invalid_confirmation: "The confirmation phrase does not match.",
+  invalid_restore_confirmation: "The confirmation phrase does not match.",
+  confirmation_expired: "This confirmation expired. Try again.",
+  bin_item_not_found: "A selected copy is no longer available.",
+  bin_item_not_restorable: "A selected copy cannot be restored.",
+  bin_item_already_owned: "A selected copy is already being restored.",
+  bin_item_missing: "A selected copy could not be found.",
+  bin_item_changed: "These copies changed. Review them again.",
+  no_restorable_items: "No selected copies are available to restore.",
+  restore_destination_occupied: "A file cannot be restored because its previous location is occupied.",
+  unsafe_restore_destination: "A previous file location is no longer safe.",
+  unsafe_restore_parent: "A previous folder location is no longer safe.",
+  restore_authorization_stale: "These copies changed. Review them again.",
+  restore_recovery_required: "This restore needs attention in Activity.",
+  duplicate_bin_unavailable: "Duplicate Bin could not be loaded.",
+  movement_or_undo_in_progress: "Another file action is running.",
 });
 
 export class OrganizationDataError extends Error {
@@ -463,6 +522,24 @@ export function validateOrganizationResponse(rawPayload) {
   requireArray(payload.choices_needed);
   requireArray(payload.kept_by_standards);
   payload.execution = validateExecution(payload.execution);
+  if (payload.duplicate_batch === undefined || payload.duplicate_batch === null) {
+    payload.duplicate_batch = null;
+  } else {
+    const batch = requireObject(payload.duplicate_batch);
+    if (
+      Object.keys(batch).length !== 3
+      || !isCanonicalActivityId(batch.id)
+      || !DUPLICATE_BATCH_STATUSES.has(batch.status)
+      || requireCount(batch.copies) < 1
+    ) {
+      throw contractError();
+    }
+    payload.duplicate_batch = {
+      id: batch.id,
+      status: batch.status,
+      copies: batch.copies,
+    };
+  }
 
   const actionableItemIds = new Set();
   const recommendationPaths = new Set();
@@ -521,10 +598,157 @@ export function validateOrganizationResponse(rawPayload) {
   return deepFreeze(payload);
 }
 
+function duplicateBinContractError(message = "Duplicate Bin information could not be loaded.") {
+  return new OrganizationDataError("invalid_duplicate_bin_contract", message);
+}
+
+function requireDuplicateObject(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw duplicateBinContractError();
+  }
+  return value;
+}
+
+function requireDuplicateToken(value) {
+  if (!isCanonicalActivityId(value)) throw duplicateBinContractError();
+  return value;
+}
+
+function requireDuplicateTimestamp(value) {
+  try {
+    return requireIsoTimestamp(value);
+  } catch {
+    throw duplicateBinContractError();
+  }
+}
+
+export function validateDuplicateBinMovementPreview(rawPreview) {
+  const preview = requireDuplicateObject(rawPreview);
+  if (
+    Object.keys(preview).length !== 4
+    || preview.confirmation !== DUPLICATE_BIN_MOVEMENT_CONFIRMATION
+    || requireCount(preview.copies_to_move) < 1
+  ) {
+    throw duplicateBinContractError();
+  }
+  return deepFreeze({
+    copies_to_move: preview.copies_to_move,
+    confirmation: preview.confirmation,
+    confirmation_token: requireDuplicateToken(preview.confirmation_token),
+    expires_at: requireDuplicateTimestamp(preview.expires_at),
+  });
+}
+
+function validateDuplicateOperation(rawOperation, { restore = false } = {}) {
+  const operation = requireDuplicateObject(rawOperation);
+  const expectedKeys = new Set([
+    "id", "status", "copies_expected", restore ? "copies_restored" : "copies_moved",
+    "copies_failed", "copies_unattempted", "verification_status", "started_at",
+    "completed_at", "recovery_required",
+  ]);
+  if (
+    Object.keys(operation).length !== expectedKeys.size
+    || Object.keys(operation).some((key) => !expectedKeys.has(key))
+    || !(restore ? DUPLICATE_RESTORE_STATUSES : DUPLICATE_MOVE_STATUSES).has(operation.status)
+    || typeof operation.recovery_required !== "boolean"
+    || !VERIFICATION_STATUSES.has(operation.verification_status)
+  ) {
+    throw duplicateBinContractError();
+  }
+  const completedKey = restore ? "copies_restored" : "copies_moved";
+  for (const field of ["copies_expected", completedKey, "copies_failed", "copies_unattempted"]) {
+    requireCount(operation[field]);
+  }
+  return {
+    id: requireDuplicateToken(operation.id),
+    status: operation.status,
+    copies_expected: operation.copies_expected,
+    [completedKey]: operation[completedKey],
+    copies_failed: operation.copies_failed,
+    copies_unattempted: operation.copies_unattempted,
+    verification_status: operation.verification_status,
+    started_at: operation.started_at === null ? null : requireDuplicateTimestamp(operation.started_at),
+    completed_at: operation.completed_at === null ? null : requireDuplicateTimestamp(operation.completed_at),
+    recovery_required: operation.recovery_required,
+  };
+}
+
+export function validateDuplicateBinMovementResponse(rawPayload) {
+  const payload = requireDuplicateObject(rawPayload);
+  if (Object.keys(payload).length !== 1) throw duplicateBinContractError();
+  return deepFreeze({ operation: validateDuplicateOperation(payload.operation) });
+}
+
+export function validateDuplicateBinResponse(rawPayload) {
+  const payload = requireDuplicateObject(rawPayload);
+  if (Object.keys(payload).length !== 1 || !Array.isArray(payload.items)) {
+    throw duplicateBinContractError();
+  }
+  const ids = new Set();
+  const items = payload.items.map((rawItem) => {
+    const item = requireDuplicateObject(rawItem);
+    const id = requireDuplicateToken(item.id);
+    if (ids.has(id)) throw duplicateBinContractError();
+    ids.add(id);
+    if (
+      typeof item.name !== "string" || !item.name || item.name.length > MAX_TEXT_LENGTH
+      || item.name.includes("/") || item.name.includes("\\") || item.name.includes("\0")
+      || !isSafeRelativePath(item.previous_folder, { allowDot: false })
+      || !Number.isSafeInteger(item.size) || item.size < 0
+      || !KNOWN_KINDS.has(item.kind)
+      || typeof item.restore_available !== "boolean"
+      || !(
+        item.attention_message === null
+        || (
+          typeof item.attention_message === "string"
+          && item.attention_message.length > 0
+          && item.attention_message.length <= MAX_TEXT_LENGTH
+        )
+      )
+    ) {
+      throw duplicateBinContractError();
+    }
+    return {
+      id,
+      name: item.name,
+      previous_folder: item.previous_folder,
+      moved_at: requireDuplicateTimestamp(item.moved_at),
+      size: item.size,
+      kind: item.kind,
+      restore_available: item.restore_available,
+      attention_message: item.attention_message,
+    };
+  });
+  return deepFreeze({ items });
+}
+
+export function validateDuplicateBinRestorePreview(rawPreview) {
+  const preview = requireDuplicateObject(rawPreview);
+  if (
+    Object.keys(preview).length !== 4
+    || preview.confirmation !== DUPLICATE_BIN_RESTORE_CONFIRMATION
+    || requireCount(preview.copies_to_restore) < 1
+  ) {
+    throw duplicateBinContractError();
+  }
+  return deepFreeze({
+    copies_to_restore: preview.copies_to_restore,
+    confirmation: preview.confirmation,
+    confirmation_token: requireDuplicateToken(preview.confirmation_token),
+    expires_at: requireDuplicateTimestamp(preview.expires_at),
+  });
+}
+
+export function validateDuplicateBinRestoreResponse(rawPayload) {
+  const payload = requireDuplicateObject(rawPayload);
+  if (Object.keys(payload).length !== 1) throw duplicateBinContractError();
+  return deepFreeze({ restore: validateDuplicateOperation(payload.restore, { restore: true }) });
+}
+
 function validateActivityDetail(rawDetail, type) {
   const detail = requireActivityObject(rawDetail);
   const status = requireActivityText(detail.status);
-  if (type === "organization") {
+  if (new Set(["organization", "duplicate_bin_move"]).has(type)) {
     if (!isSafeRelativePath(detail.source, { allowDot: false })) throw activityContractError();
     if (!isSafeRelativePath(detail.destination, { allowDot: false })) throw activityContractError();
     return { source: detail.source, destination: detail.destination, status };
@@ -540,9 +764,12 @@ function validateActivityEntry(rawEntry) {
   if (!ACTIVITY_TYPES.has(entry.type)) throw activityContractError();
   const title = requireActivityText(entry.title);
   const status = requireActivityText(entry.status);
-  const allowedStatuses = entry.type === "organization"
-    ? MOVEMENT_ACTIVITY_STATUSES
-    : RESTORE_ACTIVITY_STATUSES;
+  const allowedStatuses = {
+    organization: MOVEMENT_ACTIVITY_STATUSES,
+    restore: RESTORE_ACTIVITY_STATUSES,
+    duplicate_bin_move: DUPLICATE_MOVE_ACTIVITY_STATUSES,
+    duplicate_bin_restore: DUPLICATE_RESTORE_ACTIVITY_STATUSES,
+  }[entry.type];
   if (!allowedStatuses.has(status)) throw activityContractError();
   const startedAt = requireIsoTimestamp(entry.started_at);
   const completedAt = requireIsoTimestamp(entry.completed_at);
@@ -558,20 +785,29 @@ function validateActivityEntry(rawEntry) {
   const relatedOperationId = entry.related_operation_id === null
     ? null
     : requireActivityId(entry.related_operation_id);
-  const completed = entry.type === "organization" ? entry.files_moved : entry.files_restored;
+  const movementType = new Set(["organization", "duplicate_bin_move"]).has(entry.type);
+  const completed = movementType ? entry.files_moved : entry.files_restored;
   if (completed + entry.files_failed + entry.files_unattempted > entry.files_expected) {
     throw activityContractError();
   }
-  if (entry.type === "organization") {
+  if (movementType) {
     if (entry.files_restored !== 0 || relatedOperationId !== null) throw activityContractError();
     if (
       entry.undoable
-      && (status !== "verified" || verificationStatus !== "passed" || entry.files_moved < 1)
+      && (
+        !new Set(["verified", "moved"]).has(status)
+        || verificationStatus !== "passed"
+        || entry.files_moved < 1
+      )
     ) {
       throw activityContractError();
     }
-  } else if (entry.files_moved !== 0 || entry.undoable || relatedOperationId === null) {
-    throw activityContractError();
+  } else {
+    if (entry.files_moved !== 0 || entry.undoable) throw activityContractError();
+    if (entry.type === "restore" && relatedOperationId === null) throw activityContractError();
+    if (entry.type === "duplicate_bin_restore" && relatedOperationId !== null) {
+      throw activityContractError();
+    }
   }
   return {
     id,
@@ -597,26 +833,28 @@ function validateActivityEntry(rawEntry) {
 export function validateActivityResponse(rawPayload) {
   const payload = requireActivityObject(rawPayload);
   const ids = new Set();
-  let undoableCount = 0;
+  let ordinaryUndoableCount = 0;
   const activity = requireActivityArray(payload.activity).map((rawEntry) => {
     const entry = validateActivityEntry(rawEntry);
     if (ids.has(entry.id)) throw activityContractError();
     ids.add(entry.id);
-    if (entry.undoable) undoableCount += 1;
+    if (entry.type === "organization" && entry.undoable) ordinaryUndoableCount += 1;
     return entry;
   });
-  if (undoableCount > 1) throw activityContractError();
+  if (ordinaryUndoableCount > 1) throw activityContractError();
   return deepFreeze({ activity });
 }
 
 export function validateUndoPreview(rawPreview, requestedOperationId) {
   const preview = requireActivityObject(rawPreview);
   requireActivityId(requestedOperationId);
-  if (requireActivityId(preview.operation_id) !== requestedOperationId) throw activityContractError();
-  if (!Number.isSafeInteger(preview.files_to_restore) || preview.files_to_restore < 1) {
-    throw activityContractError();
+  const duplicateRestore = preview.confirmation === DUPLICATE_BIN_RESTORE_CONFIRMATION;
+  const count = duplicateRestore ? preview.copies_to_restore : preview.files_to_restore;
+  if (!Number.isSafeInteger(count) || count < 1) throw activityContractError();
+  if (!duplicateRestore) {
+    if (requireActivityId(preview.operation_id) !== requestedOperationId) throw activityContractError();
+    if (preview.confirmation !== UNDO_CONFIRMATION) throw activityContractError();
   }
-  if (preview.confirmation !== UNDO_CONFIRMATION) throw activityContractError();
   if (
     typeof preview.confirmation_token !== "string"
     || !preview.confirmation_token
@@ -624,9 +862,14 @@ export function validateUndoPreview(rawPreview, requestedOperationId) {
   ) {
     throw activityContractError();
   }
-  return deepFreeze({
+  return deepFreeze(duplicateRestore ? {
+    operation_id: requestedOperationId,
+    copies_to_restore: count,
+    confirmation: preview.confirmation,
+    confirmation_token: preview.confirmation_token,
+  } : {
     operation_id: preview.operation_id,
-    files_to_restore: preview.files_to_restore,
+    files_to_restore: count,
     confirmation: preview.confirmation,
     confirmation_token: preview.confirmation_token,
   });
@@ -689,6 +932,38 @@ function normalizeMovementError(error) {
   );
 }
 
+function normalizeDuplicateBinError(error) {
+  if (error instanceof OrganizationDataError) return error;
+  if (error instanceof LociFlowApiError) {
+    return new OrganizationDataError(
+      error.code,
+      DUPLICATE_BIN_ERROR_MESSAGES[error.code]
+        || "The Duplicate Bin request could not be completed.",
+    );
+  }
+  return new OrganizationDataError(
+    "request_failed",
+    "The Duplicate Bin result could not be loaded.",
+  );
+}
+
+export function duplicateBinErrorMessage(error) {
+  return DUPLICATE_BIN_ERROR_MESSAGES[error?.code]
+    || (error?.code === "invalid_duplicate_bin_contract"
+      ? "Duplicate Bin information could not be loaded."
+      : null)
+    || "The Duplicate Bin result could not be loaded. Reload Duplicate Bin before trying again.";
+}
+
+export function isUncertainDuplicateBinError(error) {
+  const code = error?.code || "";
+  return code === "request_failed"
+    || code === "invalid_response"
+    || code === "invalid_duplicate_bin_contract"
+    || /^http_5\d\d$/.test(code)
+    || !Object.hasOwn(DUPLICATE_BIN_ERROR_MESSAGES, code);
+}
+
 let fixtureModulesPromise;
 
 async function fixtureModules() {
@@ -722,6 +997,33 @@ export function createFixtureDataSource(options = {}) {
         "Real file moves are unavailable in sample mode.",
       );
     },
+    async previewDuplicateBinMove() {
+      throw new OrganizationDataError(
+        "movement_unavailable",
+        "Real file moves are unavailable in sample mode.",
+      );
+    },
+    async confirmDuplicateBinMove() {
+      throw new OrganizationDataError(
+        "movement_unavailable",
+        "Real file moves are unavailable in sample mode.",
+      );
+    },
+    async loadDuplicateBin() {
+      return deepFreeze({ items: [] });
+    },
+    async previewDuplicateBinRestore() {
+      throw new OrganizationDataError(
+        "movement_unavailable",
+        "Real file restores are unavailable in sample mode.",
+      );
+    },
+    async confirmDuplicateBinRestore() {
+      throw new OrganizationDataError(
+        "movement_unavailable",
+        "Real file restores are unavailable in sample mode.",
+      );
+    },
   });
 }
 
@@ -746,6 +1048,11 @@ export function createBackendDataSource({
   let undoMutationPending = false;
   let movementPreviewPending = false;
   let movementPending = false;
+  let duplicateMovementPreviewPending = false;
+  let duplicateMovementPending = false;
+  let duplicateRestorePreviewPending = false;
+  let duplicateRestorePending = false;
+  let duplicateBinState = null;
 
   function assertActive() {
     if (disposed) throw new OrganizationDataError("disposed", "The organization view is unavailable.");
@@ -909,9 +1216,171 @@ export function createBackendDataSource({
     return current.backendState;
   }
 
+  function duplicateBatchContext(batchId) {
+    assertActive();
+    const batch = current.backendState?.duplicate_batch;
+    if (
+      current.status !== "completed"
+      || !batch
+      || batch.id !== batchId
+      || batch.status !== "approved"
+    ) {
+      throw new OrganizationDataError(
+        "duplicate_batch_stale",
+        DUPLICATE_BIN_ERROR_MESSAGES.duplicate_batch_stale,
+      );
+    }
+    return batch;
+  }
+
+  function fileActionPending() {
+    return movementPreviewPending || movementPending || undoMutationPending
+      || duplicateMovementPreviewPending || duplicateMovementPending
+      || duplicateRestorePreviewPending || duplicateRestorePending;
+  }
+
+  async function previewDuplicateBinMove(batchId) {
+    duplicateBatchContext(batchId);
+    if (fileActionPending()) {
+      throw new OrganizationDataError(
+        "movement_or_undo_in_progress",
+        DUPLICATE_BIN_ERROR_MESSAGES.movement_or_undo_in_progress,
+      );
+    }
+    duplicateMovementPreviewPending = true;
+    try {
+      if (typeof apiClient.previewDuplicateBinMove !== "function") {
+        throw new TypeError("Duplicate Bin movement preview API is unavailable");
+      }
+      return validateDuplicateBinMovementPreview(
+        await apiClient.previewDuplicateBinMove(batchId, csrfToken),
+      );
+    } catch (error) {
+      throw normalizeDuplicateBinError(error);
+    } finally {
+      duplicateMovementPreviewPending = false;
+    }
+  }
+
+  async function confirmDuplicateBinMove(confirmationToken, confirmation) {
+    if (confirmation !== DUPLICATE_BIN_MOVEMENT_CONFIRMATION) {
+      throw new OrganizationDataError(
+        "invalid_confirmation",
+        DUPLICATE_BIN_ERROR_MESSAGES.invalid_confirmation,
+      );
+    }
+    requireDuplicateToken(confirmationToken);
+    if (fileActionPending()) {
+      throw new OrganizationDataError(
+        "movement_or_undo_in_progress",
+        DUPLICATE_BIN_ERROR_MESSAGES.movement_or_undo_in_progress,
+      );
+    }
+    duplicateMovementPending = true;
+    try {
+      if (typeof apiClient.confirmDuplicateBinMove !== "function") {
+        throw new TypeError("Duplicate Bin movement API is unavailable");
+      }
+      return validateDuplicateBinMovementResponse(
+        await apiClient.confirmDuplicateBinMove(
+          { confirmationToken, confirmation },
+          csrfToken,
+        ),
+      );
+    } catch (error) {
+      throw normalizeDuplicateBinError(error);
+    } finally {
+      duplicateMovementPending = false;
+    }
+  }
+
+  async function loadDuplicateBin() {
+    assertActive();
+    try {
+      if (typeof apiClient.getDuplicateBin !== "function") {
+        throw new TypeError("Duplicate Bin API is unavailable");
+      }
+      duplicateBinState = validateDuplicateBinResponse(await apiClient.getDuplicateBin());
+      return duplicateBinState;
+    } catch (error) {
+      throw normalizeDuplicateBinError(error);
+    }
+  }
+
+  function selectedRestorableItems(itemIds) {
+    if (
+      !duplicateBinState
+      || !Array.isArray(itemIds)
+      || itemIds.length === 0
+      || new Set(itemIds).size !== itemIds.length
+    ) {
+      throw duplicateBinContractError("Select at least one copy to restore.");
+    }
+    const byId = new Map(duplicateBinState.items.map((item) => [item.id, item]));
+    if (itemIds.some((id) => !byId.get(id)?.restore_available)) {
+      throw duplicateBinContractError("A selected copy cannot be restored.");
+    }
+    return [...itemIds];
+  }
+
+  async function previewDuplicateBinRestore(itemIds) {
+    const selected = selectedRestorableItems(itemIds);
+    if (fileActionPending()) {
+      throw new OrganizationDataError(
+        "movement_or_undo_in_progress",
+        DUPLICATE_BIN_ERROR_MESSAGES.movement_or_undo_in_progress,
+      );
+    }
+    duplicateRestorePreviewPending = true;
+    try {
+      if (typeof apiClient.previewDuplicateBinRestore !== "function") {
+        throw new TypeError("Duplicate Bin restore preview API is unavailable");
+      }
+      return validateDuplicateBinRestorePreview(
+        await apiClient.previewDuplicateBinRestore(selected, csrfToken),
+      );
+    } catch (error) {
+      throw normalizeDuplicateBinError(error);
+    } finally {
+      duplicateRestorePreviewPending = false;
+    }
+  }
+
+  async function confirmDuplicateBinRestore(confirmationToken, confirmation) {
+    requireDuplicateToken(confirmationToken);
+    if (confirmation !== DUPLICATE_BIN_RESTORE_CONFIRMATION) {
+      throw new OrganizationDataError(
+        "invalid_restore_confirmation",
+        DUPLICATE_BIN_ERROR_MESSAGES.invalid_restore_confirmation,
+      );
+    }
+    if (fileActionPending()) {
+      throw new OrganizationDataError(
+        "movement_or_undo_in_progress",
+        DUPLICATE_BIN_ERROR_MESSAGES.movement_or_undo_in_progress,
+      );
+    }
+    duplicateRestorePending = true;
+    try {
+      if (typeof apiClient.confirmDuplicateBinRestore !== "function") {
+        throw new TypeError("Duplicate Bin restore API is unavailable");
+      }
+      return validateDuplicateBinRestoreResponse(
+        await apiClient.confirmDuplicateBinRestore(
+          { confirmationToken, confirmation },
+          csrfToken,
+        ),
+      );
+    } catch (error) {
+      throw normalizeDuplicateBinError(error);
+    } finally {
+      duplicateRestorePending = false;
+    }
+  }
+
   async function previewMovement() {
     const backend = movementContext();
-    if (movementPreviewPending || movementPending || undoMutationPending) {
+    if (fileActionPending()) {
       throw new OrganizationDataError(
         "movement_or_undo_in_progress",
         MOVEMENT_ERROR_MESSAGES.movement_or_undo_in_progress,
@@ -951,7 +1420,7 @@ export function createBackendDataSource({
         MOVEMENT_ERROR_MESSAGES.invalid_confirmation,
       );
     }
-    if (movementPending || movementPreviewPending || undoMutationPending) {
+    if (fileActionPending()) {
       throw new OrganizationDataError(
         "movement_or_undo_in_progress",
         MOVEMENT_ERROR_MESSAGES.movement_or_undo_in_progress,
@@ -986,7 +1455,7 @@ export function createBackendDataSource({
 
   async function withUndoMutation(operation) {
     assertActive();
-    if (undoMutationPending || movementPending || movementPreviewPending) {
+    if (fileActionPending()) {
       throw new ActivityDataError("undo_in_progress", "Another Undo request is already running.");
     }
     undoMutationPending = true;
@@ -1021,7 +1490,7 @@ export function createBackendDataSource({
     });
   }
 
-  function confirmUndo(operationId, confirmationToken) {
+  function confirmUndo(operationId, confirmationToken, confirmation = UNDO_CONFIRMATION) {
     currentUndoableEntry(operationId);
     if (
       typeof confirmationToken !== "string"
@@ -1030,10 +1499,18 @@ export function createBackendDataSource({
     ) {
       throw activityContractError();
     }
+    if (!new Set([UNDO_CONFIRMATION, DUPLICATE_BIN_RESTORE_CONFIRMATION]).has(confirmation)) {
+      throw activityContractError();
+    }
     return withUndoMutation(async () => {
       try {
         if (typeof apiClient.undoActivityOperation !== "function") throw new TypeError("Undo API is unavailable");
-        return await apiClient.undoActivityOperation(operationId, confirmationToken, csrfToken);
+        return await apiClient.undoActivityOperation(
+          operationId,
+          confirmationToken,
+          csrfToken,
+          confirmation,
+        );
       } catch (error) {
         throw normalizeActivityError(error, "The Undo result could not be loaded.");
       }
@@ -1058,6 +1535,11 @@ export function createBackendDataSource({
     approve,
     previewMovement,
     confirmMovement,
+    previewDuplicateBinMove,
+    confirmDuplicateBinMove,
+    loadDuplicateBin,
+    previewDuplicateBinRestore,
+    confirmDuplicateBinRestore,
     loadActivity,
     previewUndo,
     confirmUndo,
@@ -1065,6 +1547,8 @@ export function createBackendDataSource({
     currentState: () => current,
     isMutationPending: () => mutationPending,
     isMovementPending: () => movementPending || movementPreviewPending,
+    isDuplicateBinPending: () => duplicateMovementPreviewPending
+      || duplicateMovementPending || duplicateRestorePreviewPending || duplicateRestorePending,
     isUndoPending: () => undoMutationPending,
   });
 }

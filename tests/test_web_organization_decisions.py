@@ -439,7 +439,10 @@ class WebOrganizationDecisionTests(unittest.IsolatedAsyncioTestCase):
                 set(batches[0].safe_projection().to_dict()),
                 {"id", "status", "copies"},
             )
-            self.assertNotIn("duplicate_batch", approved.json())
+            self.assertEqual(
+                approved.json()["duplicate_batch"],
+                batches[0].safe_projection().to_dict(),
+            )
             serialized = approved.text.lower()
             self.assertNotIn("sha256", serialized)
             self.assertNotIn("original", serialized)

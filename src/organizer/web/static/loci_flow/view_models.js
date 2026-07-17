@@ -83,6 +83,26 @@ const RESTORE_STATUS_LABELS = Object.freeze({
   restored_unverified: "Needs attention",
   interrupted: "Needs attention",
 });
+const DUPLICATE_MOVE_STATUS_LABELS = Object.freeze({
+  moved: "Completed",
+  partially_moved: "Partly completed",
+  movement_failed: "Failed",
+  verification_failed: "Could not confirm",
+  prepared: "Needs attention",
+  moving: "Needs attention",
+  moved_unverified: "Needs attention",
+  interrupted: "Needs attention",
+});
+const DUPLICATE_RESTORE_STATUS_LABELS = Object.freeze({
+  restored: "Restored",
+  partially_restored: "Partly completed",
+  restore_failed: "Failed",
+  verification_failed: "Could not confirm",
+  prepared: "Needs attention",
+  restoring: "Needs attention",
+  restored_unverified: "Needs attention",
+  interrupted: "Needs attention",
+});
 
 function iconForKind(kind = "") {
   return KIND_ICON_MAP[String(kind).toLowerCase()] || "unknown";
@@ -203,6 +223,8 @@ function contractModel(store, page) {
       return {
         activityMoves: activity.entries,
         expandedActivityIds: activity.expandedIds,
+        duplicateBinItems: [...contract.duplicateBin.items],
+        selectedBinIds: [...contract.duplicateBin.selectedIds],
       };
     },
   };
@@ -256,35 +278,41 @@ function countLabel(count, singular, plural = `${singular}s`) {
 }
 
 function activitySummary(entry) {
-  const completed = entry.type === "organization" ? entry.files_moved : entry.files_restored;
+  const movement = new Set(["organization", "duplicate_bin_move"]).has(entry.type);
+  const copies = new Set(["duplicate_bin_move", "duplicate_bin_restore"]).has(entry.type);
+  const completed = movement ? entry.files_moved : entry.files_restored;
   const incomplete = entry.files_failed + entry.files_unattempted;
-  const completeLabel = entry.type === "organization"
-    ? countLabel(completed, "file moved", "files moved")
-    : countLabel(completed, "file restored", "files restored");
+  const noun = copies ? "copy" : "file";
+  const completeLabel = movement
+    ? countLabel(completed, `${noun} moved`, `${noun === "copy" ? "copies" : "files"} moved`)
+    : countLabel(completed, `${noun} restored`, `${noun === "copy" ? "copies" : "files"} restored`);
   if (!incomplete) return completeLabel;
-  const incompleteLabel = entry.type === "organization"
-    ? countLabel(incomplete, "file did not move", "files did not move")
-    : countLabel(incomplete, "file did not restore", "files did not restore");
+  const incompleteLabel = movement
+    ? countLabel(incomplete, `${noun} did not move`, `${noun === "copy" ? "copies" : "files"} did not move`)
+    : countLabel(incomplete, `${noun} did not restore`, `${noun === "copy" ? "copies" : "files"} did not restore`);
   return `${completeLabel} · ${incompleteLabel}`;
 }
 
 function activityPath(detail, type) {
-  return type === "organization"
+  return new Set(["organization", "duplicate_bin_move"]).has(type)
     ? `${detail.source} → ${detail.destination}`
     : `${detail.moved_from} → ${detail.restored_to}`;
 }
 
 function activityDetails(entry) {
-  const successfulStatus = entry.type === "organization" ? "moved" : "restored";
+  const movement = new Set(["organization", "duplicate_bin_move"]).has(entry.type);
+  const successfulStatuses = movement
+    ? new Set(["moved", "verified"])
+    : new Set(["restored", "verified"]);
   const successes = [];
   const problems = [];
   for (const detail of entry.details) {
     const path = activityPath(detail, entry.type);
-    if (detail.status === successfulStatus) successes.push(path);
+    if (successfulStatuses.has(detail.status)) successes.push(path);
     else {
       let label = "Needs attention";
       if (detail.status === "failed") {
-        label = entry.type === "organization" ? "Did not move" : "Did not restore";
+        label = movement ? "Did not move" : "Did not restore";
       } else if (new Set(["pending", "unattempted"]).has(detail.status)) {
         label = "Not attempted";
       }
@@ -295,8 +323,8 @@ function activityDetails(entry) {
     filesMoved: entry.type === "organization" ? successes : [],
     namesChanged: [],
     foldersCreated: [],
-    copiesMoved: [],
-    filesRestored: entry.type === "restore" ? successes : [],
+    copiesMoved: entry.type === "duplicate_bin_move" ? successes : [],
+    filesRestored: movement ? [] : successes,
     problems,
   };
 }
@@ -312,9 +340,12 @@ export function buildProductionActivityEntries(entries = []) {
     id: entry.id,
     type: entry.type,
     title: entry.title,
-    status: entry.type === "organization"
-      ? MOVEMENT_STATUS_LABELS[entry.status]
-      : RESTORE_STATUS_LABELS[entry.status],
+    status: ({
+      organization: MOVEMENT_STATUS_LABELS,
+      restore: RESTORE_STATUS_LABELS,
+      duplicate_bin_move: DUPLICATE_MOVE_STATUS_LABELS,
+      duplicate_bin_restore: DUPLICATE_RESTORE_STATUS_LABELS,
+    }[entry.type] || {})[entry.status] || "Needs attention",
     time: entry.completed_at || entry.started_at
       ? formatLocalTimestamp(entry.completed_at || entry.started_at)
       : "Time unavailable",
@@ -566,6 +597,124 @@ function workflowFor(snapshot, override, movement) {
   };
 }
 
+function duplicateMovementState(backend, state = null) {
+  const batch = backend?.duplicate_batch || null;
+  const execution = state?.execution || null;
+  if (state?.executionPending) {
+    return {
+      stage: "moving",
+      status: "Moving copies…",
+      message: "Selected copies are moving to Duplicate Bin.",
+      action: { label: "Moving copies…", action: "none", enabled: false },
+    };
+  }
+  if (execution?.status === "moved") {
+    return {
+      stage: "completed",
+      status: "Copies moved",
+      message: countLabel(execution.copies_moved, "copy moved", "copies moved"),
+      action: { label: "Open Duplicate Bin", action: "open-duplicate-bin", enabled: true },
+    };
+  }
+  if (execution?.status === "partially_moved") {
+    return {
+      stage: "attention",
+      status: "Some copies were moved",
+      message: "Review the result in Duplicate Bin and Activity.",
+      action: { label: "View Activity", action: "open-activity", enabled: true },
+    };
+  }
+  if (execution && new Set(["prepared", "moving", "moved_unverified"]).has(execution.status)) {
+    return {
+      stage: "moving",
+      status: "Duplicate Bin move in progress",
+      message: "Load the latest result before trying again.",
+      action: { label: "Reload result", action: "reload-choices", enabled: true },
+    };
+  }
+  if (execution || state?.errorMessage) {
+    return {
+      stage: "attention",
+      status: "Duplicate Bin move needs attention",
+      message: state?.errorMessage || "Review the latest result in Activity.",
+      action: { label: "View Activity", action: "open-activity", enabled: true },
+    };
+  }
+  if (state?.previewStatus === "loading") {
+    return {
+      stage: "preview_loading",
+      status: "Preparing Duplicate Bin move…",
+      message: null,
+      action: { label: "Preparing…", action: "none", enabled: false },
+    };
+  }
+  if (batch?.status === "approved") {
+    return {
+      stage: "ready",
+      status: "Approved duplicate copies are ready",
+      message: countLabel(batch.copies, "copy is ready", "copies are ready"),
+      action: {
+        label: "Move copies to Duplicate Bin",
+        action: "preview-duplicate-bin-move",
+        enabled: true,
+      },
+    };
+  }
+  if (batch && new Set(["moving", "executing"]).has(batch.status)) {
+    return {
+      stage: "moving",
+      status: "Duplicate Bin move in progress",
+      message: "Load the latest result before trying again.",
+      action: { label: "Reload result", action: "reload-choices", enabled: true },
+    };
+  }
+  if (batch && new Set(["moved", "completed"]).has(batch.status)) {
+    return {
+      stage: "completed",
+      status: "Copies moved",
+      message: "Moved copies are available in Duplicate Bin.",
+      action: { label: "Open Duplicate Bin", action: "open-duplicate-bin", enabled: true },
+    };
+  }
+  if (batch && !new Set(["superseded", "cancelled"]).has(batch.status)) {
+    return {
+      stage: "attention",
+      status: "Duplicate Bin move needs attention",
+      message: "Review the latest result in Activity.",
+      action: { label: "View Activity", action: "open-activity", enabled: true },
+    };
+  }
+  return {
+    stage: "unavailable",
+    status: "No approved duplicate copies",
+    message: null,
+    action: { label: "Move copies to Duplicate Bin", action: "none", enabled: false },
+  };
+}
+
+function duplicateBinContract(state = null) {
+  const items = (state?.items || []).map((item) => ({
+    id: item.id,
+    name: item.name,
+    previousFolder: item.previous_folder.split("/"),
+    dateMoved: formatLocalTimestamp(item.moved_at),
+    size: formatFileSize(item.size),
+    kind: labelForKind(item.kind),
+    icon: iconForKind(item.kind),
+    restoreAvailable: item.restore_available,
+    attentionMessage: item.attention_message,
+  }));
+  return {
+    connected: Boolean(state),
+    loadStatus: state?.loadStatus || "idle",
+    items,
+    selectedIds: [...(state?.selectedIds || [])],
+    errorMessage: state?.errorMessage || null,
+    noticeMessage: state?.noticeMessage || null,
+    restorePending: Boolean(state?.restorePending),
+  };
+}
+
 function recommendationModels(backend, scopeName) {
   const decisions = new Map(
     backend.review.recommendations.map((item) => [item.change_id, item.decision]),
@@ -702,6 +851,8 @@ export function buildProductionStageB1Contract({
   duplicateDrafts = {},
   activity = null,
   movement = null,
+  duplicateMovement = null,
+  duplicateBin = null,
 } = {}) {
   const backend = snapshot?.backendState || null;
   const scopeName = backend?.scope.display_name || "Selected folder";
@@ -730,8 +881,11 @@ export function buildProductionStageB1Contract({
       nextCheckLabel: "Not scheduled",
     },
     workflow,
-    organization,
-    duplicateBin: { connected: false, items: [] },
+    organization: {
+      ...organization,
+      duplicateMovement: duplicateMovementState(backend, duplicateMovement),
+    },
+    duplicateBin: duplicateBinContract(duplicateBin),
     activity: activity
       ? {
         connected: true,
@@ -826,6 +980,27 @@ export function buildMovementConfirmationViewModel(preview, confirmationText = "
     canConfirm: confirmationText === preview.confirmation,
     cancelLabel: "Cancel",
     confirmLabel: "Move files",
+  };
+}
+
+export function buildDuplicateBinConfirmationViewModel(
+  preview,
+  confirmationText = "",
+  kind = "movement",
+) {
+  const restore = kind === "restore";
+  const count = restore ? preview.copies_to_restore : preview.copies_to_move;
+  return {
+    eyebrow: restore ? "Duplicate Bin" : "Final confirmation",
+    title: restore ? "Restore these copies?" : "Move these copies to Duplicate Bin?",
+    description: restore
+      ? `${countLabel(count, "copy will return", "copies will return")} to the previous location.`
+      : `${countLabel(count, "copy will move", "copies will move")} to Duplicate Bin.`,
+    instruction: `Type ${preview.confirmation} to continue.`,
+    confirmationText,
+    canConfirm: confirmationText === preview.confirmation,
+    cancelLabel: "Cancel",
+    confirmLabel: restore ? "Restore copies" : "Move copies",
   };
 }
 

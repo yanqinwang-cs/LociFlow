@@ -127,7 +127,7 @@ def create_organization_api_router() -> APIRouter:
                 "The organization result is unavailable for this scan.",
                 409,
             )
-        return _current_response(request, current.projection, current.session)
+        return _current_response(request, current)
 
     @router.post("/api/organization/decisions", include_in_schema=False)
     async def update_decision(request: Request) -> Response:
@@ -234,7 +234,7 @@ def create_organization_api_router() -> APIRouter:
             )
         except (FormDataError, json.JSONDecodeError, TypeError, ValueError):
             return _decision_error(OrganizationDecisionError("invalid_option"))
-        return _current_response(request, current.projection, current.session)
+        return _current_response(request, current)
 
     @router.post("/api/organization/approval", include_in_schema=False)
     async def approve_organization(request: Request) -> Response:
@@ -271,7 +271,7 @@ def create_organization_api_router() -> APIRouter:
             )
         except (FormDataError, TypeError, ValueError):
             return _decision_error(OrganizationDecisionError("invalid_option"))
-        return _current_response(request, current.projection, current.session)
+        return _current_response(request, current)
 
     @router.post("/api/organization/move/preview", include_in_schema=False)
     async def preview_move(request: Request) -> Response:
@@ -481,13 +481,23 @@ def _id_array(value: str | None) -> tuple[str, ...]:
     return tuple(data)
 
 
-def _current_response(request: Request, projection, session) -> JSONResponse:
+def _current_response(request: Request, current) -> JSONResponse:
+    projection = current.projection
+    session = current.session
     payload = projection.public_slice.to_dict()
     payload["review"] = organization_review_to_dict(session, projection)
     payload["execution"] = project_organization_execution(
         approved_plan=session.approved_plan,
         operation_repository=request.app.state.organization_operations,
     ).to_dict()
+    duplicate_batch = current.duplicate_batch
+    payload["duplicate_batch"] = (
+        request.app.state.duplicate_bin_batches.load(duplicate_batch.id)
+        .safe_projection()
+        .to_dict()
+        if duplicate_batch is not None
+        else None
+    )
     return _json_response(payload)
 
 
