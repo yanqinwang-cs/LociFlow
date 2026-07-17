@@ -30,6 +30,9 @@ from organizer.application.duplicate_bin_authorization_repository import (
 from organizer.application.duplicate_bin_operation_repository import (
     DuplicateBinOperationRepository,
 )
+from organizer.application.duplicate_bin_restore_repository import (
+    DuplicateBinRestoreRepository,
+)
 from organizer.web.routes.duplicate_bin_api import create_duplicate_bin_api_router
 from organizer.application.organization_operation_repository import (
     OrganizationOperationRepository,
@@ -84,6 +87,7 @@ def create_app(config: WebAppConfig) -> FastAPI:
         config.root
     )
     app.state.duplicate_bin_operations = DuplicateBinOperationRepository(config.root)
+    app.state.duplicate_bin_restores = DuplicateBinRestoreRepository(config.root)
     app.state.organization_decisions = OrganizationDecisionStore(
         app.state.duplicate_bin_batches
     )

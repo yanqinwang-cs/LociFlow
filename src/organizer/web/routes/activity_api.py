@@ -5,6 +5,12 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
 from organizer.application.activity_service import list_activity_entries
+from organizer.application.duplicate_bin_restore_service import (
+    DuplicateBinRestoreError,
+    authorization_matches_movement,
+    execute_duplicate_bin_restore,
+    preview_duplicate_bin_activity_undo,
+)
 from organizer.application.undo_service import (
     OrganizationUndoError,
     preview_organization_undo,
@@ -34,6 +40,16 @@ _ERRORS = {
     "undo_failed": (409, "Undo could not be prepared."),
 }
 
+_DUPLICATE_RESTORE_ERRORS = {
+    "operation_not_found": (404, "That Duplicate Bin move is unavailable."),
+    "operation_not_undoable": (409, "This Duplicate Bin move cannot be restored."),
+    "no_restorable_items": (409, "This Duplicate Bin move has no copies to restore."),
+    "invalid_confirmation_token": (409, "Restore confirmation is unavailable."),
+    "invalid_restore_confirmation": (400, "Restore confirmation is invalid."),
+    "confirmation_expired": (409, "Restore confirmation expired."),
+    "movement_or_undo_in_progress": (409, "Another file operation is in progress."),
+}
+
 
 def create_activity_api_router() -> APIRouter:
     router = APIRouter()
@@ -50,6 +66,8 @@ def create_activity_api_router() -> APIRouter:
                 duplicate_bin_operation_repository=(
                     request.app.state.duplicate_bin_operations
                 ),
+                duplicate_bin_batch_repository=request.app.state.duplicate_bin_batches,
+                duplicate_bin_restore_repository=request.app.state.duplicate_bin_restores,
             )
         except (OSError, TypeError, ValueError):
             return _error_response(
@@ -71,14 +89,25 @@ def create_activity_api_router() -> APIRouter:
             form = await _validated_form(request, {"csrf_token"})
             if set(form) != {"csrf_token"}:
                 raise FormDataError("undo preview fields are invalid")
-            _reject_duplicate_bin_undo(operation_id, request)
-            preview = preview_organization_undo(
-                operation_id=operation_id,
-                browser_session_id=session_id_for_session(request.session),
-                coordinator=request.app.state.organization_execution,
-                operation_repository=request.app.state.organization_operations,
-                undo_repository=request.app.state.organization_undos,
-            )
+            if _is_duplicate_bin_movement(operation_id, request):
+                preview = preview_duplicate_bin_activity_undo(
+                    movement_operation_id=operation_id,
+                    browser_session_id=session_id_for_session(request.session),
+                    batch_repository=request.app.state.duplicate_bin_batches,
+                    movement_repository=request.app.state.duplicate_bin_operations,
+                    restore_repository=request.app.state.duplicate_bin_restores,
+                    coordinator=request.app.state.organization_execution,
+                )
+            else:
+                preview = preview_organization_undo(
+                    operation_id=operation_id,
+                    browser_session_id=session_id_for_session(request.session),
+                    coordinator=request.app.state.organization_execution,
+                    operation_repository=request.app.state.organization_operations,
+                    undo_repository=request.app.state.organization_undos,
+                )
+        except DuplicateBinRestoreError as error:
+            return _duplicate_restore_error(error)
         except OrganizationUndoError as error:
             return _undo_error(error)
         except WebSecurityError:
@@ -103,26 +132,49 @@ def create_activity_api_router() -> APIRouter:
             )
             if set(form) != {"csrf_token", "confirmation_token", "confirmation"}:
                 raise FormDataError("undo fields are invalid")
-            _reject_duplicate_bin_undo(operation_id, request)
-            outcome = undo_organization_operation(
-                operation_id=operation_id,
-                browser_session_id=session_id_for_session(request.session),
-                confirmation_token=_required(form.get("confirmation_token")),
-                confirmation=_required(form.get("confirmation")),
-                coordinator=request.app.state.organization_execution,
-                operation_repository=request.app.state.organization_operations,
-                undo_repository=request.app.state.organization_undos,
-            )
+            if _is_duplicate_bin_movement(operation_id, request):
+                confirmation_token = _required(form.get("confirmation_token"))
+                if not authorization_matches_movement(
+                    confirmation_token,
+                    operation_id,
+                    request.app.state.duplicate_bin_restores,
+                ):
+                    raise DuplicateBinRestoreError("invalid_confirmation_token")
+                outcome = execute_duplicate_bin_restore(
+                    browser_session_id=session_id_for_session(request.session),
+                    confirmation_token=confirmation_token,
+                    confirmation=_required(form.get("confirmation")),
+                    batch_repository=request.app.state.duplicate_bin_batches,
+                    movement_repository=request.app.state.duplicate_bin_operations,
+                    restore_repository=request.app.state.duplicate_bin_restores,
+                    coordinator=request.app.state.organization_execution,
+                )
+                outcome_id = outcome.id
+            else:
+                outcome = undo_organization_operation(
+                    operation_id=operation_id,
+                    browser_session_id=session_id_for_session(request.session),
+                    confirmation_token=_required(form.get("confirmation_token")),
+                    confirmation=_required(form.get("confirmation")),
+                    coordinator=request.app.state.organization_execution,
+                    operation_repository=request.app.state.organization_operations,
+                    undo_repository=request.app.state.organization_undos,
+                )
+                outcome_id = outcome.undo_id
             activity_list = list_activity_entries(
                 operation_repository=request.app.state.organization_operations,
                 undo_repository=request.app.state.organization_undos,
                 duplicate_bin_operation_repository=(
                     request.app.state.duplicate_bin_operations
                 ),
+                duplicate_bin_batch_repository=request.app.state.duplicate_bin_batches,
+                duplicate_bin_restore_repository=request.app.state.duplicate_bin_restores,
             )
             entry = next(
-                item for item in activity_list.activity if item.id == outcome.undo_id
+                item for item in activity_list.activity if item.id == outcome_id
             )
+        except DuplicateBinRestoreError as error:
+            return _duplicate_restore_error(error)
         except OrganizationUndoError as error:
             return _undo_error(error)
         except WebSecurityError:
@@ -138,12 +190,12 @@ def create_activity_api_router() -> APIRouter:
     return router
 
 
-def _reject_duplicate_bin_undo(operation_id: str, request: Request) -> None:
+def _is_duplicate_bin_movement(operation_id: str, request: Request) -> bool:
     try:
         request.app.state.duplicate_bin_operations.load(operation_id)
     except ValueError:
-        return
-    raise OrganizationUndoError("operation_not_undoable")
+        return False
+    return True
 
 
 def _validate_common_request(request: Request) -> Response | None:
@@ -182,6 +234,14 @@ def _undo_error(error: OrganizationUndoError) -> JSONResponse:
     status, message = _ERRORS.get(
         error.code,
         (400, "The Undo request is invalid."),
+    )
+    return _error_response(error.code, message, status)
+
+
+def _duplicate_restore_error(error: DuplicateBinRestoreError) -> JSONResponse:
+    status, message = _DUPLICATE_RESTORE_ERRORS.get(
+        error.code,
+        (409, "Duplicate Bin restore is unavailable."),
     )
     return _error_response(error.code, message, status)
 

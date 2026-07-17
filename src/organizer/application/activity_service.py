@@ -4,7 +4,6 @@ from datetime import datetime
 import json
 import os
 from pathlib import Path
-from typing import Any
 
 from organizer.application.activity_models import (
     ActivityDetail,
@@ -25,6 +24,24 @@ from organizer.application.duplicate_bin_movement_models import (
 )
 from organizer.application.duplicate_bin_operation_repository import (
     DuplicateBinOperationRepository,
+)
+from organizer.application.duplicate_bin_repository import DuplicateBinRepository
+from organizer.application.duplicate_bin_restore_models import (
+    ITEM_ATTENTION as DUPLICATE_RESTORE_ATTENTION,
+    ITEM_FAILED as DUPLICATE_RESTORE_FAILED,
+    ITEM_PENDING as DUPLICATE_RESTORE_PENDING,
+    ITEM_RESTORED as DUPLICATE_RESTORE_RESTORED,
+    ITEM_UNATTEMPTED as DUPLICATE_RESTORE_UNATTEMPTED,
+    ITEM_VERIFIED as DUPLICATE_RESTORE_VERIFIED,
+    RESTORE_PARTIAL as DUPLICATE_RESTORE_PARTIAL,
+    RESTORE_RESTORED as DUPLICATE_RESTORE_COMPLETE,
+    DuplicateBinRestoreOperation,
+)
+from organizer.application.duplicate_bin_restore_repository import (
+    DuplicateBinRestoreRepository,
+)
+from organizer.application.duplicate_bin_restore_service import (
+    restorable_item_ids_for_movement,
 )
 from organizer.application.organization_operation_models import (
     MOVE_ATTEMPTING,
@@ -49,7 +66,6 @@ from organizer.application.organization_operation_repository import (
 from organizer.application.organization_undo_models import (
     UNDO_FAILED,
     UNDO_INTERRUPTED,
-    UNDO_ITEM_ATTEMPTING,
     UNDO_ITEM_FAILED,
     UNDO_ITEM_PENDING,
     UNDO_ITEM_RESTORED,
@@ -70,6 +86,8 @@ def list_activity_entries(
     operation_repository: OrganizationOperationRepository,
     undo_repository: OrganizationUndoRepository,
     duplicate_bin_operation_repository: DuplicateBinOperationRepository | None = None,
+    duplicate_bin_batch_repository: DuplicateBinRepository | None = None,
+    duplicate_bin_restore_repository: DuplicateBinRestoreRepository | None = None,
 ) -> ActivityList:
     _validate_repositories(operation_repository, undo_repository)
     operations = operation_repository.list_records()
@@ -89,9 +107,29 @@ def list_activity_entries(
             raise ValueError(
                 "Duplicate Bin Activity repository belongs to another root"
             )
+        for record in duplicate_bin_operation_repository.list_records():
+            if record.started_at is None:
+                continue
+            undoable = False
+            if (
+                duplicate_bin_batch_repository is not None
+                and duplicate_bin_restore_repository is not None
+            ):
+                undoable = bool(
+                    restorable_item_ids_for_movement(
+                        record.operation_id,
+                        duplicate_bin_batch_repository,
+                        duplicate_bin_operation_repository,
+                        duplicate_bin_restore_repository,
+                    )
+                )
+            entries.append(_duplicate_bin_entry(record, undoable=undoable))
+    if duplicate_bin_restore_repository is not None:
+        if duplicate_bin_restore_repository.root != operation_repository.root:
+            raise ValueError("Duplicate Bin restore repository belongs to another root")
         entries.extend(
-            _duplicate_bin_entry(record)
-            for record in duplicate_bin_operation_repository.list_records()
+            _duplicate_bin_restore_entry(record)
+            for record in duplicate_bin_restore_repository.list_operations()
             if record.started_at is not None
         )
     entries.sort(key=_entry_sort_key, reverse=True)
@@ -340,7 +378,9 @@ def _restore_entry(record: OrganizationUndoRecord) -> ActivityEntry:
     )
 
 
-def _duplicate_bin_entry(record: DuplicateBinOperationRecord) -> ActivityEntry:
+def _duplicate_bin_entry(
+    record: DuplicateBinOperationRecord, *, undoable: bool
+) -> ActivityEntry:
     moved = sum(
         item.result_state in {DUPLICATE_MOVE_MOVED, DUPLICATE_MOVE_VERIFIED}
         for item in record.expected_moves
@@ -372,8 +412,7 @@ def _duplicate_bin_entry(record: DuplicateBinOperationRecord) -> ActivityEntry:
         files_failed=failed,
         files_unattempted=unattempted,
         verification_status=record.verification.status,
-        # E-B projects completed Duplicate Bin work, but E-C owns restore.
-        undoable=False,
+        undoable=undoable,
         related_operation_id=None,
         details=tuple(
             ActivityDetail(
@@ -390,6 +429,61 @@ def _duplicate_bin_entry(record: DuplicateBinOperationRecord) -> ActivityEntry:
             for item in record.expected_moves
             if item.result_state != DUPLICATE_MOVE_PENDING
             or record.status == DUPLICATE_OP_MOVED
+        ),
+        ordering_at=record.completed_at or record.started_at or record.created_at,
+    )
+
+
+def _duplicate_bin_restore_entry(
+    record: DuplicateBinRestoreOperation,
+) -> ActivityEntry:
+    restored = sum(
+        item.state in {DUPLICATE_RESTORE_RESTORED, DUPLICATE_RESTORE_VERIFIED}
+        for item in record.items
+    )
+    failed = sum(
+        item.state in {DUPLICATE_RESTORE_FAILED, DUPLICATE_RESTORE_ATTENTION}
+        for item in record.items
+    )
+    unattempted = sum(
+        item.state in {DUPLICATE_RESTORE_PENDING, DUPLICATE_RESTORE_UNATTEMPTED}
+        for item in record.items
+    )
+    if record.status == DUPLICATE_RESTORE_COMPLETE:
+        title = f"Restored {restored} {'copy' if restored == 1 else 'copies'}"
+    elif record.status == DUPLICATE_RESTORE_PARTIAL:
+        title = "Duplicate Bin restore partly completed"
+    else:
+        title = "Duplicate Bin restore needs attention"
+    return ActivityEntry(
+        id=record.restore_operation_id,
+        type="duplicate_bin_restore",
+        title=title,
+        status=record.status,
+        started_at=record.started_at,
+        completed_at=record.completed_at,
+        files_expected=len(record.items),
+        files_moved=0,
+        files_restored=restored,
+        files_failed=failed,
+        files_unattempted=unattempted,
+        verification_status=record.verification.status,
+        undoable=False,
+        related_operation_id=None,
+        details=tuple(
+            ActivityDetail(
+                source=None,
+                destination=None,
+                restored_to=(
+                    str(Path(item.previous_destination).parent)
+                    if Path(item.previous_destination).parent != Path(".")
+                    else "Selected folder"
+                ),
+                moved_from="Duplicate Bin",
+                status=item.state,
+            )
+            for item in record.items
+            if item.state != DUPLICATE_RESTORE_PENDING
         ),
         ordering_at=record.completed_at or record.started_at or record.created_at,
     )

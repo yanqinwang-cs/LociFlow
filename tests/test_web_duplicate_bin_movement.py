@@ -217,7 +217,7 @@ class WebDuplicateBinMovementTests(unittest.IsolatedAsyncioTestCase):
         for forbidden in ("shutil.move", "os.rename", "Path.rename"):
             self.assertNotIn(forbidden, service)
 
-    async def test_activity_undo_routes_reject_duplicate_bin_operation_before_ordinary_undo(
+    async def test_activity_undo_routes_use_duplicate_restore_not_ordinary_undo(
         self,
     ) -> None:
         async with _client(self.app) as client:
@@ -246,6 +246,7 @@ class WebDuplicateBinMovementTests(unittest.IsolatedAsyncioTestCase):
                     data={"csrf_token": csrf},
                     headers=_origin(),
                 )
+            restore_preview = undo_preview.json()
             with mock.patch(
                 "organizer.web.routes.activity_api.undo_organization_operation"
             ) as ordinary_undo:
@@ -253,31 +254,19 @@ class WebDuplicateBinMovementTests(unittest.IsolatedAsyncioTestCase):
                     f"/api/activity/{operation_id}/undo",
                     data={
                         "csrf_token": csrf,
-                        "confirmation_token": "not-for-duplicate-bin",
-                        "confirmation": "UNDO FILE MOVE",
+                        "confirmation_token": restore_preview["confirmation_token"],
+                        "confirmation": restore_preview["confirmation"],
                     },
                     headers=_origin(),
                 )
 
-        for response in (undo_preview, undo):
-            self.assertEqual(response.status_code, 409)
-            self.assertEqual(
-                response.json()["error"]["code"], "operation_not_undoable"
-            )
+        self.assertEqual(undo_preview.status_code, 200)
+        self.assertEqual(restore_preview["confirmation"], "RESTORE COPIES")
+        self.assertEqual(undo.status_code, 200)
+        self.assertEqual(undo.json()["undo"]["status"], "restored")
         ordinary_preview.assert_not_called()
         ordinary_undo.assert_not_called()
         self.assertEqual(self.app.state.organization_undos.list_records(), ())
-        route_paths = {
-            path
-            for route in self.app.routes
-            if (path := getattr(route, "path", None)) is not None
-        }
-        self.assertFalse(
-            any(
-                "duplicate-bin" in path and ("restore" in path or "undo" in path)
-                for path in route_paths
-            )
-        )
 
 
 async def _authenticate(client: httpx.AsyncClient, token: str) -> str:

@@ -47,8 +47,16 @@ ITEM_MOVING = "moving"
 ITEM_AVAILABLE = "available"
 ITEM_ATTENTION = "attention"
 ITEM_UNATTEMPTED = "unattempted"
+ITEM_RESTORED = "restored"
 ITEM_STATES = frozenset(
-    {ITEM_APPROVED, ITEM_MOVING, ITEM_AVAILABLE, ITEM_ATTENTION, ITEM_UNATTEMPTED}
+    {
+        ITEM_APPROVED,
+        ITEM_MOVING,
+        ITEM_AVAILABLE,
+        ITEM_ATTENTION,
+        ITEM_UNATTEMPTED,
+        ITEM_RESTORED,
+    }
 )
 
 

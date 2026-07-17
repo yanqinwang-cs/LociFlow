@@ -1,0 +1,811 @@
+from __future__ import annotations
+
+from datetime import timedelta
+from dataclasses import replace
+from pathlib import Path
+import shutil
+import tempfile
+import unittest
+from unittest import mock
+import uuid
+
+from organizer.application.duplicate_bin_models import (
+    BATCH_APPROVED,
+    ApprovedDuplicateBatch,
+    ApprovedDuplicateGroup,
+    ApprovedDuplicateMember,
+    SelectedDuplicateBinItem,
+    canonical_digest,
+)
+from organizer.application.duplicate_bin_restore_repository import (
+    DuplicateBinRestoreRepository,
+    DuplicateBinRestoreRepositoryError,
+)
+from organizer.application.duplicate_bin_restore_service import (
+    CONFIRM_RESTORE_COPIES,
+    DuplicateBinRestoreError,
+    execute_duplicate_bin_restore,
+    list_duplicate_bin_items,
+    preview_duplicate_bin_activity_undo,
+    preview_duplicate_bin_restore,
+)
+from organizer.duplicates import hash_file
+from tests.test_application_duplicate_bin_movement_service import (
+    ISSUED,
+    _Owners,
+    _execute,
+    _owners,
+    _preview,
+)
+
+
+class DuplicateBinRestoreServiceTests(unittest.TestCase):
+    def test_verified_items_preview_restore_verify_and_replay(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            owners = _moved(Path(directory).resolve(), selected=2)
+            restores = DuplicateBinRestoreRepository(owners.root)
+            item_ids = tuple(item.bin_item_id for item in owners.batch.items)
+            preview = _restore_preview(owners, restores, item_ids)
+            real_move = shutil.move
+            observed = []
+
+            def checked_move(source: str, destination: str):
+                operations = restores.list_operations()
+                self.assertEqual(len(operations), 1)
+                self.assertEqual(operations[0].status, "restoring")
+                observed.append((source, destination))
+                return real_move(source, destination)
+
+            with mock.patch("organizer.executor.shutil.move", side_effect=checked_move):
+                result = _restore(owners, restores, preview)
+
+            self.assertEqual(result.status, "restored")
+            self.assertEqual(result.copies_restored, 2)
+            self.assertEqual(len(observed), 2)
+            operation = restores.load_operation(result.id)
+            self.assertEqual(operation.verification.status, "passed")
+            self.assertTrue(operation.executor_log_path)
+            for item in owners.batch.items:
+                self.assertTrue((owners.root / item.previous_relative_path).is_file())
+                self.assertFalse((owners.root / item.future_relative_path).exists())
+            durable_batch = owners.batches.load(owners.batch.batch_id)
+            self.assertTrue(
+                all(item.state == "restored" for item in durable_batch.items)
+            )
+            self.assertEqual(
+                list_duplicate_bin_items(owners.batches, owners.operations, restores),
+                (),
+            )
+
+            with mock.patch(
+                "organizer.application.duplicate_bin_restore_service.apply_move_plan"
+            ) as apply_again:
+                replay = _restore(
+                    owners,
+                    restores,
+                    preview,
+                    now=ISSUED + timedelta(minutes=2),
+                )
+            self.assertEqual(replay.id, result.id)
+            apply_again.assert_not_called()
+
+    def test_authorization_expiry_overlap_and_nonoverlap(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            owners = _moved(Path(directory).resolve(), selected=2)
+            restores = DuplicateBinRestoreRepository(owners.root)
+            first_id, second_id = sorted(
+                item.bin_item_id for item in owners.batch.items
+            )
+            first = _restore_preview(owners, restores, (first_id,))
+            nonoverlap = _restore_preview(
+                owners,
+                restores,
+                (second_id,),
+                issued=ISSUED + timedelta(minutes=1),
+            )
+            replacement = _restore_preview(
+                owners,
+                restores,
+                (first_id,),
+                issued=ISSUED + timedelta(minutes=2),
+            )
+            self.assertEqual(
+                restores.load_authorization(first.confirmation_token).status,
+                "superseded",
+            )
+            self.assertEqual(
+                restores.load_authorization(nonoverlap.confirmation_token).status,
+                "available",
+            )
+            self.assertEqual(
+                timedelta(minutes=15),
+                _time(replacement.expires_at) - (ISSUED + timedelta(minutes=2)),
+            )
+            with self.assertRaisesRegex(
+                DuplicateBinRestoreError, "confirmation_expired"
+            ):
+                _restore(
+                    owners,
+                    restores,
+                    nonoverlap,
+                    now=ISSUED + timedelta(minutes=16),
+                )
+
+    def test_activity_preview_uses_all_remaining_items(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            owners = _moved(Path(directory).resolve(), selected=2)
+            restores = DuplicateBinRestoreRepository(owners.root)
+            movement = owners.operations.find_for_batch(owners.batch.batch_id)
+            assert movement is not None
+            preview = preview_duplicate_bin_activity_undo(
+                movement_operation_id=movement.operation_id,
+                browser_session_id="browser-one",
+                batch_repository=owners.batches,
+                movement_repository=owners.operations,
+                restore_repository=restores,
+                coordinator=owners.coordinator,
+                issued_at=ISSUED.isoformat(),
+            )
+            authorization = restores.load_authorization(preview.confirmation_token)
+            self.assertEqual(
+                authorization.selected_bin_item_ids,
+                tuple(sorted(item.bin_item_id for item in owners.batch.items)),
+            )
+            selected_preview = _restore_preview(
+                owners,
+                restores,
+                tuple(item.bin_item_id for item in owners.batch.items),
+                issued=ISSUED + timedelta(minutes=1),
+            )
+            selected_authorization = restores.load_authorization(
+                selected_preview.confirmation_token
+            )
+            self.assertEqual(
+                selected_authorization.selected_bin_item_ids,
+                authorization.selected_bin_item_ids,
+            )
+
+    def test_activity_preview_excludes_restored_and_other_operation_items(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            owners = _moved(Path(directory).resolve(), selected=2)
+            restores = DuplicateBinRestoreRepository(owners.root)
+            item_a, item_b = owners.batch.items
+            movement_one = owners.operations.find_for_batch(owners.batch.batch_id)
+            assert movement_one is not None
+
+            restored_a = _restore_preview(
+                owners,
+                restores,
+                (item_a.bin_item_id,),
+            )
+            _restore(owners, restores, restored_a)
+            second = _additional_moved_batch(owners)
+            item_c = second.batch.items[0]
+
+            with mock.patch(
+                "organizer.application.undo_service.undo_operation_log"
+            ) as ordinary_undo_log:
+                preview = preview_duplicate_bin_activity_undo(
+                    movement_operation_id=movement_one.operation_id,
+                    browser_session_id="browser-one",
+                    batch_repository=owners.batches,
+                    movement_repository=owners.operations,
+                    restore_repository=restores,
+                    coordinator=owners.coordinator,
+                    issued_at=(ISSUED + timedelta(minutes=4)).isoformat(),
+                )
+
+            ordinary_undo_log.assert_not_called()
+            authorization = restores.load_authorization(preview.confirmation_token)
+            self.assertEqual(preview.copies_to_restore, 1)
+            self.assertEqual(preview.confirmation, CONFIRM_RESTORE_COPIES)
+            self.assertEqual(
+                authorization.selected_bin_item_ids,
+                (item_b.bin_item_id,),
+            )
+            self.assertNotIn(item_a.bin_item_id, authorization.selected_bin_item_ids)
+            self.assertNotIn(item_c.bin_item_id, authorization.selected_bin_item_ids)
+
+            _restore(
+                owners,
+                restores,
+                preview,
+                now=ISSUED + timedelta(minutes=5),
+            )
+            with self.assertRaisesRegex(
+                DuplicateBinRestoreError, "no_restorable_items"
+            ):
+                preview_duplicate_bin_activity_undo(
+                    movement_operation_id=movement_one.operation_id,
+                    browser_session_id="browser-one",
+                    batch_repository=owners.batches,
+                    movement_repository=owners.operations,
+                    restore_repository=restores,
+                    coordinator=owners.coordinator,
+                    issued_at=(ISSUED + timedelta(minutes=6)).isoformat(),
+                )
+
+    def test_cross_operation_restore_is_one_durable_ordered_operation(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            owners = _moved(Path(directory).resolve(), selected=1)
+            second = _additional_moved_batch(owners)
+            restores = DuplicateBinRestoreRepository(owners.root)
+            first_id = owners.batch.items[0].bin_item_id
+            second_id = second.batch.items[0].bin_item_id
+            self.assertGreater(first_id, second_id)
+
+            preview = _restore_preview(
+                owners,
+                restores,
+                (second_id, first_id),
+                issued=ISSUED + timedelta(minutes=4),
+            )
+            authorization = restores.load_authorization(preview.confirmation_token)
+            self.assertEqual(len(authorization.parent_movement_operation_ids), 2)
+            from organizer.application import duplicate_bin_restore_service
+
+            with mock.patch.object(
+                duplicate_bin_restore_service,
+                "apply_move_plan",
+                wraps=duplicate_bin_restore_service.apply_move_plan,
+            ) as apply_plan:
+                result = _restore(
+                    owners,
+                    restores,
+                    preview,
+                    now=ISSUED + timedelta(minutes=5),
+                )
+
+            apply_plan.assert_called_once()
+            operation = restores.load_operation(result.id)
+            self.assertEqual(operation.selected_bin_item_ids, (first_id, second_id))
+            self.assertEqual(
+                tuple(item.bin_item_id for item in operation.items),
+                (first_id, second_id),
+            )
+            self.assertEqual(
+                tuple(item.previous_destination for item in operation.items),
+                (
+                    owners.batch.items[0].previous_relative_path,
+                    second.batch.items[0].previous_relative_path,
+                ),
+            )
+            restarted = DuplicateBinRestoreRepository(owners.root)
+            self.assertEqual(restarted.load_operation(result.id), operation)
+
+    def test_partial_parent_movement_exposes_only_verified_available_item(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            owners = _owners(Path(directory).resolve(), selected=2)
+            preview = _preview(owners, issued=ISSUED)
+            real_move = shutil.move
+            calls = 0
+
+            def partial(source, destination):
+                nonlocal calls
+                calls += 1
+                if calls == 2:
+                    raise OSError("injected")
+                return real_move(source, destination)
+
+            with mock.patch("organizer.executor.shutil.move", side_effect=partial):
+                _execute(owners, preview, now=ISSUED + timedelta(seconds=1))
+            restores = DuplicateBinRestoreRepository(owners.root)
+            batch = owners.batches.load(owners.batch.batch_id)
+            available = tuple(item for item in batch.items if item.state == "available")
+            rejected = tuple(item for item in batch.items if item.state != "available")
+            self.assertEqual((len(available), len(rejected)), (1, 1))
+            restore_preview = _restore_preview(
+                owners, restores, (available[0].bin_item_id,)
+            )
+            self.assertEqual(restore_preview.copies_to_restore, 1)
+            with self.assertRaisesRegex(
+                DuplicateBinRestoreError, "bin_item_not_restorable"
+            ):
+                _restore_preview(owners, restores, (rejected[0].bin_item_id,))
+
+    def test_authorization_is_session_and_root_bound_and_consumed_by_operation(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            owners = _moved(Path(directory).resolve(), selected=1)
+            restores = DuplicateBinRestoreRepository(owners.root)
+            item_id = owners.batch.items[0].bin_item_id
+            preview = _restore_preview(owners, restores, (item_id,))
+            with self.assertRaisesRegex(
+                DuplicateBinRestoreError, "invalid_confirmation_token"
+            ):
+                execute_duplicate_bin_restore(
+                    browser_session_id="browser-two",
+                    confirmation_token=preview.confirmation_token,
+                    confirmation=CONFIRM_RESTORE_COPIES,
+                    batch_repository=owners.batches,
+                    movement_repository=owners.operations,
+                    restore_repository=restores,
+                    coordinator=owners.coordinator,
+                    now=(ISSUED + timedelta(minutes=1)).isoformat(),
+                )
+            result = _restore(owners, restores, preview)
+            authorization = restores.load_authorization(preview.confirmation_token)
+            self.assertEqual(authorization.status, "consumed")
+            self.assertEqual(authorization.restore_operation_id, result.id)
+
+            with tempfile.TemporaryDirectory() as other_directory:
+                other_root = Path(other_directory).resolve()
+                other_restores = DuplicateBinRestoreRepository(other_root)
+                other_restores.authorization_directory.mkdir(parents=True)
+                shutil.copy2(
+                    restores.authorization_path,
+                    other_restores.authorization_path,
+                )
+                with self.assertRaisesRegex(
+                    DuplicateBinRestoreRepositoryError,
+                    "restore_authorization_malformed",
+                ):
+                    other_restores.load_authorization(preview.confirmation_token)
+
+    def test_authorization_rejects_changed_batch_version_and_item_state(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            owners = _moved(Path(directory).resolve(), selected=2)
+            restores = DuplicateBinRestoreRepository(owners.root)
+            first, second = owners.batches.load(owners.batch.batch_id).items
+            preview = _restore_preview(owners, restores, (first.bin_item_id,))
+            batch = owners.batches.load(owners.batch.batch_id)
+            owners.batches.save_execution_state(
+                batch.batch_id,
+                expected_version=batch.batch_version,
+                status=batch.status,
+                items=tuple(
+                    replace(item, state="attention")
+                    if item.bin_item_id == second.bin_item_id
+                    else item
+                    for item in batch.items
+                ),
+                updated_at=(ISSUED + timedelta(seconds=30)).isoformat(),
+            )
+            with self.assertRaisesRegex(
+                DuplicateBinRestoreError, "restore_authorization_stale"
+            ):
+                _restore(owners, restores, preview)
+            self.assertEqual(restores.list_operations(), ())
+
+    def test_zero_missing_attention_and_already_restored_are_ineligible(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            owners = _moved(Path(directory).resolve(), selected=1)
+            restores = DuplicateBinRestoreRepository(owners.root)
+            with self.assertRaisesRegex(
+                DuplicateBinRestoreError, "no_restorable_items"
+            ):
+                _restore_preview(owners, restores, ())
+            with self.assertRaisesRegex(DuplicateBinRestoreError, "bin_item_not_found"):
+                _restore_preview(
+                    owners, restores, ("00000000-0000-0000-0000-000000000001",)
+                )
+
+            batch = owners.batches.load(owners.batch.batch_id)
+            owners.batches.save_execution_state(
+                batch.batch_id,
+                expected_version=batch.batch_version,
+                status=batch.status,
+                items=tuple(replace(item, state="attention") for item in batch.items),
+                updated_at=ISSUED.isoformat(),
+            )
+            with self.assertRaisesRegex(
+                DuplicateBinRestoreError, "bin_item_not_restorable"
+            ):
+                _restore_preview(owners, restores, (batch.items[0].bin_item_id,))
+
+        with tempfile.TemporaryDirectory() as directory:
+            owners = _moved(Path(directory).resolve(), selected=1)
+            restores = DuplicateBinRestoreRepository(owners.root)
+            item = owners.batch.items[0]
+            preview = _restore_preview(owners, restores, (item.bin_item_id,))
+            _restore(owners, restores, preview)
+            with self.assertRaisesRegex(
+                DuplicateBinRestoreError, "bin_item_not_restorable"
+            ):
+                _restore_preview(owners, restores, (item.bin_item_id,))
+
+    def test_changed_item_and_occupied_destination_fail_before_operation(self) -> None:
+        for case in ("changed", "occupied"):
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as directory:
+                owners = _moved(Path(directory).resolve(), selected=1)
+                restores = DuplicateBinRestoreRepository(owners.root)
+                item = owners.batch.items[0]
+                preview = _restore_preview(owners, restores, (item.bin_item_id,))
+                if case == "changed":
+                    (owners.root / item.future_relative_path).write_text(
+                        "changed", encoding="utf-8"
+                    )
+                    expected = "bin_item_changed"
+                else:
+                    destination = owners.root / item.previous_relative_path
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    destination.write_text("occupied", encoding="utf-8")
+                    expected = "restore_destination_occupied"
+                with self.assertRaisesRegex(DuplicateBinRestoreError, expected):
+                    _restore(owners, restores, preview)
+                self.assertEqual(restores.list_operations(), ())
+                self.assertTrue((owners.root / item.future_relative_path).exists())
+
+    def test_safe_missing_parent_is_created_only_after_durable_operation(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            owners = _moved(Path(directory).resolve(), selected=1)
+            restores = DuplicateBinRestoreRepository(owners.root)
+            item = owners.batch.items[0]
+            previous_parent = (owners.root / item.previous_relative_path).parent
+            previous_parent.rmdir()
+            preview = _restore_preview(owners, restores, (item.bin_item_id,))
+            self.assertFalse(previous_parent.exists())
+            _restore(owners, restores, preview)
+            self.assertTrue(previous_parent.is_dir())
+            self.assertTrue((owners.root / item.previous_relative_path).is_file())
+
+    def test_symlink_source_and_unsafe_or_occupied_destinations_reject(self) -> None:
+        for case in (
+            "source_symlink",
+            "directory",
+            "destination_symlink",
+            "parent_symlink",
+        ):
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as directory:
+                owners = _moved(Path(directory).resolve(), selected=1)
+                restores = DuplicateBinRestoreRepository(owners.root)
+                item = owners.batch.items[0]
+                source = owners.root / item.future_relative_path
+                destination = owners.root / item.previous_relative_path
+                if case == "source_symlink":
+                    target = owners.root / "safe-target.txt"
+                    target.write_bytes(source.read_bytes())
+                    source.unlink()
+                    try:
+                        source.symlink_to(target)
+                    except OSError:
+                        self.skipTest("symlinks unavailable")
+                    expected = "unsafe_restore_path"
+                elif case == "directory":
+                    destination.mkdir(parents=True)
+                    expected = "restore_destination_occupied"
+                elif case == "destination_symlink":
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    target = owners.root / "target.txt"
+                    target.write_text("target", encoding="utf-8")
+                    try:
+                        destination.symlink_to(target)
+                    except OSError:
+                        self.skipTest("symlinks unavailable")
+                    expected = "restore_destination_occupied"
+                else:
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    destination.parent.rmdir()
+                    safe_parent = owners.root / "safe-parent"
+                    safe_parent.mkdir()
+                    try:
+                        destination.parent.symlink_to(
+                            safe_parent, target_is_directory=True
+                        )
+                    except OSError:
+                        self.skipTest("symlinks unavailable")
+                    expected = "unsafe_restore_parent"
+                preview = _restore_preview(owners, restores, (item.bin_item_id,))
+                with self.assertRaisesRegex(DuplicateBinRestoreError, expected):
+                    _restore(owners, restores, preview)
+                self.assertEqual(restores.list_operations(), ())
+
+    def test_verification_failures_enter_attention_without_rollback(self) -> None:
+        for case in (
+            "source_present",
+            "destination_missing",
+            "destination_symlink",
+            "hash_mismatch",
+        ):
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as directory:
+                owners = _moved(Path(directory).resolve(), selected=1)
+                restores = DuplicateBinRestoreRepository(owners.root)
+                item = owners.batch.items[0]
+                preview = _restore_preview(owners, restores, (item.bin_item_id,))
+                real_move = shutil.move
+
+                def unverifiable(source, destination):
+                    source_path = Path(source)
+                    destination_path = Path(destination)
+                    if case == "source_present":
+                        destination_path.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(source_path, destination_path)
+                        return str(destination_path)
+                    result = real_move(source, destination)
+                    if case == "destination_missing":
+                        destination_path.unlink()
+                    elif case == "destination_symlink":
+                        destination_path.unlink()
+                        target = owners.root / "restore-verification-target.txt"
+                        target.write_text("target", encoding="utf-8")
+                        destination_path.symlink_to(target)
+                    else:
+                        destination_path.write_text("changed", encoding="utf-8")
+                    return result
+
+                try:
+                    with mock.patch(
+                        "organizer.executor.shutil.move", side_effect=unverifiable
+                    ):
+                        result = _restore(owners, restores, preview)
+                except OSError:
+                    if case == "destination_symlink":
+                        self.skipTest("symlinks unavailable")
+                    raise
+                self.assertEqual(result.status, "verification_failed")
+                operation = restores.load_operation(result.id)
+                self.assertEqual(operation.items[0].state, "attention")
+                self.assertEqual(operation.verification.status, "failed")
+                self.assertEqual(
+                    owners.batches.load(owners.batch.batch_id).items[0].state,
+                    "attention",
+                )
+                if case == "source_present":
+                    self.assertTrue((owners.root / item.future_relative_path).exists())
+                    self.assertTrue(
+                        (owners.root / item.previous_relative_path).exists()
+                    )
+                    projection = list_duplicate_bin_items(
+                        owners.batches, owners.operations, restores
+                    )
+                    self.assertEqual(len(projection), 1)
+                    self.assertFalse(projection[0].restore_available)
+                    self.assertEqual(
+                        projection[0].attention_message,
+                        "This copy needs attention.",
+                    )
+                else:
+                    self.assertFalse((owners.root / item.future_relative_path).exists())
+
+    def test_interrupted_operation_replays_without_automatic_retry(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            owners = _moved(Path(directory).resolve(), selected=1)
+            restores = DuplicateBinRestoreRepository(owners.root)
+            item = owners.batch.items[0]
+            preview = _restore_preview(owners, restores, (item.bin_item_id,))
+            with mock.patch(
+                "organizer.application.duplicate_bin_restore_service.apply_move_plan",
+                side_effect=RuntimeError("injected interruption"),
+            ):
+                result = _restore(owners, restores, preview)
+            self.assertEqual(result.status, "interrupted")
+            self.assertTrue(result.recovery_required)
+            self.assertTrue((owners.root / item.future_relative_path).exists())
+            self.assertFalse((owners.root / item.previous_relative_path).exists())
+
+            restarted = DuplicateBinRestoreRepository(owners.root)
+            with mock.patch(
+                "organizer.application.duplicate_bin_restore_service.apply_move_plan"
+            ) as retry:
+                replay = execute_duplicate_bin_restore(
+                    browser_session_id="browser-one",
+                    confirmation_token=preview.confirmation_token,
+                    confirmation=CONFIRM_RESTORE_COPIES,
+                    batch_repository=owners.batches,
+                    movement_repository=owners.operations,
+                    restore_repository=restarted,
+                    coordinator=owners.coordinator,
+                    now=(ISSUED + timedelta(minutes=2)).isoformat(),
+                )
+            self.assertEqual(replay.id, result.id)
+            retry.assert_not_called()
+
+    def test_replay_reconciles_lost_terminal_batch_projection_once(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            owners = _moved(Path(directory).resolve(), selected=1)
+            restores = DuplicateBinRestoreRepository(owners.root)
+            item = owners.batch.items[0]
+            preview = _restore_preview(owners, restores, (item.bin_item_id,))
+            with mock.patch(
+                "organizer.application.duplicate_bin_restore_service._update_batch_items",
+                side_effect=RuntimeError("injected response-loss window"),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "response-loss"):
+                    _restore(owners, restores, preview)
+
+            operation = restores.find_for_authorization(preview.confirmation_token)
+            assert operation is not None
+            self.assertEqual(operation.status, "restored")
+            self.assertEqual(
+                owners.batches.load(owners.batch.batch_id).items[0].state,
+                "available",
+            )
+            restarted = DuplicateBinRestoreRepository(owners.root)
+            with mock.patch(
+                "organizer.application.duplicate_bin_restore_service.apply_move_plan"
+            ) as retry:
+                replay = execute_duplicate_bin_restore(
+                    browser_session_id="browser-one",
+                    confirmation_token=preview.confirmation_token,
+                    confirmation=CONFIRM_RESTORE_COPIES,
+                    batch_repository=owners.batches,
+                    movement_repository=owners.operations,
+                    restore_repository=restarted,
+                    coordinator=owners.coordinator,
+                    now=(ISSUED + timedelta(minutes=2)).isoformat(),
+                )
+            retry.assert_not_called()
+            self.assertEqual(replay.id, operation.restore_operation_id)
+            reconciled = owners.batches.load(owners.batch.batch_id)
+            self.assertEqual(reconciled.items[0].state, "restored")
+            version = reconciled.batch_version
+            execute_duplicate_bin_restore(
+                browser_session_id="browser-one",
+                confirmation_token=preview.confirmation_token,
+                confirmation=CONFIRM_RESTORE_COPIES,
+                batch_repository=owners.batches,
+                movement_repository=owners.operations,
+                restore_repository=restarted,
+                coordinator=owners.coordinator,
+                now=(ISSUED + timedelta(minutes=3)).isoformat(),
+            )
+            self.assertEqual(
+                owners.batches.load(owners.batch.batch_id).batch_version,
+                version,
+            )
+
+    def test_shared_coordinator_blocks_preview_and_execution(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            owners = _moved(Path(directory).resolve(), selected=1)
+            restores = DuplicateBinRestoreRepository(owners.root)
+            item_id = owners.batch.items[0].bin_item_id
+            self.assertTrue(owners.coordinator.try_acquire())
+            try:
+                with self.assertRaisesRegex(
+                    DuplicateBinRestoreError, "movement_or_undo_in_progress"
+                ):
+                    _restore_preview(owners, restores, (item_id,))
+            finally:
+                owners.coordinator.release()
+            preview = _restore_preview(owners, restores, (item_id,))
+            self.assertTrue(owners.coordinator.try_acquire())
+            try:
+                with self.assertRaisesRegex(
+                    DuplicateBinRestoreError, "movement_or_undo_in_progress"
+                ):
+                    _restore(owners, restores, preview)
+            finally:
+                owners.coordinator.release()
+            self.assertEqual(restores.list_operations(), ())
+
+
+def _moved(root: Path, *, selected: int):
+    owners = _owners(root, selected=selected)
+    movement_preview = _preview(owners, issued=ISSUED)
+    _execute(owners, movement_preview, now=ISSUED + timedelta(seconds=1))
+    return owners
+
+
+def _additional_moved_batch(owners):
+    content = b"another exact duplicate group"
+    selected_path = "Second/copy.txt"
+    retained_path = "Second/retained.txt"
+    for relative in (selected_path, retained_path):
+        path = owners.root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content)
+    first_id = owners.batch.items[0].bin_item_id
+    for seed in range(1000):
+        batch_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"additional-batch:{seed}"))
+        selected_member_id = str(
+            uuid.uuid5(uuid.NAMESPACE_URL, f"additional-member:{seed}:selected")
+        )
+        bin_item_id = str(uuid.uuid5(uuid.UUID(batch_id), selected_member_id))
+        if bin_item_id < first_id:
+            break
+    else:  # pragma: no cover - UUID ordering makes this practically unreachable.
+        raise AssertionError("could not construct deterministic test ordering")
+    retained_member_id = str(
+        uuid.uuid5(uuid.NAMESPACE_URL, f"additional-member:{seed}:retained")
+    )
+    members = tuple(
+        sorted(
+            (
+                ApprovedDuplicateMember(
+                    member_id=selected_member_id,
+                    relative_path=selected_path,
+                    size_bytes=len(content),
+                    modified_time=(owners.root / selected_path).stat().st_mtime,
+                ),
+                ApprovedDuplicateMember(
+                    member_id=retained_member_id,
+                    relative_path=retained_path,
+                    size_bytes=len(content),
+                    modified_time=(owners.root / retained_path).stat().st_mtime,
+                ),
+            ),
+            key=lambda item: item.relative_path,
+        )
+    )
+    digest = hash_file(owners.root / selected_path)
+    item = SelectedDuplicateBinItem(
+        bin_item_id=bin_item_id,
+        selected_member_id=selected_member_id,
+        previous_relative_path=selected_path,
+        future_relative_path=(f"AI_Review/duplicate_bin/items/{bin_item_id}/copy.txt"),
+        basename="copy.txt",
+        size_bytes=len(content),
+        kind="text",
+        extension=".txt",
+        approved_sha256=digest,
+        approval_metadata_fingerprint=canonical_digest(
+            {
+                "schema": "loci-duplicate-approval-metadata-v1",
+                "size_bytes": len(content),
+                "modified_time": (owners.root / selected_path).stat().st_mtime,
+            }
+        ),
+    )
+    stamp = (ISSUED + timedelta(minutes=2)).isoformat()
+    batch = ApprovedDuplicateBatch(
+        batch_id=batch_id,
+        configured_root_identity=owners.batches.configured_root_identity,
+        created_by_session_id="approval-browser",
+        originating_scan_generation="scan-two",
+        decision_revision=2,
+        approved_at=stamp,
+        approved_plan_digest="c" * 64,
+        duplicate_batch_digest="d" * 64,
+        batch_version=1,
+        status=BATCH_APPROVED,
+        created_at=stamp,
+        updated_at=stamp,
+        groups=(
+            ApprovedDuplicateGroup(
+                group_id=str(
+                    uuid.uuid5(uuid.NAMESPACE_URL, f"additional-group:{seed}")
+                ),
+                choice_id="D2",
+                approved_sha256=digest,
+                approved_size_bytes=len(content),
+                members=members,
+                selected_member_ids=(selected_member_id,),
+                retained_member_ids=(retained_member_id,),
+            ),
+        ),
+        items=(item,),
+    )
+    owners.batches.create_or_recover_approved_batch(batch)
+    second = _Owners(
+        owners.root,
+        batch,
+        owners.batches,
+        owners.authorizations,
+        owners.operations,
+        owners.coordinator,
+    )
+    preview = _preview(second, issued=ISSUED + timedelta(minutes=2))
+    _execute(second, preview, now=ISSUED + timedelta(minutes=3))
+    return second
+
+
+def _restore_preview(owners, restores, item_ids, *, issued=ISSUED):
+    return preview_duplicate_bin_restore(
+        item_ids=tuple(item_ids),
+        browser_session_id="browser-one",
+        batch_repository=owners.batches,
+        movement_repository=owners.operations,
+        restore_repository=restores,
+        coordinator=owners.coordinator,
+        issued_at=issued.isoformat(),
+    )
+
+
+def _restore(owners, restores, preview, *, now=ISSUED + timedelta(minutes=1)):
+    return execute_duplicate_bin_restore(
+        browser_session_id="browser-one",
+        confirmation_token=preview.confirmation_token,
+        confirmation=CONFIRM_RESTORE_COPIES,
+        batch_repository=owners.batches,
+        movement_repository=owners.operations,
+        restore_repository=restores,
+        coordinator=owners.coordinator,
+        now=now.isoformat(),
+    )
+
+
+def _time(value):
+    from datetime import datetime
+
+    return datetime.fromisoformat(value)
