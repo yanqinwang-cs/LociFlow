@@ -34,6 +34,7 @@ class StandardsReadItem:
 class StandardsReadProjection:
     status: str
     items: tuple[StandardsReadItem, ...]
+    revision: int = 0
     error_code: str | None = None
     attention_message: str | None = None
 
@@ -44,6 +45,7 @@ class StandardsReadProjection:
     def to_dict(self) -> dict[str, object]:
         return {
             "status": self.status,
+            "revision": self.revision,
             "items": [item.to_dict() for item in self.items],
             "attention_message": self.attention_message,
         }

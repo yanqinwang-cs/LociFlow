@@ -10,6 +10,9 @@ import unittest
 import httpx
 
 from organizer.application.scan_service import scan_root
+from organizer.application.standards_models import StandardsApplicationError
+from organizer.application.standards_repository import StandardsRepository
+from organizer.application.standards_service import StandardsService
 from organizer.organization_rules import ORGANIZATION_RULES_RELATIVE_PATH
 from organizer.web.app import create_app
 from organizer.web.config import WebAppConfig
@@ -74,6 +77,72 @@ class WebOrganizationDecisionTests(unittest.IsolatedAsyncioTestCase):
             "accept",
         )
         self.assertEqual(reloaded.headers["cache-control"], "no-store")
+
+    async def test_material_standard_invalidates_old_generation_and_approved_plan_blocks(self) -> None:
+        async with _client(self.app) as client:
+            await self._authenticate(client)
+            current = await client.get("/api/organization/current")
+            self.assertEqual(current.status_code, 200)
+            service = StandardsService(
+                StandardsRepository(self.root),
+                decision_store=self.app.state.organization_decisions,
+            )
+            preview = service.preview(
+                preset_type="keep_matching_files_together",
+                scope=service.resolve_root_scope(scan_generation="scan-one"),
+                matcher_kind="project_code",
+                matcher_value="BootAI",
+                expected_revision=0,
+            )
+            service.save_preview(preview.preview_id, expected_revision=0)
+            invalidated = await client.get("/api/organization/current")
+
+        self.assertEqual(
+            invalidated.json()["error"]["code"],
+            "organization_unavailable",
+        )
+
+        self.directory.cleanup()
+        self.directory = tempfile.TemporaryDirectory()
+        self.root = Path(self.directory.name).resolve()
+        destination = self.root / "Organized" / "EvoSim_project_slides" / "slides"
+        destination.mkdir(parents=True)
+        (self.root / "EvoSim_project_slides.pptx").write_text("a", encoding="utf-8")
+        (self.root / "EvoSim_project_slides_final.pptx").write_text("b", encoding="utf-8")
+        self.result = scan_root(self.root)
+        self.token = "z" * 32
+        self.app = create_app(
+            WebAppConfig(self.root, "s" * 32, self.token, testing=True)
+        )
+        self._complete("scan-one")
+        async with _client(self.app) as client:
+            csrf = await self._authenticate(client)
+            await self._bulk(client, csrf)
+            await client.post(
+                "/api/organization/approval",
+                data={
+                    "csrf_token": csrf,
+                    "scan_generation": "scan-one",
+                    "expected_revision": "1",
+                },
+                headers=_origin(),
+            )
+            service = StandardsService(
+                StandardsRepository(self.root),
+                decision_store=self.app.state.organization_decisions,
+            )
+            preview = service.preview(
+                preset_type="keep_matching_files_together",
+                scope=service.resolve_root_scope(scan_generation="scan-one"),
+                matcher_kind="project_code",
+                matcher_value="BootAI",
+                expected_revision=0,
+            )
+            with self.assertRaisesRegex(
+                StandardsApplicationError,
+                "active_plan_conflict",
+            ):
+                service.save_preview(preview.preview_id, expected_revision=0)
 
     async def test_generation_revision_unknown_id_and_query_fail_without_mutation(
         self,

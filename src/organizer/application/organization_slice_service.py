@@ -164,6 +164,7 @@ def build_internal_organization_projection(
         evaluations,
         snapshots,
         metadata_by_path,
+        standard_kept_paths=_standard_kept_paths(standards),
     )
     safe_moves = _safe_organization_moves(
         scan_result.report,
@@ -173,6 +174,7 @@ def build_internal_organization_projection(
         all_paths=all_paths,
         evaluations=evaluations,
         duplicate_paths=duplicate_paths,
+        standard_kept_paths=_standard_kept_paths(standards),
     )
     (
         recommended,
@@ -303,7 +305,10 @@ def _kept_by_standards(
         kept_paths.add(relative_path)
 
     for standard in standards.items:
-        if standard.preset_type != "legacy_ignored_term":
+        if standard.preset_type not in {
+            "legacy_ignored_term",
+            "keep_folder_unchanged",
+        } or not standard.active:
             continue
         for relative_path in standard.matched_relative_paths:
             if (
@@ -328,6 +333,8 @@ def _duplicate_choices(
     evaluations: dict[str, ActionableEligibility],
     snapshots: dict[str, ConsumerFileSnapshot],
     metadata_by_path: dict[str, FileMetadata],
+    *,
+    standard_kept_paths: frozenset[str] = frozenset(),
 ) -> tuple[
     tuple[ChoiceNeeded, ...],
     frozenset[str],
@@ -352,6 +359,7 @@ def _duplicate_choices(
                 for raw_path in files
                 if (path := _safe_relative_path(raw_path)) in snapshots
                 and evaluations[path].allowed
+                and path not in standard_kept_paths
             }
         )
         if len(eligible_paths) < 2:
@@ -416,6 +424,7 @@ def _safe_organization_moves(
     all_paths: set[str],
     evaluations: dict[str, ActionableEligibility],
     duplicate_paths: frozenset[str],
+    standard_kept_paths: frozenset[str] = frozenset(),
 ) -> tuple[_SafeMove, ...]:
     organization_review = build_organization_review(report)
     raw_items = organization_review.get("items")
@@ -430,6 +439,8 @@ def _safe_organization_moves(
         if source is None or destination is None or source == destination:
             continue
         if source not in metadata_by_path or source in duplicate_paths:
+            continue
+        if source in standard_kept_paths:
             continue
         if not evaluations[source].allowed:
             continue
@@ -463,6 +474,15 @@ def _safe_organization_moves(
             )
         )
     return tuple(sorted(set(moves), key=lambda move: (move.source, move.destination)))
+
+
+def _standard_kept_paths(standards: StandardsReadProjection) -> frozenset[str]:
+    return frozenset(
+        path
+        for standard in standards.items
+        if standard.active and standard.preset_type == "keep_folder_unchanged"
+        for path in standard.matched_relative_paths
+    )
 
 
 def _classify_organization_moves(

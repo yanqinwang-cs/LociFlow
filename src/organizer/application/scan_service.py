@@ -44,6 +44,7 @@ def scan_root(
     standards = build_standards_read_projection(
         organization_rules,
         anchor_decisions,
+        metadata_items,
     )
     resolved_root = root.resolve()
     summary_data = _mapping(report.get("summary"), "report summary")

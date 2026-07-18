@@ -108,6 +108,17 @@ class OrganizationExecutionCoordinator:
         with self._authorization_lock:
             return self._authorizations.get(authorization_id)
 
+    def has_available_movement_authorization(
+        self,
+        configured_root_identity: str,
+    ) -> bool:
+        with self._authorization_lock:
+            return any(
+                authorization.status == AUTHORIZATION_AVAILABLE
+                and authorization.configured_root_identity == configured_root_identity
+                for authorization in self._authorizations.values()
+            )
+
     def consume(self, authorization_id: str, *, consumed_at: str | None = None) -> bool:
         with self._authorization_lock:
             current = self._authorizations.get(authorization_id)

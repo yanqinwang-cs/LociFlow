@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import re
 import uuid
+from pathlib import Path
 
 from organizer.application.standards_read_models import (
     StandardsReadItem,
     StandardsReadProjection,
 )
 from organizer.grouping import ANCHOR_DECISION_IGNORED, AnchorDecision
+from organizer.models import FileMetadata
 from organizer.organization_rules import (
     DEFAULT_IGNORED_TERMS,
     ORGANIZATION_RULES_STATUS_LOADED,
@@ -15,6 +17,11 @@ from organizer.organization_rules import (
     ORGANIZATION_RULES_UNAVAILABLE_MESSAGE,
     OrganizationRules,
     OrganizationRulesLoadResult,
+    STANDARD_KEEP_FOLDER_UNCHANGED,
+    STANDARD_KEEP_MATCHING_FILES_TOGETHER,
+    STANDARD_LEGACY_ALIAS,
+    STANDARD_LEGACY_IGNORED_TERM,
+    StandardRecord,
     canonical_anchor,
     display_anchor,
     normalize_anchor,
@@ -33,6 +40,7 @@ _READ_ID_NAMESPACE = uuid.UUID("66378439-bc92-4ea5-a710-dbb8b7ad3103")
 def build_standards_read_projection(
     load_result: OrganizationRulesLoadResult,
     anchor_decisions: tuple[AnchorDecision, ...] = (),
+    metadata_items: tuple[FileMetadata, ...] = (),
 ) -> StandardsReadProjection:
     items = list(_built_in_items())
     if not load_result.available:
@@ -44,11 +52,18 @@ def build_standards_read_projection(
         )
 
     rules = load_result.require_rules()
-    if load_result.status == ORGANIZATION_RULES_STATUS_LOADED:
+    revision = 0
+    if load_result.catalog is not None:
+        revision = load_result.catalog.revision
+        items.extend(
+            _catalog_items(load_result.catalog.standards, anchor_decisions, metadata_items)
+        )
+    elif load_result.status == ORGANIZATION_RULES_STATUS_LOADED:
         items.extend(_legacy_rule_items(rules, anchor_decisions))
     return StandardsReadProjection(
         status="available",
         items=tuple(sorted(items, key=lambda item: (item.preset_type, item.name, item.id))),
+        revision=revision,
     )
 
 
@@ -173,7 +188,7 @@ def _legacy_item(
         f"{preset_type}\0{normalize_anchor(identity)}",
     )
     return StandardsReadItem(
-        id=f"standard-{standard_id}",
+        id=str(standard_id),
         name=name,
         description=description,
         active=True,
@@ -183,6 +198,102 @@ def _legacy_item(
         preset_type=preset_type,
         matched_relative_paths=matched_relative_paths,
     )
+
+
+def _catalog_items(
+    records: tuple[StandardRecord, ...],
+    anchor_decisions: tuple[AnchorDecision, ...],
+    metadata_items: tuple[FileMetadata, ...],
+) -> list[StandardsReadItem]:
+    return [
+        _catalog_item(record, anchor_decisions, metadata_items)
+        for record in records
+        if record.archived_at is None
+    ]
+
+
+def _catalog_item(
+    record: StandardRecord,
+    anchor_decisions: tuple[AnchorDecision, ...],
+    metadata_items: tuple[FileMetadata, ...],
+) -> StandardsReadItem:
+    scope_label = _scope_label(record)
+    matched_paths: tuple[str, ...] = ()
+    if record.type == STANDARD_KEEP_FOLDER_UNCHANGED:
+        name = f"Keep {scope_label} unchanged"
+        description = "Files in this folder stay where they are."
+        effect = "Matching files are filtered before organization choices are created."
+        matched_paths = tuple(
+            sorted(
+                item.relative_path.as_posix()
+                for item in metadata_items
+                if not item.is_dir and _record_applies_to_path(record, item.relative_path)
+            )
+        )
+    elif record.type == STANDARD_KEEP_MATCHING_FILES_TOGETHER:
+        value = record.parameter("matcher_value") or "matching"
+        name = f"Keep matching {value} files together"
+        description = f"Matching {value} files may be grouped together."
+        effect = "The matcher shapes deterministic grouping before suggestions are created."
+        canonical = normalize_anchor(value)
+        matched_paths = tuple(
+            sorted(
+                {
+                    file.relative_path.as_posix()
+                    for decision in anchor_decisions
+                    if normalize_anchor(decision.anchor) == canonical
+                    for file in decision.files
+                    if _record_applies_to_path(record, file.relative_path)
+                }
+            )
+        )
+    elif record.type == STANDARD_LEGACY_IGNORED_TERM:
+        value = record.parameter("term") or "matching"
+        name = f"Do not organize by {value}"
+        description = f"The label {value} is not used to group files."
+        effect = "Matching grouping suggestions are suppressed before a plan is created."
+        matched_paths = tuple(
+            sorted(
+                {
+                    file.relative_path.as_posix()
+                    for decision in anchor_decisions
+                    if decision.decision == ANCHOR_DECISION_IGNORED
+                    and normalize_anchor(decision.anchor) == normalize_anchor(value)
+                    for file in decision.files
+                }
+            )
+        )
+    else:
+        alias = record.parameter("alias") or "alias"
+        target = record.parameter("target") or "matching files"
+        name = f"Treat {alias} as {target}"
+        description = f"Matching {alias} labels are grouped as {target}."
+        effect = "The alias is resolved before deterministic grouping."
+    return StandardsReadItem(
+        id=record.id,
+        name=name,
+        description=description,
+        active=record.active,
+        mutable=True,
+        scope_label=scope_label,
+        effect_summary=effect,
+        preset_type=record.type,
+        attention_message=("Archived Standard" if record.archived_at is not None else None),
+        matched_relative_paths=matched_paths,
+    )
+
+
+def _scope_label(record: StandardRecord) -> str:
+    if record.scope.kind == "root" or record.scope.relative_path is None:
+        return "Selected folder"
+    return Path(record.scope.relative_path).name
+
+
+def _record_applies_to_path(record: StandardRecord, relative_path: Path) -> bool:
+    if record.scope.kind == "root" or record.scope.relative_path is None:
+        return True
+    scope = Path(record.scope.relative_path)
+    return relative_path == scope or scope in relative_path.parents
 
 
 def _display_token(value: str) -> str:

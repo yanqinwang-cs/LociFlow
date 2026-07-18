@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from threading import Lock
 
 from organizer.application.duplicate_bin_approval_service import (
@@ -42,6 +43,8 @@ class OrganizationDecisionStore:
     ) -> None:
         self._lock = Lock()
         self._sessions: dict[str, OrganizationDecisionSnapshot] = {}
+        self._invalidated_generations: set[tuple[Path, str]] = set()
+        self._observed_generations: set[tuple[Path, str]] = set()
         self._duplicate_bin_repository = duplicate_bin_repository
 
     def current(
@@ -51,6 +54,11 @@ class OrganizationDecisionStore:
         projection: InternalOrganizationProjection,
     ) -> OrganizationDecisionSnapshot:
         with self._lock:
+            self._reject_invalidated_generation(projection.root, scan.job_id)
+            if scan.job_id is not None:
+                self._observed_generations.add(
+                    (projection.root.resolve(), scan.job_id)
+                )
             stored = self._sessions.get(browser_session_id)
             if stored is not None and stored.session.scan_generation == scan.job_id:
                 return stored
@@ -229,6 +237,42 @@ class OrganizationDecisionStore:
                 raise OrganizationDecisionError("approved_plan_not_found")
             return current
 
+    def has_approved_plan(self, root: Path) -> bool:
+        resolved = root.resolve()
+        with self._lock:
+            return any(
+                snapshot.projection.root.resolve() == resolved
+                and snapshot.session.status == STATUS_READY_TO_MOVE
+                and snapshot.session.approved_plan is not None
+                for snapshot in self._sessions.values()
+            )
+
+    def invalidate_for_root(self, root: Path) -> None:
+        """Discard only non-approved planning state after a material Standards change."""
+        resolved = root.resolve()
+        with self._lock:
+            matching = [
+                session_id
+                for session_id, snapshot in self._sessions.items()
+                if snapshot.projection.root.resolve() == resolved
+            ]
+            if any(
+                self._sessions[session_id].session.status == STATUS_READY_TO_MOVE
+                for session_id in matching
+            ):
+                raise OrganizationDecisionError("active_plan_conflict")
+            self._invalidated_generations.update(
+                (observed_root, generation)
+                for observed_root, generation in self._observed_generations
+                if observed_root == resolved
+            )
+            for session_id in matching:
+                snapshot = self._sessions[session_id]
+                self._invalidated_generations.add(
+                    (resolved, snapshot.session.scan_generation)
+                )
+                self._sessions.pop(session_id, None)
+
     def _mutable_current(
         self,
         browser_session_id: str,
@@ -249,8 +293,8 @@ class OrganizationDecisionStore:
         self._validate_revision(current.session, expected_revision)
         return current
 
-    @staticmethod
     def _validate_generation(
+        self,
         scan: ScanJobSnapshot,
         projection: InternalOrganizationProjection,
         submitted: str,
@@ -261,6 +305,15 @@ class OrganizationDecisionStore:
             or submitted != scan.job_id
             or projection.scan_generation != scan.job_id
         ):
+            raise OrganizationDecisionError("scan_generation_mismatch")
+        self._reject_invalidated_generation(projection.root, scan.job_id)
+
+    def _reject_invalidated_generation(
+        self,
+        root: Path,
+        generation: str | None,
+    ) -> None:
+        if generation is not None and (root.resolve(), generation) in self._invalidated_generations:
             raise OrganizationDecisionError("scan_generation_mismatch")
 
     @staticmethod

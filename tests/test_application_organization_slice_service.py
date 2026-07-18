@@ -16,7 +16,13 @@ from organizer.application.organization_slice_service import (
 )
 from organizer.application.standards_read_models import OrganizationUnavailableError
 from organizer.application.scan_service import scan_root
+from organizer.application.standards_repository import StandardsRepository
+from organizer.application.standards_service import StandardsService
 from organizer.organization_rules import ORGANIZATION_RULES_RELATIVE_PATH
+from organizer.organization_rules import (
+    STANDARD_KEEP_FOLDER_UNCHANGED,
+    STANDARD_KEEP_MATCHING_FILES_TOGETHER,
+)
 
 
 COMPLETED_AT = datetime(2026, 7, 14, 10, 20, 30, tzinfo=timezone.utc)
@@ -204,6 +210,88 @@ class OrganizationSliceServiceTests(unittest.TestCase):
                     change.destination_folder.startswith("Organized/CS1010X/")
                     for change in projection.recommended_changes
                 )
+            )
+
+    def test_v2_keep_folder_filters_before_projection_and_is_kept_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            documents = root / "Documents"
+            documents.mkdir()
+            for folder in ("lectures", "recitations", "exams"):
+                (root / "Organized" / "CS1010X" / folder).mkdir(parents=True)
+            for name in (
+                "CS1010X lecture 1.pdf",
+                "CS1010X recitation 1.pdf",
+                "CS1010X finals 2026.pdf",
+            ):
+                (documents / name).write_text(name, encoding="utf-8")
+            initial_scan = scan_root(root)
+            folder = next(
+                item
+                for item in initial_scan.metadata_items
+                if item.relative_path == Path("Documents")
+            )
+            service = StandardsService(StandardsRepository(root))
+            preview = service.preview(
+                preset_type=STANDARD_KEEP_FOLDER_UNCHANGED,
+                scope=service.resolve_folder_scope(folder, scan_generation="scan-before"),
+                expected_revision=0,
+            )
+            service.save_preview(preview.preview_id, expected_revision=0)
+
+            fresh_scan = scan_root(root)
+            projection = build_read_only_organization_slice(
+                scan_result=fresh_scan,
+                scan_generation="scan-after",
+                completed_at=COMPLETED_AT,
+            )
+
+            self.assertFalse(projection.recommended_changes)
+            self.assertFalse(projection.choices_needed)
+            kept = [
+                item
+                for item in projection.kept_by_standards
+                if item.reason_code == "saved_standard_kept"
+            ]
+            self.assertEqual(len(kept), 3)
+            self.assertTrue(
+                all(item.standard.name == "Keep Documents unchanged" for item in kept)
+            )
+
+    def test_v2_keep_together_respects_its_scan_bound_folder_scope(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            documents = root / "Documents"
+            documents.mkdir()
+            for parent in (documents, root):
+                (parent / "CS1010X notes.txt").write_text("notes", encoding="utf-8")
+                (parent / "CS1010X slides.pdf").write_text("slides", encoding="utf-8")
+            initial_scan = scan_root(root)
+            folder = next(
+                item
+                for item in initial_scan.metadata_items
+                if item.relative_path == Path("Documents")
+            )
+            service = StandardsService(StandardsRepository(root))
+            preview = service.preview(
+                preset_type=STANDARD_KEEP_MATCHING_FILES_TOGETHER,
+                scope=service.resolve_folder_scope(folder, scan_generation="scan-before"),
+                matcher_kind="course_code",
+                matcher_value="CS1010X",
+                expected_revision=0,
+            )
+            service.save_preview(preview.preview_id, expected_revision=0)
+
+            fresh_scan = scan_root(root)
+
+            group = next(
+                item
+                for item in fresh_scan.report["project_groups"]
+                if item["group_name"] == "CS1010X"
+            )
+            self.assertEqual(
+                set(group["files"]),
+                {"Documents/CS1010X notes.txt", "Documents/CS1010X slides.pdf"},
             )
 
     def test_saved_alias_resolves_in_same_grouping_owner(self) -> None:
