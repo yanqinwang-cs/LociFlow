@@ -36,6 +36,7 @@ class StandardPreview:
     matcher_kind: str | None
     matcher_value: str | None
     expected_revision: int
+    name: str
     description: str
     scope_label: str
     effect_summary: str
@@ -55,4 +56,3 @@ class StandardsMutationResult:
     changed: bool
     fresh_scan_required: bool
     projection: StandardsReadProjection
-

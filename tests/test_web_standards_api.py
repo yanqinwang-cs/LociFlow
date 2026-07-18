@@ -57,7 +57,20 @@ class WebStandardsApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(unauthenticated.status_code, 403)
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.headers["cache-control"], "no-store")
-        self.assertEqual(set(response.json()), {"revision", "items"})
+        self.assertEqual(
+            set(response.json()),
+            {
+                "revision", "items", "presets", "scope_choices",
+                "creation_available", "creation_message",
+            },
+        )
+        self.assertEqual(
+            {item["id"] for item in response.json()["presets"]},
+            {"keep_folder_unchanged", "keep_matching_files_together"},
+        )
+        self.assertFalse(response.json()["creation_available"])
+        self.assertEqual(response.json()["scope_choices"], [])
+        self.assertIn("Check files", response.json()["creation_message"])
         self.assertTrue(response.json()["items"])
         expected_fields = {
             "id",

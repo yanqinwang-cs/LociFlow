@@ -727,6 +727,7 @@ function duplicateBinContract(state = null) {
 }
 
 function standardsContract(state = null) {
+  const builder = state?.builder || {};
   return {
     connected: Boolean(state),
     loadStatus: state?.loadStatus || "idle",
@@ -742,11 +743,26 @@ function standardsContract(state = null) {
       presetType: item.preset_type,
       attentionMessage: item.attention_message,
     })),
+    presets: (state?.presets || []).map((item) => ({ ...item })),
+    scopeChoices: (state?.scopeChoices || []).map((item) => ({ ...item })),
+    creationAvailable: Boolean(state?.creationAvailable),
+    creationMessage: state?.creationMessage || null,
     mutationPending: Boolean(state?.mutationPending),
     pendingStandardId: state?.pendingStandardId || null,
     errorMessage: state?.errorMessage || null,
     conflictMessage: state?.conflictMessage || null,
     freshScanRequired: Boolean(state?.freshScanRequired),
+    noticeMessage: state?.noticeMessage || null,
+    builder: {
+      open: Boolean(builder.open),
+      presetId: builder.presetId || "",
+      scopeId: builder.scopeId || "",
+      matcherKind: builder.matcherKind || "course_code",
+      matcherValue: builder.matcherValue || "",
+      status: builder.status || "idle",
+      preview: builder.preview ? { ...builder.preview } : null,
+      errorMessage: builder.errorMessage || null,
+    },
   };
 }
 

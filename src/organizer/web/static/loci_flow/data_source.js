@@ -124,6 +124,13 @@ const STANDARDS_ERROR_MESSAGES = Object.freeze({
   standards_storage_unavailable: "Standards could not be loaded.",
   unknown_standard: "This Standard is no longer available.",
   immutable_standard: "This built-in Standard cannot be paused.",
+  wrong_root_scope: "Check files again and choose the folder again.",
+  folder_scope_stale: "Check files again and choose the folder again.",
+  preview_expired: "This preview expired. Preview the Standard again.",
+  preview_superseded: "A newer preview is available. Preview the Standard again.",
+  invalid_preset: "Choose one of the available Standard types.",
+  invalid_matcher: "Enter a valid course or project code.",
+  duplicate_standard: "This Standard is already saved.",
 });
 
 export class OrganizationDataError extends Error {
@@ -903,13 +910,53 @@ function validateStandardItem(rawItem) {
   };
 }
 
+function validateStandardPreset(rawPreset) {
+  const preset = rawPreset && typeof rawPreset === "object" && !Array.isArray(rawPreset)
+    ? rawPreset
+    : null;
+  const expected = new Set(["id", "name", "description"]);
+  if (!preset || Object.keys(preset).length !== expected.size || Object.keys(preset).some((key) => !expected.has(key))) {
+    throw standardsContractError();
+  }
+  return {
+    id: requireStandardsText(preset.id),
+    name: requireStandardsText(preset.name),
+    description: requireStandardsText(preset.description),
+  };
+}
+
+function validateStandardScopeChoice(rawChoice) {
+  const choice = rawChoice && typeof rawChoice === "object" && !Array.isArray(rawChoice)
+    ? rawChoice
+    : null;
+  const expected = new Set(["id", "label", "kind"]);
+  if (
+    !choice
+    || Object.keys(choice).length !== expected.size
+    || Object.keys(choice).some((key) => !expected.has(key))
+    || !new Set(["root", "folder"]).has(choice.kind)
+  ) {
+    throw standardsContractError();
+  }
+  return {
+    id: requireStandardsText(choice.id),
+    label: requireStandardsText(choice.label),
+    kind: choice.kind,
+  };
+}
+
 export function validateStandardsResponse(rawPayload, { mutation = false } = {}) {
   const payload = rawPayload && typeof rawPayload === "object" && !Array.isArray(rawPayload)
     ? rawPayload
     : null;
-  const expected = new Set(mutation
-    ? ["revision", "items", "fresh_scan_required"]
-    : ["revision", "items"]);
+  const expected = new Set(mutation === "save"
+    ? ["revision", "items", "fresh_scan_required", "save_message"]
+    : mutation
+      ? ["revision", "items", "fresh_scan_required"]
+      : [
+        "revision", "items", "presets", "scope_choices",
+        "creation_available", "creation_message",
+      ]);
   if (!payload || Object.keys(payload).length !== expected.size || Object.keys(payload).some((key) => !expected.has(key))) {
     throw standardsContractError();
   }
@@ -926,10 +973,98 @@ export function validateStandardsResponse(rawPayload, { mutation = false } = {})
     ids.add(validated.id);
     return validated;
   });
+  if (!mutation) {
+    if (
+      !Array.isArray(payload.presets)
+      || !Array.isArray(payload.scope_choices)
+      || typeof payload.creation_available !== "boolean"
+      || (payload.creation_available
+        ? payload.creation_message !== null
+        : typeof payload.creation_message !== "string" || !payload.creation_message)
+    ) {
+      throw standardsContractError();
+    }
+    const presets = payload.presets.map(validateStandardPreset);
+    const presetIds = presets.map((preset) => preset.id);
+    if (
+      presets.length !== 2
+      || new Set(presetIds).size !== 2
+      || !presetIds.includes("keep_folder_unchanged")
+      || !presetIds.includes("keep_matching_files_together")
+    ) {
+      throw standardsContractError();
+    }
+    const scopeChoices = payload.scope_choices.map(validateStandardScopeChoice);
+    const scopeIds = new Set();
+    for (const choice of scopeChoices) {
+      if (scopeIds.has(choice.id)) throw standardsContractError();
+      scopeIds.add(choice.id);
+    }
+    if (
+      payload.creation_available
+      && scopeChoices.filter((choice) => choice.kind === "root").length !== 1
+    ) {
+      throw standardsContractError();
+    }
+    return deepFreeze({
+      revision: payload.revision,
+      items,
+      presets,
+      scope_choices: scopeChoices,
+      creation_available: payload.creation_available,
+      creation_message: payload.creation_message,
+    });
+  }
+  if (mutation === "save") requireStandardsText(payload.save_message);
   return deepFreeze({
     revision: payload.revision,
     items,
-    ...(mutation ? { fresh_scan_required: payload.fresh_scan_required } : {}),
+    fresh_scan_required: payload.fresh_scan_required,
+    ...(mutation === "save" ? { save_message: payload.save_message } : {}),
+  });
+}
+
+export function validateStandardPreviewResponse(rawPayload) {
+  const payload = rawPayload && typeof rawPayload === "object" && !Array.isArray(rawPayload)
+    ? rawPayload
+    : null;
+  const topExpected = new Set(["preview_token", "expires_at", "preview"]);
+  const previewExpected = new Set([
+    "name", "description", "scope_label", "effect_summary", "matching_files",
+    "fresh_scan_required", "attention_message",
+  ]);
+  const preview = payload?.preview;
+  if (
+    !payload
+    || Object.keys(payload).length !== topExpected.size
+    || Object.keys(payload).some((key) => !topExpected.has(key))
+    || !preview
+    || typeof preview !== "object"
+    || Array.isArray(preview)
+    || Object.keys(preview).length !== previewExpected.size
+    || Object.keys(preview).some((key) => !previewExpected.has(key))
+    || !Number.isSafeInteger(preview.matching_files)
+    || preview.matching_files < 0
+    || typeof preview.fresh_scan_required !== "boolean"
+  ) {
+    throw standardsContractError();
+  }
+  const expiresAt = requireStandardsText(payload.expires_at);
+  if (!/^\d{4}-\d{2}-\d{2}T/.test(expiresAt) || Number.isNaN(Date.parse(expiresAt))) {
+    throw standardsContractError();
+  }
+  return deepFreeze({
+    preview_token: requireStandardsText(payload.preview_token),
+    expires_at: expiresAt,
+    preview: {
+      name: requireStandardsText(preview.name),
+      description: requireStandardsText(preview.description),
+      scope_label: requireStandardsText(preview.scope_label),
+      effect_summary: requireStandardsText(preview.effect_summary),
+      matching_files: preview.matching_files,
+      fresh_scan_required: preview.fresh_scan_required,
+      attention_message: requireStandardsText(preview.attention_message, { nullable: true }),
+    },
   });
 }
 
@@ -1135,6 +1270,18 @@ export function createFixtureDataSource(options = {}) {
       );
     },
     async setStandardActive() {
+      throw new StandardsDataError(
+        "standards_unavailable",
+        "Live Standards cannot be changed in sample mode.",
+      );
+    },
+    async previewStandardCreation() {
+      throw new StandardsDataError(
+        "standards_unavailable",
+        "Live Standards cannot be changed in sample mode.",
+      );
+    },
+    async saveStandardCreation() {
       throw new StandardsDataError(
         "standards_unavailable",
         "Live Standards cannot be changed in sample mode.",
@@ -1613,7 +1760,99 @@ export function createBackendDataSource({
         ),
         { mutation: true },
       );
-      standardsState = deepFreeze({ revision: result.revision, items: result.items });
+      standardsState = deepFreeze({
+        ...standardsState,
+        revision: result.revision,
+        items: result.items,
+      });
+      return result;
+    } catch (error) {
+      throw normalizeStandardsError(error);
+    } finally {
+      standardsMutationPending = false;
+    }
+  }
+
+  async function previewStandardCreation(input, expectedRevision) {
+    assertActive();
+    if (standardsMutationPending) {
+      throw new StandardsDataError(
+        "standards_mutation_in_progress",
+        "Another Standard change is being saved.",
+      );
+    }
+    const preset = standardsState?.presets.find((item) => item.id === input?.presetId);
+    const scope = standardsState?.scope_choices.find((item) => item.id === input?.scopeId);
+    const matching = input?.presetId === "keep_matching_files_together";
+    if (
+      !standardsState
+      || !standardsState.creation_available
+      || standardsState.revision !== expectedRevision
+      || !preset
+      || !scope
+      || (matching && !new Set(["course_code", "project_code"]).has(input?.matcherKind))
+      || (matching && (typeof input?.matcherValue !== "string" || !input.matcherValue.trim()))
+    ) {
+      throw standardsContractError();
+    }
+    standardsMutationPending = true;
+    try {
+      if (typeof apiClient.previewStandardCreation !== "function") {
+        throw new TypeError("Standards API is unavailable");
+      }
+      return validateStandardPreviewResponse(
+        await apiClient.previewStandardCreation(
+          {
+            presetType: preset.id,
+            scopeId: scope.id,
+            expectedRevision,
+            ...(matching
+              ? { matcherKind: input.matcherKind, matcherValue: input.matcherValue }
+              : {}),
+          },
+          csrfToken,
+        ),
+      );
+    } catch (error) {
+      throw normalizeStandardsError(error);
+    } finally {
+      standardsMutationPending = false;
+    }
+  }
+
+  async function saveStandardCreation(previewToken, expectedRevision) {
+    assertActive();
+    if (standardsMutationPending) {
+      throw new StandardsDataError(
+        "standards_mutation_in_progress",
+        "Another Standard change is being saved.",
+      );
+    }
+    if (
+      !standardsState
+      || standardsState.revision !== expectedRevision
+      || typeof previewToken !== "string"
+      || !previewToken
+    ) {
+      throw standardsContractError();
+    }
+    standardsMutationPending = true;
+    try {
+      if (typeof apiClient.saveStandardCreation !== "function") {
+        throw new TypeError("Standards API is unavailable");
+      }
+      const result = validateStandardsResponse(
+        await apiClient.saveStandardCreation(
+          { previewToken, expectedRevision },
+          csrfToken,
+        ),
+        { mutation: "save" },
+      );
+      standardsState = deepFreeze({
+        ...standardsState,
+        revision: result.revision,
+        items: result.items,
+      });
       return result;
     } catch (error) {
       throw normalizeStandardsError(error);
@@ -1712,6 +1951,8 @@ export function createBackendDataSource({
     loadActivity,
     loadStandards,
     setStandardActive,
+    previewStandardCreation,
+    saveStandardCreation,
     previewUndo,
     confirmUndo,
     dispose,

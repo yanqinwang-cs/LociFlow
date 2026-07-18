@@ -390,9 +390,10 @@ function productionStandardRow(standard, standards) {
 
 function renderProductionStandards(store) {
   const standards = store.standards;
-  const add = button("Add standard", "none", {
-    disabled: true,
-    attrs: 'aria-label="Add standard is not available"',
+  const add = button("Add standard", standards.creationAvailable ? "open-standard-builder" : "none", {
+    primary: standards.creationAvailable,
+    disabled: !standards.creationAvailable || standards.mutationPending,
+    attrs: standards.creationAvailable ? "" : 'aria-label="Add standard is not available"',
   });
   let content;
   if (standards.loadStatus === "loading" || standards.loadStatus === "idle") {
@@ -410,7 +411,13 @@ function renderProductionStandards(store) {
   const fresh = standards.freshScanRequired
     ? '<p class="activity-notice" role="status">Check files again before organizing with the updated Standards.</p>'
     : "";
-  return `${pageHeader("Standards", "Reusable instructions for future organization.", add, store.scope.displayName)}${conflict}${fresh}<section class="standards-list" aria-label="Saved standards">${content}</section>`;
+  const availability = !standards.creationAvailable && standards.creationMessage
+    ? `<p class="activity-notice" role="status">${escapeHtml(standards.creationMessage)}</p>`
+    : "";
+  const notice = standards.noticeMessage
+    ? `<p class="activity-notice" role="status">${escapeHtml(standards.noticeMessage)}</p>`
+    : "";
+  return `${pageHeader("Standards", "Reusable instructions for future organization.", add, store.scope.displayName)}${availability}${conflict}${notice}${fresh}<section class="standards-list" aria-label="Saved standards">${content}</section>`;
 }
 
 function suggestedStandards(state) {
@@ -534,7 +541,42 @@ function renderContractDialog(model, type, payload) {
   if (type === "destination") return contractDestinationDialog(model, payload);
   if (type === "duplicate") return contractDuplicateDialog(model, payload);
   if (type === "approval") return contractApprovalDialog(model);
+  if (type === "standard-builder") return contractStandardBuilderDialog(model);
   return null;
+}
+
+function contractStandardBuilderDialog(model) {
+  const standards = model.standards;
+  const builder = standards.builder;
+  const pending = new Set(["preview_loading", "save_pending"]).has(builder.status);
+  const matching = builder.presetId === "keep_matching_files_together";
+  const complete = Boolean(
+    builder.presetId
+    && builder.scopeId
+    && (!matching || (builder.matcherKind && builder.matcherValue.trim())),
+  );
+  const presetOptions = standards.presets.map((preset) => (
+    `<option value="${escapeHtml(preset.id)}"${preset.id === builder.presetId ? " selected" : ""}>${escapeHtml(preset.name)}</option>`
+  )).join("");
+  const scopeOptions = standards.scopeChoices.map((scope) => (
+    `<option value="${escapeHtml(scope.id)}"${scope.id === builder.scopeId ? " selected" : ""}>${escapeHtml(scope.label)}</option>`
+  )).join("");
+  const matcherFields = matching
+    ? `<div class="builder-grid"><label class="builder-field"><span>Matcher type</span><select id="standard-matcher-kind" data-standard-builder-field="matcher-kind"${pending ? " disabled" : ""}><option value="course_code"${builder.matcherKind === "course_code" ? " selected" : ""}>Course code</option><option value="project_code"${builder.matcherKind === "project_code" ? " selected" : ""}>Project code</option></select></label><label class="builder-field"><span>Exact code</span><input id="standard-matcher-value" data-standard-builder-field="matcher-value" type="text" maxlength="128" autocomplete="off" value="${escapeHtml(builder.matcherValue)}"${pending ? " disabled" : ""}></label></div>`
+    : "";
+  const preview = builder.preview
+    ? `<section class="interpretation-result" aria-label="Standard preview"><h3>${escapeHtml(builder.preview.name)}</h3><p>${escapeHtml(builder.preview.description)}</p><p><strong>Applies to:</strong> ${escapeHtml(builder.preview.scope_label)}</p><p>${escapeHtml(builder.preview.effect_summary)}</p><p><strong>${builder.preview.matching_files}</strong> ${builder.preview.matching_files === 1 ? "current file matches" : "current files match"}.</p>${builder.preview.fresh_scan_required ? "<p>Check files again after saving.</p>" : ""}${builder.preview.attention_message ? `<p role="alert">${escapeHtml(builder.preview.attention_message)}</p>` : ""}</section>`
+    : "";
+  const error = builder.errorMessage
+    ? `<p class="activity-notice" role="alert">${escapeHtml(builder.errorMessage)}</p>`
+    : "";
+  return {
+    eyebrow: "Guided builder",
+    title: "Add standard",
+    description: "Choose one deterministic instruction, preview its current effect, then save it.",
+    content: `<div class="suggestion-editor"${pending ? ' aria-busy="true"' : ""}><label class="builder-field"><span>Standard type</span><select id="standard-preset" data-standard-builder-field="preset"${pending ? " disabled" : ""}><option value="">Choose a Standard type</option>${presetOptions}</select></label><label class="builder-field"><span>Folder or scope</span><select id="standard-scope" data-standard-builder-field="scope"${pending ? " disabled" : ""}><option value="">Choose where it applies</option>${scopeOptions}</select></label>${matcherFields}${error}${preview}</div>`,
+    actions: `${button("Cancel", "close-dialog", { disabled: pending })}${button(pending && builder.status === "preview_loading" ? "Previewing…" : "Preview", "preview-standard", { disabled: pending || !complete })}${button(pending && builder.status === "save_pending" ? "Saving…" : "Save standard", "save-standard", { primary: true, disabled: pending || builder.status !== "preview_ready" || !builder.preview })}`,
+  };
 }
 
 export function renderDialog(store, type, payload = {}) {

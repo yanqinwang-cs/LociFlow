@@ -48,6 +48,7 @@ from organizer.scope import is_protected_context_path
 
 _MIGRATION_ID_NAMESPACE = uuid.UUID("66378439-bc92-4ea5-a710-dbb8b7ad3103")
 _COURSE_CODE = re.compile(r"^[A-Za-z]{2,4}\d{3,4}[A-Za-z]?$")
+_PROJECT_CODE = re.compile(r"^[A-Za-z][A-Za-z0-9]*(?:[-_][A-Za-z0-9]+)*$")
 
 
 class StandardsService:
@@ -76,12 +77,17 @@ class StandardsService:
         self._additional_plan_blocker = additional_plan_blocker
         self._now = now or (lambda: datetime.now(timezone.utc))
         self._previews: dict[str, StandardPreview] = {}
-        self._latest_preview_id: str | None = None
+        self._preview_owners: dict[str, str] = {}
+        self._latest_preview_ids: dict[str, str] = {}
         self._saved_previews: dict[str, StandardsMutationResult] = {}
 
     def list_standards(self) -> StandardsReadProjection:
         snapshot = self._load()
         return build_standards_read_projection(snapshot.load_result)
+
+    def ensure_creation_available(self) -> None:
+        self._load()
+        self._ensure_mutation_allowed()
 
     def resolve_root_scope(self, *, scan_generation: str | None = None) -> ResolvedStandardScope:
         return ResolvedStandardScope(
@@ -119,9 +125,10 @@ class StandardsService:
         matcher_kind: str | None = None,
         matcher_value: str | None = None,
         scan_result: ScanApplicationResult | None = None,
+        owner_key: str | None = None,
     ) -> StandardPreview:
         if preset_type not in WRITABLE_STANDARD_TYPES:
-            raise StandardsApplicationError("unknown_standard")
+            raise StandardsApplicationError("invalid_preset")
         snapshot = self._load()
         if snapshot.revision != expected_revision:
             raise StandardsApplicationError("standard_revision_mismatch")
@@ -139,7 +146,7 @@ class StandardsService:
         conflicts = _conflicting_records(catalog.standards, provisional)
         issued = _aware(self._now())
         preview_id = str(uuid.uuid4())
-        description, scope_label, effect = _preview_copy(provisional)
+        name, description, scope_label, effect = _preview_copy(provisional)
         preview = StandardPreview(
             preview_id=preview_id,
             preset_type=preset_type,
@@ -147,6 +154,7 @@ class StandardsService:
             matcher_kind=matcher_kind,
             matcher_value=parameters.get("matcher_value"),
             expected_revision=expected_revision,
+            name=name,
             description=description,
             scope_label=scope_label,
             effect_summary=effect,
@@ -163,8 +171,10 @@ class StandardsService:
             issued_at=issued.isoformat(),
             expires_at=(issued + timedelta(seconds=PREVIEW_LIFETIME_SECONDS)).isoformat(),
         )
+        owner = owner_key or self.repository.configured_root_identity
         self._previews[preview_id] = preview
-        self._latest_preview_id = preview_id
+        self._preview_owners[preview_id] = owner
+        self._latest_preview_ids[owner] = preview_id
         return preview
 
     def save_preview(
@@ -172,11 +182,15 @@ class StandardsService:
         preview_id: str,
         *,
         expected_revision: int,
+        owner_key: str | None = None,
     ) -> StandardsMutationResult:
+        owner = owner_key or self.repository.configured_root_identity
+        if self._preview_owners.get(preview_id) != owner:
+            raise StandardsApplicationError("preview_expired")
         previous = self._saved_previews.get(preview_id)
         if previous is not None:
             return previous
-        preview = self._validated_preview(preview_id, expected_revision)
+        preview = self._validated_preview(preview_id, expected_revision, owner)
         self._ensure_mutation_allowed()
         snapshot = self._load()
         if snapshot.revision != expected_revision:
@@ -293,11 +307,18 @@ class StandardsService:
             projection=self.list_standards(),
         )
 
-    def _validated_preview(self, preview_id: str, expected_revision: int) -> StandardPreview:
+    def _validated_preview(
+        self,
+        preview_id: str,
+        expected_revision: int,
+        owner_key: str,
+    ) -> StandardPreview:
         preview = self._previews.get(preview_id)
         if preview is None:
             raise StandardsApplicationError("preview_expired")
-        if self._latest_preview_id != preview_id:
+        if self._preview_owners.get(preview_id) != owner_key:
+            raise StandardsApplicationError("preview_expired")
+        if self._latest_preview_ids.get(owner_key) != preview_id:
             raise StandardsApplicationError("preview_superseded")
         if preview.expected_revision != expected_revision:
             raise StandardsApplicationError("standard_revision_mismatch")
@@ -483,14 +504,18 @@ def _proposal_parameters(
 ) -> dict[str, str]:
     if preset_type == STANDARD_KEEP_FOLDER_UNCHANGED:
         if matcher_kind is not None or matcher_value is not None:
-            raise StandardsApplicationError("standard_conflict")
+            raise StandardsApplicationError("invalid_matcher")
         return {}
     if matcher_kind not in STANDARD_MATCHER_KINDS:
-        raise StandardsApplicationError("standard_conflict")
+        raise StandardsApplicationError("invalid_matcher")
     try:
         value = normalize_matcher_value(matcher_value)
     except ValueError as error:
-        raise StandardsApplicationError("standard_conflict") from error
+        raise StandardsApplicationError("invalid_matcher") from error
+    if matcher_kind == "course_code" and _COURSE_CODE.fullmatch(value) is None:
+        raise StandardsApplicationError("invalid_matcher")
+    if matcher_kind == "project_code" and _PROJECT_CODE.fullmatch(value) is None:
+        raise StandardsApplicationError("invalid_matcher")
     return {"matcher_kind": matcher_kind, "matcher_value": value}
 
 
@@ -508,7 +533,7 @@ def _conflicting_records(
     return conflicting_standard_records(records, candidate)
 
 
-def _preview_copy(record: StandardRecord) -> tuple[str, str, str]:
+def _preview_copy(record: StandardRecord) -> tuple[str, str, str, str]:
     scope_label = (
         "Selected folder"
         if record.scope.kind == "root"
@@ -517,14 +542,16 @@ def _preview_copy(record: StandardRecord) -> tuple[str, str, str]:
     if record.type == STANDARD_KEEP_FOLDER_UNCHANGED:
         return (
             f"Keep {scope_label} unchanged",
+            "Files in this folder stay where they are.",
             scope_label,
-            "Files in this folder will be filtered before organization choices are created.",
+            "Files in this folder will stay out of organization suggestions.",
         )
     value = record.parameter("matcher_value") or "matching"
     return (
         f"Keep matching {value} files together",
+        f"Files matching {value} will be treated as one group.",
         scope_label,
-        "Matching files will shape deterministic grouping before suggestions are created.",
+        "Matching files will stay grouped when organization suggestions are prepared.",
     )
 
 

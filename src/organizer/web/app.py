@@ -43,6 +43,7 @@ from organizer.application.organization_undo_repository import (
 )
 from organizer.application.standards_repository import StandardsRepository
 from organizer.application.standards_service import StandardsService
+from organizer.web.standards_creation_store import StandardsCreationStore
 from organizer.web.security import (
     LaunchTokenGate,
     SecurityHeadersMiddleware,
@@ -106,6 +107,7 @@ def create_app(config: WebAppConfig) -> FastAPI:
         duplicate_bin_operation_repository=app.state.duplicate_bin_operations,
         duplicate_bin_restore_repository=app.state.duplicate_bin_restores,
     )
+    app.state.standards_creation = StandardsCreationStore(config.root)
     app.include_router(create_home_router(templates))
     app.include_router(create_consumer_router(templates))
     app.include_router(create_loci_flow_router(templates))

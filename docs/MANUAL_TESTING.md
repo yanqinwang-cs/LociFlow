@@ -879,6 +879,45 @@ QUIT WITHOUT SAVING
 
 Expected outcome: help is grouped by purpose; invalid input names the failed command or argument; actual decision changes set `unsaved decision changes` to `yes`; view-only commands do not change that state; a wrong quit confirmation keeps the session open; save writes a collision-safe reviewed-plan sibling and clears the indicator; the final exact quit confirmation discards only the later in-memory decision changes. The resumed input remains unchanged, and no operation log or file movement is produced by help, view, conflicts, decision editing, save, or quit.
 
+## Loci Flow 1.0F-D Guided Standards Creation
+
+Use only this disposable fixture:
+
+```bash
+SMOKE_ROOT="/tmp/loci-flow-f-d-standards"
+rm -rf "$SMOKE_ROOT"
+mkdir -p "$SMOKE_ROOT/Keep-Unchanged"
+mkdir -p "$SMOKE_ROOT/Course-Files"
+mkdir -p "$SMOKE_ROOT/Project-Files"
+mkdir -p "$SMOKE_ROOT/AI_Review/config"
+printf "keep\n" > "$SMOKE_ROOT/Keep-Unchanged/reference.txt"
+printf "notes\n" > "$SMOKE_ROOT/Course-Files/CS1010X-notes.txt"
+printf "slides\n" > "$SMOKE_ROOT/Course-Files/CS1010X-slides.pdf"
+printf "plan\n" > "$SMOKE_ROOT/Project-Files/BootAI-plan.txt"
+printf "report\n" > "$SMOKE_ROOT/Project-Files/BootAI-report.pdf"
+printf '%s\n' '{"version":1,"locked_anchors":["CS2020"],"ignored_terms":["summary"]}' \
+  > "$SMOKE_ROOT/AI_Review/config/organization_rules.json"
+```
+
+Launch the local authenticated app with `SMOKE_ROOT` as its selected root, then:
+
+1. Choose **Check files**, open **Standards**, and choose **Add standard**.
+2. Choose **Keep a folder unchanged**, choose **Keep-Unchanged**, preview, and save.
+3. Choose **Check again** and verify the folder's file is shown as kept by Standards rather than as a movement recommendation.
+4. Return to **Standards**, add **Keep matching files together**, choose **Course code**, enter `CS1010X`, preview, and save.
+5. Choose **Check again** and verify the course files use the deterministic grouping result.
+6. Repeat the matching preset with **Project code** and `BootAI`, then check again and verify its grouping.
+7. Restart the app against the same disposable root and verify the migrated v1 Standard plus the newly saved Standards remain listed.
+8. Approve an organization plan, return to **Standards**, and verify adding another Standard is blocked without altering the approved plan.
+9. Open **Activity** and verify none of the preview, save, or activation actions created an Activity entry.
+
+At each preview, verify only a safe scope label, effect, and current match count
+are shown. No filesystem path, JSON editor, regex or glob control, Standard ID,
+catalog revision, or preview token should be visible. Saving must show that a new
+Check is required and must not start that Check automatically.
+
+Delete the disposable root when acceptance is complete.
+
 ## Final Git Hygiene Check
 
 From the repository root:

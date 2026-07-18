@@ -12,6 +12,7 @@ const SCAN_URL = "/scan?surface=home";
 const ACTIVITY_URL = "/api/activity";
 const STANDARDS_URL = "/api/standards";
 const STANDARDS_STATE_URL = "/api/standards/state";
+const STANDARDS_PREVIEW_URL = "/api/standards/preview";
 const MOVEMENT_CONFIRMATION = "MOVE APPROVED FILES";
 const UNDO_CONFIRMATION = "UNDO FILE MOVE";
 const DUPLICATE_BIN_MOVEMENT_CONFIRMATION = "MOVE COPIES TO DUPLICATE BIN";
@@ -276,6 +277,65 @@ export async function setStandardActive(
   );
 }
 
+export async function previewStandardCreation(
+  payload,
+  fetchImpl = defaultFetch,
+  csrfToken,
+) {
+  const presetType = payload?.presetType;
+  if (
+    !new Set(["keep_folder_unchanged", "keep_matching_files_together"]).has(presetType)
+    || typeof payload.scopeId !== "string"
+    || !payload.scopeId
+    || !Number.isSafeInteger(payload.expectedRevision)
+    || payload.expectedRevision < 0
+  ) {
+    throw new LociFlowApiError("invalid_standards_contract", "Standards information is invalid.");
+  }
+  const fields = {
+    csrf_token: requiredToken(csrfToken),
+    expected_revision: String(payload.expectedRevision),
+    preset_type: presetType,
+    scope_id: payload.scopeId,
+  };
+  if (presetType === "keep_matching_files_together") {
+    if (
+      !new Set(["course_code", "project_code"]).has(payload.matcherKind)
+      || typeof payload.matcherValue !== "string"
+      || !payload.matcherValue.trim()
+    ) {
+      throw new LociFlowApiError("invalid_standards_contract", "Standards information is invalid.");
+    }
+    fields.matcher_kind = payload.matcherKind;
+    fields.matcher_value = payload.matcherValue;
+  }
+  return postJson(STANDARDS_PREVIEW_URL, fields, fetchImpl);
+}
+
+export async function saveStandardCreation(
+  payload,
+  fetchImpl = defaultFetch,
+  csrfToken,
+) {
+  if (
+    typeof payload?.previewToken !== "string"
+    || !payload.previewToken
+    || !Number.isSafeInteger(payload.expectedRevision)
+    || payload.expectedRevision < 0
+  ) {
+    throw new LociFlowApiError("invalid_standards_contract", "Standards information is invalid.");
+  }
+  return postJson(
+    STANDARDS_URL,
+    {
+      csrf_token: requiredToken(csrfToken),
+      expected_revision: String(payload.expectedRevision),
+      preview_token: payload.previewToken,
+    },
+    fetchImpl,
+  );
+}
+
 function requiredServerId(value, code = "invalid_duplicate_bin_contract") {
   if (!isCanonicalOperationId(value)) {
     throw new LociFlowApiError(code, "Duplicate Bin information is invalid.");
@@ -459,6 +519,12 @@ export function createLociFlowApiClient(fetchImpl = defaultFetch) {
     getStandards: () => getStandards(fetchImpl),
     setStandardActive: (payload, csrfToken) => (
       setStandardActive(payload, fetchImpl, csrfToken)
+    ),
+    previewStandardCreation: (payload, csrfToken) => (
+      previewStandardCreation(payload, fetchImpl, csrfToken)
+    ),
+    saveStandardCreation: (payload, csrfToken) => (
+      saveStandardCreation(payload, fetchImpl, csrfToken)
     ),
     previewActivityUndo: (operationId, csrfToken) => (
       previewActivityUndo(operationId, fetchImpl, csrfToken)

@@ -217,6 +217,65 @@ class StandardsServiceTests(unittest.TestCase):
                         expected_revision=0,
                     )
 
+            for value in ("Boot*", "Boot.+", "../Boot", "Boot AI"):
+                with self.subTest(project_value=value), self.assertRaisesRegex(
+                    StandardsApplicationError, "invalid_matcher"
+                ):
+                    service.preview(
+                        preset_type=STANDARD_KEEP_MATCHING_FILES_TOGETHER,
+                        scope=service.resolve_root_scope(),
+                        matcher_kind="project_code",
+                        matcher_value=value,
+                        expected_revision=0,
+                    )
+
+    def test_previews_are_owned_and_superseded_per_browser_session(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            service = StandardsService(StandardsRepository(Path(directory)))
+            first_session = service.preview(
+                preset_type=STANDARD_KEEP_MATCHING_FILES_TOGETHER,
+                scope=service.resolve_root_scope(),
+                matcher_kind="project_code",
+                matcher_value="BootAI",
+                expected_revision=0,
+                owner_key="session-one",
+            )
+            second_session = service.preview(
+                preset_type=STANDARD_KEEP_MATCHING_FILES_TOGETHER,
+                scope=service.resolve_root_scope(),
+                matcher_kind="project_code",
+                matcher_value="EvoSim",
+                expected_revision=0,
+                owner_key="session-two",
+            )
+            newer_first_session = service.preview(
+                preset_type=STANDARD_KEEP_MATCHING_FILES_TOGETHER,
+                scope=service.resolve_root_scope(),
+                matcher_kind="project_code",
+                matcher_value="LociFlow",
+                expected_revision=0,
+                owner_key="session-one",
+            )
+
+            with self.assertRaisesRegex(StandardsApplicationError, "preview_expired"):
+                service.save_preview(
+                    second_session.preview_id,
+                    expected_revision=0,
+                    owner_key="session-one",
+                )
+            with self.assertRaisesRegex(StandardsApplicationError, "preview_superseded"):
+                service.save_preview(
+                    first_session.preview_id,
+                    expected_revision=0,
+                    owner_key="session-one",
+                )
+            result = service.save_preview(
+                newer_first_session.preview_id,
+                expected_revision=0,
+                owner_key="session-one",
+            )
+            self.assertTrue(result.created)
+
     def test_migrated_ignored_term_conflicts_with_new_matching_standard(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -336,6 +395,8 @@ class StandardsServiceTests(unittest.TestCase):
             decisions.approved = True
             with self.assertRaisesRegex(StandardsApplicationError, "active_plan_conflict"):
                 service.save_preview(preview.preview_id, expected_revision=0)
+            self.assertTrue(decisions.approved)
+            self.assertEqual(decisions.invalidations, 0)
             decisions.approved = False
             result = service.save_preview(preview.preview_id, expected_revision=0)
 

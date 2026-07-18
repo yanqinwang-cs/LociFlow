@@ -18,6 +18,24 @@ LOCI = ROOT / "src" / "organizer" / "web" / "static" / "loci_flow"
 def _standards() -> dict[str, object]:
     return {
         "revision": 7,
+        "presets": [
+            {
+                "id": "keep_folder_unchanged",
+                "name": "Keep a folder unchanged",
+                "description": "Files in this folder stay where they are.",
+            },
+            {
+                "id": "keep_matching_files_together",
+                "name": "Keep matching files together",
+                "description": "Files with one course or project code stay grouped.",
+            },
+        ],
+        "scope_choices": [
+            {"id": "scope-root", "label": "Selected folder", "kind": "root"},
+            {"id": "scope-documents", "label": "Documents", "kind": "folder"},
+        ],
+        "creation_available": True,
+        "creation_message": None,
         "items": [
             {
                 "id": "builtin-protect-project-folders",
@@ -140,7 +158,7 @@ class LociFlowStandardsAdapterTests(unittest.TestCase):
             let secondError=null;
             try{await source.setStandardActive(standardsPayload.items[1].id,false,7);}catch(error){secondError=error.code;}
             const updated=clone(standardsPayload); updated.revision=8; updated.items[1].active=false;
-            resolveMutation({...updated,fresh_scan_required:true});
+            resolveMutation({revision:updated.revision,items:updated.items,fresh_scan_required:true});
             const result=await first;
             const malformed=clone(standardsPayload); malformed.items[0].relative_path="private/file.txt";
             let unsafeRejected=false;
@@ -174,10 +192,10 @@ class LociFlowStandardsAdapterTests(unittest.TestCase):
               const model=buildStandardsViewModel(source);
               return {model,html:renderRoute(model,"standards")};
             };
-            const loading=project({loadStatus:"loading",revision:null,items:[]});
-            const ready=project({loadStatus:"ready",revision:7,items:clone(standardsPayload.items),mutationPending:false,freshScanRequired:false});
-            const pending=project({loadStatus:"ready",revision:7,items:clone(standardsPayload.items),mutationPending:true,pendingStandardId:standardsPayload.items[1].id,freshScanRequired:true});
-            const error=project({loadStatus:"error",revision:null,items:[],errorMessage:"Standards could not be loaded."});
+            const loading=project({loadStatus:"loading",revision:null,items:[],presets:[],scopeChoices:[],creationAvailable:false});
+            const ready=project({loadStatus:"ready",revision:7,items:clone(standardsPayload.items),presets:clone(standardsPayload.presets),scopeChoices:clone(standardsPayload.scope_choices),creationAvailable:true,mutationPending:false,freshScanRequired:false});
+            const pending=project({loadStatus:"ready",revision:7,items:clone(standardsPayload.items),presets:clone(standardsPayload.presets),scopeChoices:clone(standardsPayload.scope_choices),creationAvailable:true,mutationPending:true,pendingStandardId:standardsPayload.items[1].id,freshScanRequired:true});
+            const error=project({loadStatus:"error",revision:null,items:[],presets:[],scopeChoices:[],creationAvailable:false,errorMessage:"Standards could not be loaded."});
             console.log(JSON.stringify({loading:loading.html,ready:ready.html,pending:pending.html,error:error.html,readyModel:ready.model.standards,pendingOrganization:pending.model.organization}));
             """,
             "\n".join(
@@ -214,8 +232,7 @@ class LociFlowStandardsAdapterTests(unittest.TestCase):
         ):
             self.assertNotIn(forbidden, result["ready"])
         self.assertNotIn('data-action="archive', result["ready"])
-        self.assertIn('data-action="none"', result["ready"])
-        self.assertIn("disabled", result["ready"])
+        self.assertIn('data-action="open-standard-builder"', result["ready"])
         self.assertEqual(result["ready"].count("data-standard-scope"), 3)
         self.assertEqual(result["ready"].count("data-standard-effect"), 3)
         self.assertNotIn("foldersProject files", result["ready"])
@@ -239,7 +256,7 @@ class LociFlowStandardsAdapterTests(unittest.TestCase):
               destinationDrafts:{old:"x"},duplicateDrafts:{old:"x"},workflowOverride:null,
               standards:{loadStatus:"idle",revision:null,items:[],mutationPending:false,
                 pendingStandardId:null,errorMessage:null,conflictMessage:null,
-                freshScanRequired:false,loadVersion:0},
+                freshScanRequired:false,loadVersion:0,builder:{open:false}},
             });
             const events=[];
             let loads=0;
@@ -254,8 +271,8 @@ class LociFlowStandardsAdapterTests(unittest.TestCase):
               setStandardActive:async(id,active,revision)=>{mutations+=1;authoritativeActive=active;events.push(["mutation",id,active,revision]);return {fresh_scan_required:true};},
               startScan:async()=>{scans+=1;},
             };
-            const make=new Function("state","dataSource","render","syncShell","standardsErrorMessage","announce","discardMovementConfirmation","discardDuplicateMovementConfirmation","workflowOverride",`let standardsLoadPromise=null;${functions};return {loadStandards,setStandardActive};`);
-            const api=make(state,dataSource,()=>events.push(["render"]),()=>events.push(["sync"]),(error)=>error.message||error.code,(message)=>events.push(["announce",message]),()=>events.push(["discard-move"]),()=>events.push(["discard-bin"]),(status,message,action,label,staleKind)=>({status,message,primaryAction:{action,label},staleKind}));
+            const make=new Function("state","dataSource","render","syncShell","standardsErrorMessage","announce","discardMovementConfirmation","discardDuplicateMovementConfirmation","workflowOverride","discardStandardBuilder","openDialog","refreshDialog","setDialog","elements",`let standardsLoadPromise=null;${functions};return {loadStandards,setStandardActive};`);
+            const api=make(state,dataSource,()=>events.push(["render"]),()=>events.push(["sync"]),(error)=>error.message||error.code,(message)=>events.push(["announce",message]),()=>events.push(["discard-move"]),()=>events.push(["discard-bin"]),(status,message,action,label,staleKind)=>({status,message,primaryAction:{action,label},staleKind}),()=>{},()=>{},()=>{},()=>{},{dialog:{open:false}});
             const first=api.loadStandards();
             const second=api.loadStandards();
             const during={loads,status:state.standards.loadStatus};
@@ -275,7 +292,7 @@ class LociFlowStandardsAdapterTests(unittest.TestCase):
               loadStandards:async()=>{conflictLoads+=1;return clone(standardsPayload);},
               setStandardActive:async()=>{conflictMutations+=1;const error=new Error("Standards changed. Reload the latest list.");error.code="standard_revision_mismatch";throw error;},
             };
-            const conflictApi=make(conflictState,conflictSource,()=>{},()=>{},(error)=>error.message,()=>{},()=>{},()=>{},()=>({}));
+            const conflictApi=make(conflictState,conflictSource,()=>{},()=>{},(error)=>error.message,()=>{},()=>{},()=>{},()=>({}),()=>{},()=>{},()=>{},()=>{},{dialog:{open:false}});
             await conflictApi.setStandardActive(target);
             console.log(JSON.stringify({during,afterPause,success,conflict:{mutations:conflictMutations,loads:conflictLoads,state:conflictState}}));
             """,

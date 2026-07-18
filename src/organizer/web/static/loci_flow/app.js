@@ -100,12 +100,29 @@ const state = {
     loadStatus: "idle",
     revision: null,
     items: [],
+    presets: [],
+    scopeChoices: [],
+    creationAvailable: false,
+    creationMessage: null,
     mutationPending: false,
     pendingStandardId: null,
     errorMessage: null,
     conflictMessage: null,
     freshScanRequired: false,
+    noticeMessage: null,
     loadVersion: 0,
+    builder: {
+      open: false,
+      presetId: "",
+      scopeId: "",
+      matcherKind: "course_code",
+      matcherValue: "",
+      status: "idle",
+      preview: null,
+      previewToken: null,
+      expiresAt: null,
+      errorMessage: null,
+    },
   },
 };
 const viewSource = {
@@ -332,6 +349,9 @@ function navigate(route, options = {}) {
   if (previousRoute === "duplicate-bin" && route !== "duplicate-bin") {
     discardDuplicateRestoreConfirmation();
   }
+  if (previousRoute === "standards" && route !== "standards") {
+    discardStandardBuilder({ close: true });
+  }
   state.route = route;
   if (window.location.hash !== `#/${route}`) window.location.hash = `#/${route}`;
   render(options);
@@ -380,10 +400,35 @@ function closeDialog({ restoreFocus = true } = {}) {
   if (state.activeDialog === "duplicate-restore-confirmation") {
     resetDuplicateRestoreConfirmation();
   }
+  if (state.activeDialog === "standard-builder") resetStandardBuilder();
   if (elements.dialog.open) elements.dialog.close();
   state.activeDialog = null;
   dialogPayload = {};
   if (restoreFocus) dialogTrigger?.focus?.();
+  dialogTrigger = null;
+}
+
+function resetStandardBuilder() {
+  state.standards.builder = {
+    open: false,
+    presetId: "",
+    scopeId: "",
+    matcherKind: "course_code",
+    matcherValue: "",
+    status: "idle",
+    preview: null,
+    previewToken: null,
+    expiresAt: null,
+    errorMessage: null,
+  };
+}
+
+function discardStandardBuilder({ close = false } = {}) {
+  resetStandardBuilder();
+  if (!close || state.activeDialog !== "standard-builder") return;
+  if (elements.dialog.open) elements.dialog.close();
+  state.activeDialog = null;
+  dialogPayload = {};
   dialogTrigger = null;
 }
 
@@ -634,13 +679,22 @@ async function loadStandards({ refresh = false } = {}) {
   try {
     const payload = await standardsLoadPromise;
     if (version !== state.standards.loadVersion) return;
+    if (state.standards.builder.open) discardStandardBuilder({ close: true });
     state.standards.revision = payload.revision;
     state.standards.items = payload.items;
+    state.standards.presets = payload.presets;
+    state.standards.scopeChoices = payload.scope_choices;
+    state.standards.creationAvailable = payload.creation_available;
+    state.standards.creationMessage = payload.creation_message;
     state.standards.loadStatus = "ready";
   } catch (error) {
     if (version !== state.standards.loadVersion) return;
     state.standards.revision = null;
     state.standards.items = [];
+    state.standards.presets = [];
+    state.standards.scopeChoices = [];
+    state.standards.creationAvailable = false;
+    state.standards.creationMessage = "Standards could not be loaded.";
     state.standards.loadStatus = "error";
     state.standards.errorMessage = standardsErrorMessage(error);
   } finally {
@@ -661,6 +715,7 @@ async function setStandardActive(target) {
   state.standards.pendingStandardId = item.id;
   state.standards.errorMessage = null;
   state.standards.conflictMessage = null;
+  state.standards.noticeMessage = null;
   announce(`Saving ${item.name}…`);
   render();
   try {
@@ -703,6 +758,190 @@ async function setStandardActive(target) {
     state.standards.pendingStandardId = null;
     render();
   }
+}
+
+function openStandardBuilder(trigger) {
+  if (
+    state.standards.loadStatus !== "ready"
+    || !state.standards.creationAvailable
+    || state.standards.mutationPending
+  ) {
+    announce(state.standards.creationMessage || "A Standard cannot be added right now.");
+    return;
+  }
+  resetStandardBuilder();
+  state.standards.builder.open = true;
+  state.standards.conflictMessage = null;
+  state.standards.noticeMessage = null;
+  openDialog("standard-builder", {}, trigger);
+}
+
+function standardBuilderInputComplete(builder) {
+  const matching = builder.presetId === "keep_matching_files_together";
+  return Boolean(
+    builder.presetId
+    && builder.scopeId
+    && (!matching || (builder.matcherKind && builder.matcherValue.trim())),
+  );
+}
+
+function invalidateStandardBuilderPreview() {
+  const builder = state.standards.builder;
+  builder.status = "idle";
+  builder.preview = null;
+  builder.previewToken = null;
+  builder.expiresAt = null;
+  builder.errorMessage = null;
+}
+
+function syncStandardBuilderInputControls() {
+  elements.dialogContent?.querySelectorAll?.(
+    ".interpretation-result, .activity-notice",
+  ).forEach((item) => item.remove());
+  const preview = elements.dialogActions?.querySelector?.(
+    '[data-action="preview-standard"]',
+  );
+  const save = elements.dialogActions?.querySelector?.(
+    '[data-action="save-standard"]',
+  );
+  if (preview) preview.disabled = !standardBuilderInputComplete(state.standards.builder);
+  if (save) save.disabled = true;
+}
+
+function updateStandardBuilderField(control) {
+  if (state.activeDialog !== "standard-builder") return;
+  const builder = state.standards.builder;
+  if (new Set(["preview_loading", "save_pending"]).has(builder.status)) return;
+  const field = control.dataset.standardBuilderField;
+  if (field === "preset") builder.presetId = control.value;
+  else if (field === "scope") builder.scopeId = control.value;
+  else if (field === "matcher-kind") builder.matcherKind = control.value;
+  else if (field === "matcher-value") builder.matcherValue = control.value;
+  else return;
+  if (field === "preset" && builder.presetId !== "keep_matching_files_together") {
+    builder.matcherValue = "";
+  }
+  invalidateStandardBuilderPreview();
+  if (field === "matcher-value") {
+    syncStandardBuilderInputControls();
+    return;
+  }
+  refreshDialog("id", control.id);
+}
+
+async function previewStandard() {
+  const builder = state.standards.builder;
+  if (
+    state.activeDialog !== "standard-builder"
+    || new Set(["preview_loading", "save_pending"]).has(builder.status)
+  ) return;
+  builder.status = "preview_loading";
+  builder.preview = null;
+  builder.previewToken = null;
+  builder.errorMessage = null;
+  setDialog("standard-builder");
+  announce("Preparing Standard preview…");
+  try {
+    const result = await dataSource.previewStandardCreation(
+      {
+        presetId: builder.presetId,
+        scopeId: builder.scopeId,
+        matcherKind: builder.matcherKind,
+        matcherValue: builder.matcherValue,
+      },
+      state.standards.revision,
+    );
+    builder.status = "preview_ready";
+    builder.preview = result.preview;
+    builder.previewToken = result.preview_token;
+    builder.expiresAt = result.expires_at;
+    announce("Standard preview ready.");
+    setDialog("standard-builder");
+  } catch (error) {
+    builder.status = error?.code === "preview_expired" ? "preview_expired" : "preview_attention";
+    builder.preview = null;
+    builder.previewToken = null;
+    builder.expiresAt = null;
+    builder.errorMessage = standardsErrorMessage(error);
+    const reloadCodes = new Set([
+      "standard_revision_mismatch", "standard_conflict", "folder_scope_stale",
+      "wrong_root_scope", "active_plan_conflict", "standards_storage_unavailable",
+    ]);
+    announce(builder.errorMessage);
+    if (reloadCodes.has(error?.code)) {
+      discardStandardBuilder({ close: true });
+      await loadStandards({ refresh: true });
+    } else if (state.activeDialog === "standard-builder") {
+      setDialog("standard-builder");
+    }
+  }
+}
+
+async function saveStandard() {
+  const builder = state.standards.builder;
+  if (
+    state.activeDialog !== "standard-builder"
+    || builder.status !== "preview_ready"
+    || !builder.previewToken
+  ) return;
+  builder.status = "save_pending";
+  builder.errorMessage = null;
+  setDialog("standard-builder");
+  announce("Saving Standard…");
+  try {
+    const result = await dataSource.saveStandardCreation(
+      builder.previewToken,
+      state.standards.revision,
+    );
+    state.standards.freshScanRequired = result.fresh_scan_required
+      || state.standards.freshScanRequired;
+    if (result.fresh_scan_required) {
+      state.selectedItemId = null;
+      state.selectedRowIds = [];
+      state.destinationDrafts = {};
+      state.duplicateDrafts = {};
+      discardMovementConfirmation();
+      discardDuplicateMovementConfirmation();
+      state.workflowOverride = workflowOverride(
+        "Check files again",
+        "Standards changed. Check the folder again before organizing.",
+        "check-again",
+        "Check again",
+        "generation",
+      );
+    }
+    discardStandardBuilder({ close: true });
+    await loadStandards({ refresh: true });
+    state.standards.noticeMessage = result.save_message;
+    announce(result.fresh_scan_required
+      ? `${result.save_message} Check files again before organizing.`
+      : result.save_message);
+  } catch (error) {
+    const message = standardsErrorMessage(error);
+    const repreviewCodes = new Set(["preview_expired", "preview_superseded"]);
+    const reloadCodes = new Set([
+      "standard_revision_mismatch", "standard_conflict", "folder_scope_stale",
+      "wrong_root_scope", "active_plan_conflict", "standards_storage_unavailable",
+    ]);
+    if (repreviewCodes.has(error?.code)) {
+      builder.status = "preview_expired";
+      builder.preview = null;
+      builder.previewToken = null;
+      builder.expiresAt = null;
+      builder.errorMessage = message;
+      if (state.activeDialog === "standard-builder") setDialog("standard-builder");
+    } else if (reloadCodes.has(error?.code)) {
+      discardStandardBuilder({ close: true });
+      await loadStandards({ refresh: true });
+      state.standards.conflictMessage = message;
+    } else {
+      builder.status = "preview_attention";
+      builder.errorMessage = message;
+      if (state.activeDialog === "standard-builder") setDialog("standard-builder");
+    }
+    announce(message);
+  }
+  render();
 }
 
 async function loadActivity({ noticeMessage = null, force = false, refresh = false } = {}) {
@@ -1178,6 +1417,7 @@ async function checkFiles() {
   discardMovementConfirmation();
   discardDuplicateMovementConfirmation();
   discardDuplicateRestoreConfirmation();
+  discardStandardBuilder({ close: true });
   state.movement.execution = null;
   state.movement.errorCode = null;
   state.movement.errorMessage = null;
@@ -1197,7 +1437,10 @@ async function checkFiles() {
       render();
     });
     applySnapshot(settled, { preserveSelection: false });
-    if (settled.status === "completed") state.standards.freshScanRequired = false;
+    if (settled.status === "completed") {
+      state.standards.freshScanRequired = false;
+      await loadStandards({ refresh: true });
+    }
     state.destinationDrafts = {};
     state.duplicateDrafts = {};
     announce(settled.status === "completed" ? "File check complete." : "File check failed.");
@@ -1428,6 +1671,9 @@ function actionFor(target) {
   if (action === "reload-duplicate-bin") return loadDuplicateBin({ refresh: true });
   if (action === "reload-standards") return loadStandards({ refresh: true });
   if (action === "set-standard-active") return setStandardActive(target);
+  if (action === "open-standard-builder") return openStandardBuilder(target);
+  if (action === "preview-standard") return previewStandard();
+  if (action === "save-standard") return saveStandard();
   if (action === "toggle-activity") return toggleActivity(target.dataset.activityId);
   if (action === "expand-all-activity") {
     state.activity.expandedIds = new Set(state.activity.entries.map((entry) => entry.id));
@@ -1520,6 +1766,11 @@ document.addEventListener("click", (event) => {
 });
 
 document.addEventListener("input", (event) => {
+  const builderInput = event.target.closest('[data-standard-builder-field="matcher-value"]');
+  if (builderInput) {
+    updateStandardBuilderField(builderInput);
+    return;
+  }
   const input = event.target.closest("[data-action$='confirmation-input']");
   if (!input) return;
   if (state.activeDialog === "movement-confirmation") {
@@ -1545,6 +1796,12 @@ document.addEventListener("input", (event) => {
   const action = restore ? "confirm-duplicate-restore" : "confirm-duplicate-move";
   const confirm = elements.dialog.querySelector(`[data-action="${action}"]`);
   if (confirm) confirm.disabled = !view.canConfirm || owner.executionPending || owner.restorePending;
+});
+
+document.addEventListener("change", (event) => {
+  const control = event.target.closest("[data-standard-builder-field]");
+  if (!control || control.dataset.standardBuilderField === "matcher-value") return;
+  updateStandardBuilderField(control);
 });
 
 document.addEventListener("keydown", (event) => {
@@ -1598,6 +1855,9 @@ window.addEventListener("hashchange", () => {
   }
   if (previousRoute === "duplicate-bin" && nextRoute !== "duplicate-bin") {
     discardDuplicateRestoreConfirmation();
+  }
+  if (previousRoute === "standards" && nextRoute !== "standards") {
+    discardStandardBuilder({ close: true });
   }
   state.route = nextRoute;
   render({ focusMain: true });
