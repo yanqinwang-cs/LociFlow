@@ -163,7 +163,7 @@ class WebDependencyHygieneTests(unittest.TestCase):
             combined,
         )
         self.assertIn(
-            "from organizer.safety import validate_under_root",
+            "from organizer.web.root_admission import admit_root",
             all_web_code,
         )
 

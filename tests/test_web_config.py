@@ -17,20 +17,20 @@ class WebConfigTests(unittest.TestCase):
             with self.assertRaises(FrozenInstanceError):
                 config.root = root / "other"  # type: ignore[misc]
 
-    def test_root_validation_reuses_shared_safety_owner(self) -> None:
+    def test_root_validation_reuses_shared_admission_owner(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             with mock.patch(
-                "organizer.web.config.validate_under_root",
+                "organizer.web.config.admit_root",
                 wraps=__import__(
                     "organizer.web.config",
-                    fromlist=["validate_under_root"],
-                ).validate_under_root,
-            ) as validator:
+                    fromlist=["admit_root"],
+                ).admit_root,
+            ) as admission:
                 config = WebAppConfig(root)
 
             self.assertEqual(config.root, root)
-            validator.assert_called_once_with(root, root)
+            admission.assert_called_once_with(root)
 
     def test_missing_and_non_directory_roots_are_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -40,8 +40,31 @@ class WebConfigTests(unittest.TestCase):
 
             file_path = root / "file.txt"
             file_path.write_text("content", encoding="utf-8")
-            with self.assertRaisesRegex(ValueError, "not a directory"):
+            with self.assertRaisesRegex(ValueError, "not a folder"):
                 WebAppConfig(file_path)
+
+    def test_direct_configuration_cannot_bypass_symlink_admission(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            real_root = Path(directory) / "real"
+            real_root.mkdir()
+            symlink_root = Path(directory) / "link"
+            symlink_root.symlink_to(real_root, target_is_directory=True)
+
+            with self.assertRaisesRegex(ValueError, "symbolic link"):
+                WebAppConfig(symlink_root)
+
+    def test_rejected_root_creates_no_session_secret_or_launch_token(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            missing = Path(directory) / "missing"
+            with (
+                mock.patch("organizer.web.config._session_secret") as secret,
+                mock.patch("organizer.web.config._launch_token") as token,
+                self.assertRaisesRegex(ValueError, "does not exist"),
+            ):
+                WebAppConfig(missing)
+
+            secret.assert_not_called()
+            token.assert_not_called()
 
     def test_secrets_are_random_and_independent_per_configuration(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

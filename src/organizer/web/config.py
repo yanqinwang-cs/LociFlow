@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 import re
 import secrets
 
-from organizer.safety import validate_under_root
+from organizer.web.root_admission import admit_root
 
 _MINIMUM_SECRET_LENGTH = 32
 _LAUNCH_TOKEN_PATTERN = re.compile(r"[A-Za-z0-9_-]{32,}")
@@ -22,21 +22,17 @@ def _launch_token() -> str:
 @dataclass(frozen=True)
 class WebAppConfig:
     root: Path
-    session_secret: str = field(default_factory=_session_secret)
-    launch_token: str = field(default_factory=_launch_token)
+    session_secret: str | None = None
+    launch_token: str | None = None
     testing: bool = False
 
     def __post_init__(self) -> None:
-        resolved_root = self.root.expanduser().resolve()
-        if not resolved_root.exists():
-            raise ValueError(f"web root does not exist: {resolved_root}")
-        if not resolved_root.is_dir():
-            raise ValueError(f"web root is not a directory: {resolved_root}")
-        object.__setattr__(
-            self,
-            "root",
-            validate_under_root(resolved_root, resolved_root),
-        )
+        admitted_root = admit_root(self.root)
+        object.__setattr__(self, "root", admitted_root.path)
+        if self.session_secret is None:
+            object.__setattr__(self, "session_secret", _session_secret())
+        if self.launch_token is None:
+            object.__setattr__(self, "launch_token", _launch_token())
 
         if (
             not isinstance(self.session_secret, str)

@@ -50,6 +50,22 @@ class WebAppTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn(str(self.root), home.text)
         self.assertNotIn(self.token, home.text)
 
+    async def test_app_factory_cannot_be_reached_with_a_symlink_root(self) -> None:
+        real_root = self.root / "real-root"
+        real_root.mkdir()
+        symlink_root = self.root / "symlink-root"
+        symlink_root.symlink_to(real_root, target_is_directory=True)
+
+        with self.assertRaisesRegex(ValueError, "symbolic link"):
+            create_app(
+                WebAppConfig(
+                    symlink_root,
+                    session_secret="s" * 32,
+                    launch_token="u" * 32,
+                    testing=True,
+                )
+            )
+
     async def test_concurrent_launch_requests_authenticate_only_one_client(self) -> None:
         async def launch_once() -> httpx.Response:
             async with _client(self.app) as client:

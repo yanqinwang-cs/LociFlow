@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from contextlib import redirect_stderr, redirect_stdout
+import errno
 from io import StringIO
 from pathlib import Path
 import socket
@@ -101,6 +102,27 @@ class WebServerTests(unittest.TestCase):
         self.assertIn("Downloads", stderr.getvalue())
         self.assertIn("does not exist", stderr.getvalue())
 
+    def test_development_main_uses_the_shared_root_admission_owner(self) -> None:
+        from organizer.web import config as config_module
+
+        stderr = StringIO()
+        with (
+            patch(
+                "organizer.web.config.admit_root",
+                wraps=config_module.admit_root,
+            ) as admission,
+            patch.object(
+                server,
+                "bind_loopback_socket",
+                side_effect=OSError("controlled bind failure"),
+            ),
+            redirect_stderr(stderr),
+            self.assertRaises(SystemExit),
+        ):
+            server.main(["--root", str(self.root), "--no-browser"])
+
+        admission.assert_called_once_with(self.root)
+
     def test_dynamic_and_fixed_sockets_bind_only_to_ipv4_loopback(self) -> None:
         dynamic = _FakeBindingSocket(port=41001)
         fixed = _FakeBindingSocket(port=8123)
@@ -120,12 +142,62 @@ class WebServerTests(unittest.TestCase):
         )
 
     def test_occupied_fixed_port_has_a_clear_error(self) -> None:
-        occupied = _FakeBindingSocket(bind_error=OSError("address in use"))
-        with patch.object(server.socket, "socket", return_value=occupied):
+        occupied = _FakeBindingSocket(
+            bind_error=OSError(errno.EADDRINUSE, "address in use")
+        )
+        socket_constructor = Mock(return_value=occupied)
+        with patch.object(server.socket, "socket", socket_constructor):
             with self.assertRaisesRegex(server.WebServerError, "port 8123"):
                 server.bind_loopback_socket(8123)
 
         self.assertTrue(occupied.closed)
+        socket_constructor.assert_called_once_with(socket.AF_INET, socket.SOCK_STREAM)
+
+    def test_dynamic_address_collision_retries_with_three_fresh_sockets(self) -> None:
+        collisions = [
+            _FakeBindingSocket(
+                bind_error=OSError(errno.EADDRINUSE, "address in use")
+            )
+            for _ in range(server._MAX_DYNAMIC_BIND_ATTEMPTS)
+        ]
+        socket_constructor = Mock(side_effect=collisions)
+
+        with patch.object(server.socket, "socket", socket_constructor):
+            with self.assertRaisesRegex(server.WebServerError, "dynamic port"):
+                server.bind_loopback_socket()
+
+        self.assertEqual(
+            socket_constructor.call_count,
+            server._MAX_DYNAMIC_BIND_ATTEMPTS,
+        )
+        self.assertTrue(all(candidate.closed for candidate in collisions))
+        self.assertTrue(
+            all(
+                candidate.bound_address == (server.LOOPBACK_HOST, 0)
+                for candidate in collisions
+            )
+        )
+
+    def test_dynamic_retry_can_transfer_the_third_socket_to_the_caller(self) -> None:
+        first = _FakeBindingSocket(
+            bind_error=OSError(errno.EADDRINUSE, "address in use")
+        )
+        second = _FakeBindingSocket(
+            bind_error=OSError(errno.EADDRINUSE, "address in use")
+        )
+        third = _FakeBindingSocket(port=48231)
+
+        with patch.object(
+            server.socket,
+            "socket",
+            side_effect=[first, second, third],
+        ):
+            transferred = server.bind_loopback_socket()
+
+        self.assertIs(transferred, third)
+        self.assertTrue(first.closed)
+        self.assertTrue(second.closed)
+        self.assertFalse(third.closed)
 
     def test_browser_is_opened_only_after_health_succeeds(self) -> None:
         response = _HealthyResponse()

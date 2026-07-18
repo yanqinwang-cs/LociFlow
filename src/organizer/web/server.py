@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 from collections.abc import Callable, Sequence
 from contextlib import closing
+import errno
 from pathlib import Path
 import socket
 import sys
@@ -17,10 +18,16 @@ import uvicorn
 
 from organizer.web.app import create_app
 from organizer.web.config import WebAppConfig
+from organizer.web.launcher import (
+    LauncherDependencies,
+    launch,
+    launch_configured,
+)
 
 LOOPBACK_HOST = "127.0.0.1"
 DEFAULT_READY_TIMEOUT_SECONDS = 5.0
 _SOCKET_BACKLOG = 2048
+_MAX_DYNAMIC_BIND_ATTEMPTS = 3
 
 
 class WebServerError(ValueError):
@@ -30,17 +37,20 @@ class WebServerError(ValueError):
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    default_root = args.root is None
     root = args.root if args.root is not None else Path.home() / "Downloads"
-    try:
-        config = WebAppConfig(root=root)
-        return run_server(
-            config,
-            port=args.port,
-            open_browser=not args.no_browser,
-        )
-    except (OSError, ValueError) as error:
-        parser.error(str(error))
-    return 2
+    result = launch(
+        lambda: root,
+        dependencies=_launcher_dependencies(),
+        port=args.port,
+        open_browser=not args.no_browser,
+    )
+    if result.error is not None:
+        message = result.error.safe_message
+        if default_root and result.error.code == "root_missing":
+            message = "The Downloads folder does not exist."
+        parser.error(message)
+    return result.exit_code
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -73,63 +83,79 @@ def run_server(
     port: int | None = None,
     open_browser: bool = True,
 ) -> int:
-    bound_socket = bind_loopback_socket(port)
-    stop_event = Event()
-    readiness_thread: Thread | None = None
-    actual_port = int(bound_socket.getsockname()[1])
-    base_url = f"http://{LOOPBACK_HOST}:{actual_port}"
-    health_url = f"{base_url}/healthz"
-    launch_url = f"{base_url}/launch/{config.launch_token}"
-
-    try:
-        app = create_app(config)
-        uvicorn_config = uvicorn.Config(
-            app=app,
-            host=LOOPBACK_HOST,
-            port=actual_port,
-            workers=1,
-            reload=False,
-            access_log=False,
-            proxy_headers=False,
-        )
-        server = uvicorn.Server(uvicorn_config)
-
-        if open_browser:
-            readiness_thread = Thread(
-                target=_open_browser_when_ready,
-                args=(health_url, launch_url, stop_event),
-                name="bootai-browser-launch",
-            )
-            readiness_thread.start()
-        else:
-            _print_manual_launch_url(launch_url)
-
-        try:
-            server.run(sockets=[bound_socket])
-        except KeyboardInterrupt:
-            pass
-        return 0
-    finally:
-        stop_event.set()
-        if readiness_thread is not None:
-            readiness_thread.join()
-        bound_socket.close()
+    result = launch_configured(
+        config,
+        dependencies=_launcher_dependencies(),
+        port=port,
+        open_browser=open_browser,
+        propagate_unexpected=True,
+    )
+    if result.error is not None:
+        raise WebServerError(result.error.safe_message)
+    return result.exit_code
 
 
 def bind_loopback_socket(port: int | None = None) -> socket.socket:
     requested_port = 0 if port is None else _validated_port(str(port))
-    bound_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    try:
-        bound_socket.bind((LOOPBACK_HOST, requested_port))
-        bound_socket.listen(_SOCKET_BACKLOG)
-        bound_socket.set_inheritable(True)
-    except OSError as error:
-        bound_socket.close()
-        label = "a dynamic port" if port is None else f"port {port}"
-        raise WebServerError(
-            f"could not bind {label} on {LOOPBACK_HOST}: {error}"
-        ) from error
-    return bound_socket
+    attempts = _MAX_DYNAMIC_BIND_ATTEMPTS if port is None else 1
+    last_error: OSError | None = None
+    for attempt in range(attempts):
+        bound_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            bound_socket.bind((LOOPBACK_HOST, requested_port))
+            bound_socket.listen(_SOCKET_BACKLOG)
+            bound_socket.set_inheritable(True)
+            return bound_socket
+        except OSError as error:
+            bound_socket.close()
+            last_error = error
+            if (
+                port is not None
+                or error.errno != errno.EADDRINUSE
+                or attempt == attempts - 1
+            ):
+                break
+
+    label = "a dynamic port" if port is None else f"port {port}"
+    raise WebServerError(
+        f"could not bind {label} on {LOOPBACK_HOST}: {last_error}"
+    ) from last_error
+
+
+def _launcher_dependencies() -> LauncherDependencies:
+    return LauncherDependencies(
+        config_factory=lambda root: WebAppConfig(root=root),
+        socket_binder=bind_loopback_socket,
+        app_factory=create_app,
+        server_factory=_create_uvicorn_server,
+        readiness_factory=_create_readiness_thread,
+        manual_browser_bootstrap=_print_manual_launch_url,
+    )
+
+
+def _create_uvicorn_server(app: Any, port: int) -> uvicorn.Server:
+    uvicorn_config = uvicorn.Config(
+        app=app,
+        host=LOOPBACK_HOST,
+        port=port,
+        workers=1,
+        reload=False,
+        access_log=False,
+        proxy_headers=False,
+    )
+    return uvicorn.Server(uvicorn_config)
+
+
+def _create_readiness_thread(
+    health_url: str,
+    launch_url: str,
+    stop_event: Event,
+) -> Thread:
+    return Thread(
+        target=_open_browser_when_ready,
+        args=(health_url, launch_url, stop_event),
+        name="bootai-browser-launch",
+    )
 
 
 def _validated_port(value: str) -> int:
