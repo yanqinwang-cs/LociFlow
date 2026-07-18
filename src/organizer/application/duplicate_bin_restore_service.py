@@ -9,6 +9,7 @@ import unicodedata
 import uuid
 
 from organizer.application.duplicate_bin_models import (
+    BATCH_COMPLETED,
     ITEM_ATTENTION as BIN_ITEM_ATTENTION,
     ITEM_AVAILABLE as BIN_ITEM_AVAILABLE,
     ITEM_RESTORED as BIN_ITEM_RESTORED,
@@ -645,12 +646,17 @@ def _update_batch_items(repository: DuplicateBinRepository, operation) -> None:
             )
             for item in batch.items
         )
-        if updated == batch.items:
+        status = (
+            BATCH_COMPLETED
+            if all(item.state == BIN_ITEM_RESTORED for item in updated)
+            else batch.status
+        )
+        if updated == batch.items and status == batch.status:
             continue
         repository.save_execution_state(
             batch.batch_id,
             expected_version=batch.batch_version,
-            status=batch.status,
+            status=status,
             items=updated,
             updated_at=operation.completed_at or _utc(),
         )

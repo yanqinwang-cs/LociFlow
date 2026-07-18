@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import timedelta
 from dataclasses import replace
 from pathlib import Path
+import json
 import shutil
 import tempfile
 import unittest
@@ -11,12 +12,19 @@ import uuid
 
 from organizer.application.duplicate_bin_models import (
     BATCH_APPROVED,
+    BATCH_COMPLETED,
+    BATCH_MOVED,
     ApprovedDuplicateBatch,
     ApprovedDuplicateGroup,
     ApprovedDuplicateMember,
     SelectedDuplicateBinItem,
     canonical_digest,
 )
+from organizer.application.duplicate_bin_approval_service import (
+    DuplicateBinApprovalError,
+    create_or_recover_duplicate_batch,
+)
+from organizer.application.duplicate_bin_repository import DuplicateBinRepository
 from organizer.application.duplicate_bin_restore_repository import (
     DuplicateBinRestoreRepository,
     DuplicateBinRestoreRepositoryError,
@@ -29,6 +37,16 @@ from organizer.application.duplicate_bin_restore_service import (
     preview_duplicate_bin_activity_undo,
     preview_duplicate_bin_restore,
 )
+from organizer.application.organization_decision_models import RECOMMENDATION_KEEP
+from organizer.application.organization_decision_service import (
+    approve_organization_plan,
+    create_organization_decision_session,
+    update_organization_decision,
+)
+from organizer.application.organization_slice_service import (
+    build_internal_organization_projection,
+)
+from organizer.application.scan_service import scan_root
 from organizer.duplicates import hash_file
 from tests.test_application_duplicate_bin_movement_service import (
     ISSUED,
@@ -69,8 +87,18 @@ class DuplicateBinRestoreServiceTests(unittest.TestCase):
                 self.assertTrue((owners.root / item.previous_relative_path).is_file())
                 self.assertFalse((owners.root / item.future_relative_path).exists())
             durable_batch = owners.batches.load(owners.batch.batch_id)
+            self.assertEqual(durable_batch.status, BATCH_COMPLETED)
             self.assertTrue(
                 all(item.state == "restored" for item in durable_batch.items)
+            )
+            catalog = json.loads(
+                owners.batches.catalog_path.read_text(encoding="utf-8")
+            )
+            self.assertEqual(catalog["active_claims"], [])
+            restarted_batches = DuplicateBinRepository(owners.root)
+            self.assertEqual(
+                restarted_batches.load(owners.batch.batch_id).status,
+                BATCH_COMPLETED,
             )
             self.assertEqual(
                 list_duplicate_bin_items(owners.batches, owners.operations, restores),
@@ -88,6 +116,17 @@ class DuplicateBinRestoreServiceTests(unittest.TestCase):
                 )
             self.assertEqual(replay.id, result.id)
             apply_again.assert_not_called()
+
+            replacement = _approve_current_duplicate_group(
+                owners,
+                scan_generation="scan-after-full-restore",
+            )
+            assert replacement is not None
+            self.assertNotEqual(replacement.batch_id, owners.batch.batch_id)
+            self.assertEqual(
+                owners.batches.load(owners.batch.batch_id).status,
+                BATCH_COMPLETED,
+            )
 
     def test_authorization_expiry_overlap_and_nonoverlap(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -179,6 +218,36 @@ class DuplicateBinRestoreServiceTests(unittest.TestCase):
                 (item_a.bin_item_id,),
             )
             _restore(owners, restores, restored_a)
+            partial = owners.batches.load(owners.batch.batch_id)
+            self.assertEqual(partial.status, BATCH_MOVED)
+            self.assertEqual(
+                {item.state for item in partial.items},
+                {"available", "restored"},
+            )
+            catalog = json.loads(
+                owners.batches.catalog_path.read_text(encoding="utf-8")
+            )
+            batch_claims = [
+                claim
+                for claim in catalog["active_claims"]
+                if claim["batch_id"] == owners.batch.batch_id
+            ]
+            expected_paths = {
+                member.relative_path
+                for group in owners.batch.groups
+                for member in group.members
+            }
+            self.assertEqual(
+                {claim["relative_path"] for claim in batch_claims},
+                expected_paths,
+            )
+            with self.assertRaisesRegex(
+                DuplicateBinApprovalError, "duplicate_batch_conflict"
+            ):
+                _approve_current_duplicate_group(
+                    owners,
+                    scan_generation="scan-after-partial-restore",
+                )
             second = _additional_moved_batch(owners)
             item_c = second.batch.items[0]
 
@@ -629,6 +698,16 @@ class DuplicateBinRestoreServiceTests(unittest.TestCase):
             self.assertEqual(replay.id, operation.restore_operation_id)
             reconciled = owners.batches.load(owners.batch.batch_id)
             self.assertEqual(reconciled.items[0].state, "restored")
+            self.assertEqual(reconciled.status, BATCH_COMPLETED)
+            catalog = json.loads(
+                owners.batches.catalog_path.read_text(encoding="utf-8")
+            )
+            self.assertEqual(catalog["active_claims"], [])
+            restarted_batches = DuplicateBinRepository(owners.root)
+            self.assertEqual(
+                restarted_batches.load(owners.batch.batch_id).status,
+                BATCH_COMPLETED,
+            )
             version = reconciled.batch_version
             execute_duplicate_bin_restore(
                 browser_session_id="browser-one",
@@ -643,6 +722,12 @@ class DuplicateBinRestoreServiceTests(unittest.TestCase):
             self.assertEqual(
                 owners.batches.load(owners.batch.batch_id).batch_version,
                 version,
+            )
+            self.assertEqual(
+                json.loads(
+                    owners.batches.catalog_path.read_text(encoding="utf-8")
+                )["active_claims"],
+                [],
             )
 
     def test_shared_coordinator_blocks_preview_and_execution(self) -> None:
@@ -675,6 +760,73 @@ def _moved(root: Path, *, selected: int):
     movement_preview = _preview(owners, issued=ISSUED)
     _execute(owners, movement_preview, now=ISSUED + timedelta(seconds=1))
     return owners
+
+
+def _approve_current_duplicate_group(owners, *, scan_generation: str):
+    projection = build_internal_organization_projection(
+        scan_result=scan_root(owners.root),
+        scan_generation=scan_generation,
+        completed_at=ISSUED,
+    )
+    session = create_organization_decision_session(
+        projection,
+        timestamp=(ISSUED + timedelta(minutes=10)).isoformat(),
+    )
+    for decision in session.recommendation_decisions:
+        session = update_organization_decision(
+            session,
+            projection,
+            kind="recommendation",
+            change_id=decision.change_id,
+            decision=RECOMMENDATION_KEEP,
+        )
+    for decision in session.destination_decisions:
+        choice = projection.destination_choices_by_id[decision.choice_id]
+        keep_option = next(
+            option_id for option_id, move in choice.options if move is None
+        )
+        session = update_organization_decision(
+            session,
+            projection,
+            kind="choice",
+            choice_id=decision.choice_id,
+            option_id=keep_option,
+        )
+
+    approved_paths = {
+        member.relative_path
+        for group in owners.batch.groups
+        for member in group.members
+    }
+    selected_target = False
+    for decision in session.duplicate_decisions:
+        choice = projection.duplicate_choices_by_id[decision.choice_id]
+        offered_paths = {item.relative_path.as_posix() for item in choice.files}
+        is_target = bool(offered_paths.intersection(approved_paths))
+        session = update_organization_decision(
+            session,
+            projection,
+            kind="choice",
+            choice_id=decision.choice_id,
+            option_id="choose-for-bin" if is_target else "keep-all",
+            copy_ids=(choice.copy_ids[0],) if is_target else (),
+        )
+        selected_target = selected_target or is_target
+    if not selected_target:
+        raise AssertionError("restored duplicate group was not projected")
+
+    approved = approve_organization_plan(
+        session,
+        projection,
+        timestamp=(ISSUED + timedelta(minutes=11)).isoformat(),
+    )
+    assert approved.approved_plan is not None
+    return create_or_recover_duplicate_batch(
+        approved_plan=approved.approved_plan,
+        projection=projection,
+        browser_session_id="later-browser",
+        repository=owners.batches,
+    )
 
 
 def _additional_moved_batch(owners):

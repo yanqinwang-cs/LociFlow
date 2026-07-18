@@ -3,13 +3,21 @@ from pathlib import Path
 import json
 import tempfile
 import unittest
+from unittest import mock
 import uuid
 
 from organizer.application.duplicate_bin_models import (
     BATCH_APPROVED,
     BATCH_CANCELLED,
+    BATCH_COMPLETED,
+    BATCH_MOVED,
     BATCH_MOVING,
     BATCH_SUPERSEDED,
+    ITEM_ATTENTION,
+    ITEM_AVAILABLE,
+    ITEM_MOVING,
+    ITEM_RESTORED,
+    ITEM_UNATTEMPTED,
     ApprovedDuplicateBatch,
     ApprovedDuplicateGroup,
     ApprovedDuplicateMember,
@@ -20,12 +28,217 @@ from organizer.application.duplicate_bin_repository import (
     DuplicateBinRepository,
     DuplicateBinRepositoryError,
 )
+from tests.test_application_duplicate_bin_movement_service import _approved_batch
 
 
 STAMP = "2026-07-16T10:00:00+00:00"
 
 
 class DuplicateBinRepositoryTests(unittest.TestCase):
+    def test_restart_reconciles_legacy_fully_restored_catalog_once(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            repository = DuplicateBinRepository(root)
+            batch = _approved_batch(root, repository, selected=2)
+            repository.create_or_recover_approved_batch(batch)
+            stale = repository.save_execution_state(
+                batch.batch_id,
+                expected_version=1,
+                status=BATCH_MOVED,
+                items=tuple(replace(item, state=ITEM_RESTORED) for item in batch.items),
+                updated_at="2026-07-16T10:05:00+00:00",
+            )
+            stale_catalog = json.loads(
+                repository.catalog_path.read_text(encoding="utf-8")
+            )
+            member_contents = {
+                member.relative_path: (root / member.relative_path).read_bytes()
+                for group in batch.groups
+                for member in group.members
+            }
+            files_before = {
+                path.relative_to(root).as_posix()
+                for path in root.rglob("*")
+                if path.is_file()
+            }
+
+            restarted = DuplicateBinRepository(root)
+            repaired = restarted.load(batch.batch_id)
+            repaired_catalog = json.loads(
+                restarted.catalog_path.read_text(encoding="utf-8")
+            )
+
+            self.assertEqual(stale.status, BATCH_MOVED)
+            self.assertEqual(len(stale_catalog["active_claims"]), 3)
+            self.assertEqual(repaired.status, BATCH_COMPLETED)
+            self.assertEqual(repaired.batch_version, stale.batch_version + 1)
+            self.assertNotEqual(repaired.updated_at, stale.updated_at)
+            self.assertEqual(
+                repaired_catalog["catalog_version"],
+                stale_catalog["catalog_version"] + 1,
+            )
+            self.assertEqual(repaired_catalog["active_claims"], [])
+            self.assertEqual(
+                {
+                    member.relative_path: (root / member.relative_path).read_bytes()
+                    for group in batch.groups
+                    for member in group.members
+                },
+                member_contents,
+            )
+            self.assertEqual(
+                {
+                    path.relative_to(root).as_posix()
+                    for path in root.rglob("*")
+                    if path.is_file()
+                },
+                files_before,
+            )
+
+            repaired_bytes = restarted.catalog_path.read_bytes()
+            with mock.patch.object(
+                DuplicateBinRepository,
+                "_atomic_write",
+                autospec=True,
+            ) as atomic_write:
+                second_restart = DuplicateBinRepository(root)
+            atomic_write.assert_not_called()
+            self.assertEqual(
+                second_restart.load(batch.batch_id).batch_version,
+                repaired.batch_version,
+            )
+            self.assertEqual(second_restart.catalog_path.read_bytes(), repaired_bytes)
+
+    def test_restart_keeps_partial_attention_and_unattempted_batches_claiming(
+        self,
+    ) -> None:
+        for unresolved_state in (
+            ITEM_AVAILABLE,
+            ITEM_ATTENTION,
+            ITEM_UNATTEMPTED,
+            ITEM_MOVING,
+        ):
+            with self.subTest(state=unresolved_state), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory).resolve()
+                repository = DuplicateBinRepository(root)
+                batch = _approved_batch(root, repository, selected=2)
+                repository.create_or_recover_approved_batch(batch)
+                items = tuple(
+                    replace(
+                        item,
+                        state=ITEM_RESTORED if index == 0 else unresolved_state,
+                    )
+                    for index, item in enumerate(batch.items)
+                )
+                unresolved = repository.save_execution_state(
+                    batch.batch_id,
+                    expected_version=1,
+                    status=BATCH_MOVED,
+                    items=items,
+                    updated_at="2026-07-16T10:05:00+00:00",
+                )
+                catalog_before = repository.catalog_path.read_bytes()
+
+                with mock.patch.object(
+                    DuplicateBinRepository,
+                    "_atomic_write",
+                    autospec=True,
+                ) as atomic_write:
+                    restarted = DuplicateBinRepository(root)
+                atomic_write.assert_not_called()
+                current = restarted.load(batch.batch_id)
+                catalog = json.loads(
+                    restarted.catalog_path.read_text(encoding="utf-8")
+                )
+                self.assertEqual(current.status, BATCH_MOVED)
+                self.assertEqual(current.batch_version, unresolved.batch_version)
+                self.assertEqual(len(catalog["active_claims"]), 3)
+                self.assertEqual(restarted.catalog_path.read_bytes(), catalog_before)
+
+    def test_restart_rejects_completed_batch_with_unresolved_item(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            repository = DuplicateBinRepository(root)
+            batch = _batch(repository, path="Inbox/copy.txt")
+            repository.create_or_recover_approved_batch(batch)
+            malformed = json.loads(
+                repository.catalog_path.read_text(encoding="utf-8")
+            )
+            malformed["batches"][0]["status"] = BATCH_COMPLETED
+            malformed["active_claims"] = []
+            repository.catalog_path.write_text(
+                json.dumps(malformed),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(DuplicateBinRepositoryError, "malformed"):
+                DuplicateBinRepository(root)
+
+    def test_completed_batches_release_claims_but_unresolved_batches_retain_them(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            repository = DuplicateBinRepository(Path(directory).resolve())
+            batch = _batch(repository, path="Inbox/copy.txt")
+            repository.create_or_recover_approved_batch(batch)
+            with self.assertRaisesRegex(
+                DuplicateBinRepositoryError, "invalid_duplicate_batch_items"
+            ):
+                repository.save_execution_state(
+                    batch.batch_id,
+                    expected_version=1,
+                    status=BATCH_COMPLETED,
+                    items=batch.items,
+                    updated_at="2026-07-16T10:04:00+00:00",
+                )
+            completed = repository.save_execution_state(
+                batch.batch_id,
+                expected_version=1,
+                status=BATCH_COMPLETED,
+                items=tuple(replace(item, state=ITEM_RESTORED) for item in batch.items),
+                updated_at="2026-07-16T10:05:00+00:00",
+            )
+
+            catalog = json.loads(repository.catalog_path.read_text(encoding="utf-8"))
+            self.assertEqual(completed.status, BATCH_COMPLETED)
+            self.assertEqual(catalog["active_claims"], [])
+            restarted = DuplicateBinRepository(repository.root)
+            self.assertEqual(restarted.load(batch.batch_id).status, BATCH_COMPLETED)
+            replacement = _batch(
+                restarted,
+                path="Inbox/copy.txt",
+                generation="scan-two",
+                revision=2,
+            )
+            restarted.create_or_recover_approved_batch(replacement)
+            self.assertEqual(restarted.load(batch.batch_id).status, BATCH_COMPLETED)
+            self.assertEqual(restarted.list_active_approved_batches(), (replacement,))
+
+        with tempfile.TemporaryDirectory() as directory:
+            repository = DuplicateBinRepository(Path(directory).resolve())
+            batch = _batch(repository, path="Inbox/copy.txt")
+            repository.create_or_recover_approved_batch(batch)
+            repository.save_execution_state(
+                batch.batch_id,
+                expected_version=1,
+                status=BATCH_MOVED,
+                items=tuple(replace(item, state=ITEM_AVAILABLE) for item in batch.items),
+                updated_at="2026-07-16T10:05:00+00:00",
+            )
+            restarted = DuplicateBinRepository(repository.root)
+            catalog = json.loads(restarted.catalog_path.read_text(encoding="utf-8"))
+            self.assertEqual(len(catalog["active_claims"]), 2)
+            replacement = _batch(
+                restarted,
+                path="Inbox/copy.txt",
+                generation="scan-two",
+                revision=2,
+            )
+            with self.assertRaisesRegex(
+                DuplicateBinRepositoryError, "active_copy_claim_conflict"
+            ):
+                restarted.create_or_recover_approved_batch(replacement)
+
     def test_atomic_catalog_round_trip_exact_recovery_and_restart(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()

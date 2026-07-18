@@ -200,6 +200,9 @@ function applySnapshot(snapshot, { preserveSelection = true } = {}) {
     state.movement.execution = null;
     state.movement.errorCode = null;
     state.movement.errorMessage = null;
+    state.duplicateMovement.execution = null;
+    state.duplicateMovement.errorCode = null;
+    state.duplicateMovement.errorMessage = null;
   }
   if (!preserveSelection || !allItemIds().has(state.selectedItemId)) {
     state.selectedItemId = null;
@@ -1075,6 +1078,11 @@ async function checkFiles() {
   state.movement.execution = null;
   state.movement.errorCode = null;
   state.movement.errorMessage = null;
+  state.duplicateMovement.execution = null;
+  state.duplicateMovement.errorCode = null;
+  state.duplicateMovement.errorMessage = null;
+  state.destinationDrafts = {};
+  state.duplicateDrafts = {};
   state.workflowOverride = null;
   state.scanPolling = true;
   applySnapshot({ status: "checking", backendState: null });
@@ -1140,6 +1148,15 @@ async function handleMutation(operation, successMessage, { close = false } = {})
         "Review the latest changes.",
         "reload-choices",
         "Review changes",
+      );
+    } else if (code === "duplicate_batch_conflict") {
+      await reloadAfterConflict();
+      if (state.activeDialog === "approval") closeDialog({ restoreFocus: false });
+      state.workflowOverride = workflowOverride(
+        "These copies are already part of another approved action.",
+        "Review the latest duplicate choices.",
+        "reload-choices",
+        "Review latest choices",
       );
     } else if (new Set(["unknown_change_id", "unknown_choice_id", "invalid_option"]).has(code)) {
       await reloadAfterConflict();

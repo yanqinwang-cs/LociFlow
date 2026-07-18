@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, replace
-from datetime import datetime
+from datetime import datetime, timezone
 import hashlib
 import json
 import math
@@ -14,12 +14,15 @@ import uuid
 
 from organizer.application.duplicate_bin_models import (
     BATCH_APPROVED,
+    BATCH_COMPLETED,
     BATCH_STATUSES,
     BATCH_SUPERSEDED,
     CLAIMING_BATCH_STATUSES,
     DUPLICATE_BIN_BATCH_RECORD_TYPE,
     DUPLICATE_BIN_CATALOG_RECORD_TYPE,
     DUPLICATE_BIN_SCHEMA_VERSION,
+    FULL_RESTORE_RECONCILABLE_BATCH_STATUSES,
+    ITEM_RESTORED,
     ITEM_STATES,
     SUPERSEDABLE_BATCH_STATUSES,
     ActiveDuplicateCopyClaim,
@@ -55,6 +58,8 @@ class DuplicateBinRepository:
         self.directory = resolved_root / DUPLICATE_BIN_RELATIVE_ROOT
         self.catalog_path = resolved_root / DUPLICATE_BIN_CATALOG
         self._lock = Lock()
+        with self._lock:
+            self._load_catalog_unlocked()
 
     @property
     def configured_root_identity(self) -> str:
@@ -180,6 +185,10 @@ class DuplicateBinRepository:
     ) -> ApprovedDuplicateBatch:
         if status not in BATCH_STATUSES or status in {BATCH_APPROVED, BATCH_SUPERSEDED}:
             raise DuplicateBinRepositoryError("invalid_duplicate_batch_status")
+        if status == BATCH_COMPLETED and any(
+            item.state != ITEM_RESTORED for item in items
+        ):
+            raise DuplicateBinRepositoryError("invalid_duplicate_batch_items")
         _timestamp(updated_at, "updated_at")
         with self._lock:
             catalog = self._load_catalog_unlocked()
@@ -248,6 +257,13 @@ class DuplicateBinRepository:
             ) from error
         if catalog.configured_root_identity != self.configured_root_identity:
             raise DuplicateBinRepositoryError("duplicate_bin_catalog_wrong_root")
+        reconciled = _reconcile_fully_restored_batches(
+            catalog,
+            updated_at=datetime.now(timezone.utc).isoformat(),
+        )
+        if reconciled is not catalog:
+            self._atomic_write(_catalog_to_dict(reconciled))
+            catalog = reconciled
         return catalog
 
     def _atomic_write(self, data: dict[str, Any]) -> None:
@@ -343,6 +359,33 @@ def _batch_to_dict(batch: ApprovedDuplicateBatch) -> dict[str, Any]:
     }
 
 
+def _reconcile_fully_restored_batches(
+    catalog: DuplicateBinCatalog,
+    *,
+    updated_at: str,
+) -> DuplicateBinCatalog:
+    reconciled_batches = tuple(
+        replace(
+            batch,
+            status=BATCH_COMPLETED,
+            batch_version=batch.batch_version + 1,
+            updated_at=updated_at,
+        )
+        if batch.status in FULL_RESTORE_RECONCILABLE_BATCH_STATUSES
+        and all(item.state == ITEM_RESTORED for item in batch.items)
+        else batch
+        for batch in catalog.batches
+    )
+    if reconciled_batches == catalog.batches:
+        return catalog
+    return replace(
+        catalog,
+        catalog_version=catalog.catalog_version + 1,
+        batches=reconciled_batches,
+        active_claims=_all_active_claims(reconciled_batches),
+    )
+
+
 def _catalog_from_dict(data: object) -> DuplicateBinCatalog:
     if not isinstance(data, dict) or set(data) != {
         "schema_version",
@@ -419,6 +462,16 @@ def _batch_from_dict(data: object) -> ApprovedDuplicateBatch:
     items = tuple(_item_from_dict(item) for item in items_data)
     if not groups or not items:
         raise ValueError("duplicate bin approved batch must contain selections")
+    if status == BATCH_COMPLETED and any(
+        item.state != ITEM_RESTORED for item in items
+    ):
+        raise ValueError("completed duplicate bin batch contains unresolved items")
+    if (
+        all(item.state == ITEM_RESTORED for item in items)
+        and status not in FULL_RESTORE_RECONCILABLE_BATCH_STATUSES
+        and status != BATCH_COMPLETED
+    ):
+        raise ValueError("fully restored duplicate bin batch status is invalid")
     if len({group.group_id for group in groups}) != len(groups):
         raise ValueError("duplicate bin group IDs must be unique")
     if len({item.bin_item_id for item in items}) != len(items):

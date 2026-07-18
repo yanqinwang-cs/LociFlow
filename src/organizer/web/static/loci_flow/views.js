@@ -28,6 +28,7 @@ function stages(state) {
 }
 
 function contractStage(workflow) {
+  if (workflow.stage === "ready_for_check") return "checking";
   if (workflow.stage === "ready_to_move") return "moving";
   if (workflow.stage === "move_in_progress") return "moving";
   if (new Set(["move_completed", "move_failed"]).has(workflow.stage)) return "verifying";
@@ -287,7 +288,9 @@ function contractStaleResult(model) {
 
 function renderContractOrganize(model) {
   if (model.workflow.stage === "ready_to_move") return contractReadyToMove(model);
-  if (new Set(["move_in_progress", "move_completed", "move_failed"]).has(model.workflow.stage)) {
+  if (new Set([
+    "move_in_progress", "move_completed", "move_failed", "ready_for_check",
+  ]).has(model.workflow.stage)) {
     return contractMovementResult(model);
   }
   if (model.workflow.stage === "stale") return contractStaleResult(model);

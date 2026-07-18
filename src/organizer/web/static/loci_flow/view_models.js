@@ -388,7 +388,7 @@ function moveCountMessage(execution) {
   return `${moved}. ${countLabel(remaining, "file needs attention", "files need attention")}.`;
 }
 
-function lastMoveSummary(execution) {
+function moveSummary(execution) {
   if (!execution) return null;
   if (execution.status === "verified") {
     return `${countLabel(execution.files_moved, "file moved", "files moved")}.`;
@@ -404,6 +404,13 @@ function lastMoveSummary(execution) {
     return "Latest move needs attention.";
   }
   return null;
+}
+
+function lastMoveSummary(execution, activityEntries = []) {
+  const current = moveSummary(execution);
+  if (current) return current;
+  const latestMovement = activityEntries.find((entry) => entry.type === "organization");
+  return moveSummary(latestMovement);
 }
 
 function lastOrganizedLabel(execution, activityEntries = []) {
@@ -428,7 +435,9 @@ function lastOrganizedLabel(execution, activityEntries = []) {
 function movementStatusLabel(workflow) {
   if (workflow.stage === "ready_to_move") return "Move ready";
   if (workflow.stage === "move_in_progress") return "Moving files";
-  if (workflow.stage === "move_completed") return "Move verified";
+  if (new Set(["move_completed", "ready_for_check"]).has(workflow.stage)) {
+    return "Move verified";
+  }
   if (workflow.stage === "move_failed") return "Move needs attention";
   return "No move ready";
 }
@@ -437,7 +446,9 @@ function bannerStatusLabel(workflow) {
   if (workflow.stage === "checking") return "Checking files";
   if (workflow.stage === "ready_to_move") return "Ready to move";
   if (workflow.stage === "move_in_progress") return "Moving files";
-  if (workflow.stage === "move_completed") return "Move verified";
+  if (new Set(["move_completed", "ready_for_check"]).has(workflow.stage)) {
+    return "Move verified";
+  }
   if (workflow.stage === "move_failed" || workflow.stage === "stale") {
     return "Move needs attention";
   }
@@ -456,10 +467,10 @@ function movementWorkflow(backend, movement) {
   }
   if (execution.status === "verified") {
     return {
-      stage: "move_completed",
+      stage: "ready_for_check",
       status: "Files moved",
       message: moveCountMessage(execution),
-      primaryAction: { label: "View Activity", action: "open-activity", enabled: true },
+      primaryAction: { label: "Check again", action: "check-again", enabled: true },
     };
   }
   if (execution.status === "partial_movement") {
@@ -894,13 +905,13 @@ export function buildProductionStageB1Contract({
         expandedIds: [...(activity.expandedIds || [])],
         errorMessage: activity.errorMessage || null,
         noticeMessage: activity.noticeMessage || null,
-        lastMoveSummary: lastMoveSummary(execution),
+        lastMoveSummary: lastMoveSummary(execution, activityEntries),
       }
       : {
         connected: false,
         entries: [],
         expandedIds: [],
-        lastMoveSummary: lastMoveSummary(execution),
+        lastMoveSummary: lastMoveSummary(execution, activityEntries),
       },
     standards: { connected: false, items: [] },
     settings: { connected: true },

@@ -297,7 +297,10 @@ class LociFlowStageB4BMovementAdapterTests(unittest.TestCase):
         self.assertNotIn("not connected", result["readyState"]["html"].lower())
         self.assertEqual(result["loading"]["organize"]["primaryAction"]["label"], "Preparing move…")
         self.assertEqual(result["pending"]["organize"]["stage"], "move_in_progress")
-        self.assertEqual(result["verified"]["organize"]["stage"], "move_completed")
+        self.assertEqual(result["verified"]["organize"]["stage"], "ready_for_check")
+        self.assertEqual(result["verified"]["organize"]["primaryAction"], {
+            "label": "Check again", "action": "check-again", "enabled": True,
+        })
         self.assertIn("2 files moved.", result["verified"]["homeHtml"])
         self.assertNotIn("No files have moved yet.", result["verified"]["homeHtml"])
         self.assertEqual(result["failed"]["organize"]["status"], "Files did not move")
