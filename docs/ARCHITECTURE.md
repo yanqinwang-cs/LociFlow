@@ -7,37 +7,51 @@ Filesystem
   -> facts
      -> scanner.py
      -> duplicates.py
-  -> suggestions
-     -> planner.py
-     -> review.py
-     -> scope.py
-     -> grouping.py
-     -> llm_refinement.py
-  -> reports
-     -> pattern_inference.py
-     -> reports.py
-     -> html_report.py
-  -> application coordination
-     -> application/scan_service.py
-     -> application/review_service.py
-     -> application/artifact_service.py
-  -> local web shell
-     -> web/server.py
-     -> web/app.py
-     -> web/security.py
-     -> web/routes/home.py
-  -> batch review
-     -> review_session.py
-  -> decision memory
-     -> review_state.py
-  -> approved moves
-     -> explicit MovePlanItem values
-  -> execution
+  -> supported CLI and report paths
+     -> planner.py, review.py, scope.py, grouping.py
+     -> advisory llm_refinement.py
+     -> reports.py and html_report.py
+     -> review_session.py and review_state.py
+  -> scan application state
+  -> Standards-first organization projection
+     -> deterministic owner modules
+     -> recommendations, choices, kept items, movement tree
+  -> revision-bound decisions and approval
+     -> immutable approved organization plan
+  -> ordinary movement authorization
+     -> durable organization operation repository
+     -> shared execution coordinator
      -> executor.py
-  -> verification
-     -> organization_verify.py
-  -> undo
-     -> operation logs
+     -> verification
+  -> Activity
+     -> durable organization movement and Undo records
+  -> ordinary Undo authorization
+     -> shared execution coordinator
+     -> executor.py
+     -> post-Undo verification
+  -> Duplicate Bin approval catalog
+     -> all-member active claims
+     -> movement authorization and durable operation records
+     -> shared execution coordinator
+     -> executor.py
+     -> verification and protected listing
+  -> unified Duplicate Bin restore
+     -> Duplicate Bin page Restore or Activity Undo
+     -> shared execution coordinator
+     -> executor.py
+     -> exact-path verification
+
+Browser
+  -> authenticated route
+  -> application service
+  -> deterministic owner modules
+  -> executor.py only for explicitly authorized movement or restoration
+
+Production frontend
+  -> backend/API
+  -> data source
+  -> page-specific view model
+  -> accepted renderer
 ```
 
 ## Module Ownership
@@ -69,19 +83,35 @@ Filesystem
 | `application/review_service.py` | immutable review-session coordination through existing review owners |
 | `application/artifact_service.py` | root-contained listing/loading of scan reports and reviewed plans only |
 | `application/view_models.py` | frozen, interface-independent application result types |
+| Loci Flow organization projection and decision services | Standards-first consumer projection, temporary revisions, exact-set decisions, validation, and approval |
+| Loci Flow organization operation repositories and services | durable ordinary movement authorization, intent, replay, verification, and recovery projection |
+| `application/activity_service.py` | Activity projection from durable movement, Undo, Duplicate Bin movement, and restore records |
+| Loci Flow ordinary Undo repositories and services | authorization, durable restore intent, executor delegation, and verification |
+| `application/execution_coordinator.py` | one shared process-wide movement or restore operation at a time |
+| `application/duplicate_bin_repository.py` | durable approved batches, all-member claims, lifecycle, restart reconciliation, and protected catalog |
+| Duplicate Bin movement authorization and operation repositories | one-use authorization, durable intent, replay, and verified movement state |
+| `application/duplicate_bin_restore_service.py` | sole application owner for Duplicate Bin page Restore and Duplicate Bin Activity Undo |
 | `web/config.py` | frozen per-launch root and ephemeral security configuration |
 | `web/server.py` | IPv4-loopback socket binding, browser bootstrap, and single-worker Uvicorn lifecycle |
 | `web/app.py` | isolated FastAPI construction, middleware, templates, static mounting, and generic errors |
 | `web/security.py` | one-time launch gate, session/CSRF helpers, exact Origin validation, and security headers |
 | `web/routes/home.py` | health, single-use launch bootstrap, and authenticated welcome routes only |
+| Loci Flow authenticated routes | strict no-store GET projections and authenticated CSRF/same-origin POST mutations using server-owned IDs |
+| Loci Flow data source and page view models | validate production contracts and adapt backend state to the accepted renderer without owning backend policy |
 | `executor.py` | movement-specific source/destination/symlink validation, approved move execution, operation logs, and undo |
 | `cli.py` | substantial current command-line and use-case orchestration |
 
-## Stage 11 Local Web Direction
+## Current Loci Flow Web Direction
 
-Stage 11 adds a local web application as bootAI's primary consumer interface. Stage 11.5.2 keeps one generation-bound immutable session while adding strict module projections, per-module saved baselines, and web-owned guided queue state. Fresh web new/stale rows are conservatively normalized to `undecided`; CLI and resumed-plan semantics are unchanged.
+Loci Flow through Integration 1.0E is bootAI's primary consumer interface. Its
+six areas are Home, Organize, Duplicate Bin, Activity, Standards, and Settings.
+Home summarizes real scope and verified work; Organize owns recommendations,
+choices, approval, and ordinary movement. Activity contains only real
+filesystem operations and their outcomes. Standards filter forbidden changes
+before the remaining plan is displayed, but writable Standards are not yet an
+implemented product capability.
 
-The required future dependency direction is:
+The required and implemented dependency direction is:
 
 ```text
 Local browser
@@ -95,9 +125,18 @@ Existing deterministic bootAI modules
 executor.py for explicitly approved movement and undo only
 ```
 
-The web layer must not reproduce scanner, duplicate, grouping, review, safety, movement, or undo logic. Route modules must never import `executor.py`; only the future execution application service may delegate validated and explicitly approved plans to existing executor functions. Stage 11.5 routes call the application review service through a locked, generation-bound web holder that atomically replaces immutable sessions. Single-row decisions use stable IDs; current-page previews freeze server-held IDs behind one-use opaque tokens; explicit save delegates to the existing saver and includes every row. Query state remains a projection. No route accepts source, destination, root, or output paths, and no apply or restore workflow exists.
+The web layer does not reproduce scanner, duplicate, grouping, review, safety,
+movement, restore, or Undo logic. Route modules never import `executor.py`.
+Authenticated routes accept stable server-owned IDs, exact confirmations, scan
+generations, and revisions rather than source, destination, root, catalog, or
+operation-log paths. Application services revalidate approved intent and may
+delegate explicit movement or restoration to `executor.py`; `executor.py`
+remains the sole user-file movement implementation.
 
-The holder exposes dirty state only when decisions differ from the last saved snapshot. A dirty session rejects a new scan with `409 Conflict`; a successful explicit save clears dirty state and records the root-relative collision-safe path. It never autosaves. Stage 11.6 will add reviewed-plan resume, revisions, and multi-tab stale-state rejection.
+Organization decisions are temporary, generation-bound, and revision-bound.
+Approvals, movement authorizations, and restore authorizations are server-owned.
+Durable operation intent is written before movement, then verification and
+replay-safe reconciliation project the authoritative outcome to the browser.
 
 Consumer presenters group rows by a safety-validated normalized source key and choose one primary card using duplicate → organization → attention precedence. Secondary rows remain visible inside that card and retain independent stable IDs, decisions, conflicts, and serialization. Consumer actions mutate only the primary row through the application service. Advanced review continues to expose all rows. No consumer presenter owns persistence, grouping, duplicate detection, or movement.
 
@@ -108,6 +147,9 @@ Each web-server process is bound to one validated immutable root. Browser reques
 The current process binds an already-listening IPv4 socket to `127.0.0.1`, normally on an operating-system-selected port, and hands it to one Uvicorn worker with proxy headers and access logging disabled. A one-time launch token establishes a signed browser-lifetime session and immediately redirects away from the token URL. All frontend resources are installed package data; no runtime asset leaves the process origin.
 
 The complete contract is in [WEB_ARCHITECTURE](WEB_ARCHITECTURE.md), and mandatory localhost security controls are in [WEB_THREAT_MODEL](WEB_THREAT_MODEL.md).
+
+The current deterministic behavior requires no LLM. `llm_refinement.py` remains
+advisory only: LLM output cannot authorize, approve, or execute movement.
 
 ## Facts, Suggestions, Approved Moves, Execution, Undo
 

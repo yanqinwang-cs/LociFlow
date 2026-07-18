@@ -1,12 +1,60 @@
 # Local Web Architecture Contract
 
-Status: accepted in Stage 11.0; implemented through Loci Flow Integration 1.0D2A Activity and durable Undo.
+Status: accepted in Stage 11.0; current production implementation completed
+through Loci Flow Integration 1.0E.
 
 This document freezes the architecture that all Stage 11 web work must follow. Stages 11.2 through 11.5 establish the secure scan/review/save workflow; Stage 11.5.1 presents it through consumer responsibilities while retaining Advanced review.
 
 The companion [web threat model](WEB_THREAT_MODEL.md) defines the mandatory security controls. The architecture decisions are also recorded in [ADR 0001](adr/0001-local-web-stack.md), [ADR 0002](adr/0002-web-security-boundary.md), and [ADR 0003](adr/0003-application-service-layer.md).
 
-## Loci Flow Integration 1.0C
+## Current Production State Through Loci Flow 1.0E
+
+The root-locked local application binds to `127.0.0.1`, establishes an
+authenticated browser session through a single-use launch URL, and renders six
+primary areas: Home, Organize, Duplicate Bin, Activity, Standards, and Settings.
+Home and Organize remain separate. Home summarizes real scope, freshness, and
+verified work. Organize owns the current scan, Standards-filtered
+recommendations, destination and duplicate choices, approval, movement tree,
+and ordinary movement. Activity shows only real filesystem movement, restore,
+failure, and Undo records. Standards editing is not implemented.
+
+The production frontend follows backend/API → data source → page-specific view
+model → accepted renderer. Fixture scenarios validate the accepted renderer but
+are never a production fallback. Runtime shell labels, dialogs, navigation, and
+operation status are synchronized from the production view model.
+
+Scanning, decisions, approval, movement preview, ordinary movement, Activity,
+Undo, Duplicate Bin movement, and restore are connected. Every mutation is an
+authenticated POST protected by session-bound CSRF, exact same-origin and Host
+validation, immutable root configuration, strict form fields, scan generation,
+and the applicable decision revision or one-use authorization. The browser
+sends opaque server-owned IDs and exact confirmations, never filesystem,
+catalog, digest, or operation-log paths.
+
+The authenticated route surface has narrow responsibilities: scan mutation and
+current organization state; decision and approval mutations; ordinary movement
+preview and execution; Activity projection and operation-bound Undo preview and
+execution; and Duplicate Bin projection, batch movement preview/execution, and
+selected restore preview/execution. GET projections are no-store and read-only.
+Each state-changing route accepts only its fixed strict form and delegates to an
+application service.
+
+Durable intent precedes every user-file movement. Routes call application
+services and never import `executor.py`; application services revalidate intent
+and delegate movement or restoration to `executor.py`, the sole user-file
+movement implementation. The shared execution coordinator permits one movement
+or restore at a time. Durable records, verification, replay, and restart
+reconciliation make lost responses recoverable without automatic repeat
+movement.
+
+Duplicate Bin is reversible scanner-pruned protected storage, not Trash.
+Approved batches claim all selected and retained group members and rehash the
+full group before separately confirmed movement. The page lists physically
+moved copies. Duplicate Bin Restore and Activity Undo use the same restore
+service, restore selected copies to exact previous paths, reject occupied
+destinations, verify outcomes, and preserve durable history.
+
+## Loci Flow Integration 1.0C — Historical Checkpoint
 
 Loci Flow temporary organization decisions are held server-side, in process, and
 are keyed by the authenticated opaque session ID and completed scan generation.
@@ -33,7 +81,7 @@ stops at **Ready to move — no files have moved yet**. Movement, Activity, Dupl
 Bin execution, operation logs, verification, and Undo remain unimplemented here;
 `executor.py` is not imported by the Loci application service, store, or routes.
 
-## Loci Flow Integration 1.0D1
+## Loci Flow Integration 1.0D1 — Historical Checkpoint
 
 Integration 1.0D1 adds a backend-only movement and verification boundary. The
 browser remains deliberately disconnected: no movement route exists, the disabled
@@ -66,7 +114,7 @@ destination presence but never resumes or reverses movement. Activity rendering,
 undo authorization, undo verification, and consumer projections remain owned by
 1.0D2.
 
-## Loci Flow Integration 1.0D2A
+## Loci Flow Integration 1.0D2A — Historical Checkpoint
 
 Integration 1.0D2A projects consumer Activity directly from typed durable movement
 records and separately linked typed Undo records. It creates no Activity database or
@@ -103,6 +151,11 @@ movement and restore records with collapsed details and explicit Undo confirmati
 The **Move files — not connected yet** control remains disabled; no public movement
 route exists. D2B owns browser movement enablement, and Duplicate Bin execution and
 restoration remain deferred to 1.0E.
+
+The preceding statements describe the D2A historical boundary. Browser movement
+was connected in D2B and prototype-first B4; Duplicate Bin approval, movement,
+restoration, Activity integration, and restart reconciliation were implemented
+through 1.0E as summarized in Current Production State above.
 
 ## Product Direction
 
@@ -291,13 +344,17 @@ The web layer may own routes, forms, HTTP request validation, signed sessions, C
 
 ## Browser Request Contract
 
-### Loci Flow Integration 1.0B
+### Loci Flow Integration 1.0B — Historical Checkpoint
 
 `GET /loci-flow` is a separate authenticated, no-store HTML shell that preserves the existing consumer interface. Its Home and Organize views fetch only the same-origin authenticated `GET /api/organization/current` application-service contract. The immutable launch-time root remains server-owned; the browser sends no root, path, style, or decision parameters and has no fixture fallback.
 
 This integration displays real scope and freshness, recommendations, choices, items kept by Standards, file metadata, and the backend-provided movement tree. Duplicate Bin, Activity, and Standards editing are explicitly not integrated. The shell submits no organization decisions and cannot move files. Its visual baseline is the unchanged standalone fixture prototype under `prototype/loci-flow-ux-1-1-focused-policy-controls/`, which is not served at runtime.
 
-The next Loci Flow integration stage may add temporary decisions and approval without movement. Executor, apply, operation-log, undo, browser root selection, and persistent organization controls remain outside this boundary.
+At that historical checkpoint, the next stage was temporary decisions and
+approval without movement. Decisions, approval, executor-owned browser
+movement, operation records, Activity, Undo, and Duplicate Bin restore were
+implemented later through 1.0E. Persistent writable Standards remain outside
+the current boundary.
 
 The browser submits stable, session-scoped identifiers and allowed actions. The backend maps those identifiers to server-held state and revalidates the corresponding paths.
 
@@ -454,7 +511,12 @@ browser opens automatically
 
 Packaging belongs to Stage 11.10. A packaged application should hide terminal setup from ordinary users. macOS is the first packaging target and Windows follows later.
 
-## Stage 11 Sequence
+## Historical Stage 11 Sequence
+
+This sequence is retained as project history. Loci Flow 1.0A through 1.0E
+overtook the planned-change tree, revision, preflight, browser apply, Activity,
+Undo, and restore entries below. Current status is defined at the top of this
+document and in `ROADMAP.md`.
 
 ### Stage 11.0 — Architecture Contract and Threat Model
 
@@ -488,25 +550,33 @@ Completed: consumer navigation and cards, one-file-one-primary-surface presentat
 
 Completed: conservative fresh-web decisions, guided queues, temporary skip/revisit state, independent module dirty tracking, fixed module artifacts, and complete-session save compatibility. No movement.
 
-### Stage 11.5.3 — Static Planned-Change Tree
+### Stage 11.5.3 — Static Planned-Change Tree (Superseded Plan)
 
-Future: a static, read-only planned-change tree.
+Implemented later as the backend-provided movement tree in Loci Flow 1.0A and
+the live accepted Organize renderer in 1.0B.
 
-### Stage 11.6 — Resume, Stale-State, and Multi-Tab Protection
+### Stage 11.6 — Resume, Stale-State, and Multi-Tab Protection (Overtaken)
 
-Resume reviewed plans; add revision protection, stale-form rejection, multi-tab conflict handling, and source/destination change detection. No movement.
+Loci Flow 1.0C later implemented generation- and revision-bound organization
+decisions and stale mutation rejection. This does not claim completion of every
+legacy reviewed-plan feature.
 
-### Stage 11.7 — Final Plan Preview and Execution Preflight
+### Stage 11.7 — Final Plan Preview and Execution Preflight (Overtaken)
 
-Show exact source/destination plans and check missing sources, destination collisions, root and symlink safety, and stale metadata. No movement.
+Implemented for the Loci Flow approval and movement boundary through 1.0C and
+1.0D1.
 
-### Stage 11.8 — Confirmed Web Apply and Verification
+### Stage 11.8 — Confirmed Web Apply and Verification (Overtaken)
 
-Require fresh preflight, exact typed confirmation, CSRF and revision checks, and one execution at a time. Reuse reviewed-plan validation and `executor.py`, write operation/apply artifacts, and run post-apply verification.
+Implemented for Loci Flow through 1.0D and prototype-first B4 using fresh
+preflight, exact confirmation, authenticated strict POST routes, durable intent,
+the shared coordinator, executor-owned movement, and verification.
 
-### Stage 11.9 — History, Verification, and Confirmed Restore
+### Stage 11.9 — History, Verification, and Confirmed Restore (Overtaken)
 
-Show operation history and verification, then require restore preflight and exact confirmation before delegating to existing executor undo and writing undo-result logs.
+Implemented for Loci Flow through 1.0D2 and 1.0E with durable Activity,
+ordinary Undo, Duplicate Bin Restore, exact confirmation, unified restore
+ownership, and verification.
 
 ### Stage 11.10 — Packaging, Onboarding, Accessibility, and Release Hardening
 
@@ -518,4 +588,6 @@ Native desktop development remains an optional final extension after Stage 11.
 
 Stage 11.5 is the first product-evaluation checkpoint. A user should be able to launch the development web interface, scan a folder, understand findings, inspect suggestions, make review decisions, and save a valid reviewed plan.
 
-Apply and undo may still be CLI-only at this checkpoint. Evaluate the product workflow with target users before automatically continuing to web execution stages. Core Stage 11 does not have to be complete before usability is tested.
+Historical checkpoint statement: apply and Undo were CLI-only at Stage 11.5.
+They were implemented later in the Loci Flow browser integration. Product
+evaluation remains required before expanding beyond the accepted six areas.

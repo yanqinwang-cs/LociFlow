@@ -75,6 +75,28 @@
 - Approved duplicate, organization, and review-candidate moves all use `executor.py`.
 - Organization apply requires exact confirmation and keeps dry-run planning as the default.
 
+## Current Loci Flow 1.0E Protections
+
+- One process is locked to one resolved, validated root; browser requests cannot change it.
+- Root escape, direct symlink sources, unsafe symlink parents, and destinations outside the root are rejected.
+- Existing destinations are never overwritten. Restore to an occupied previous path is blocked.
+- Active Standards filter forbidden organization changes before remaining recommendations are displayed.
+- Organization mutations validate the immutable scan generation and expected decision revision.
+- Approval is required before an ordinary movement authorization can be issued.
+- Ordinary movement and Duplicate Bin movement each require a separate exact confirmation.
+- Durable operation intent is written before any executor call.
+- `executor.py` remains the sole implementation that moves or restores user files.
+- Movement, ordinary Undo, and Duplicate Bin restore outcomes are verified against current filesystem state.
+- Durable terminal results are replayed without automatically repeating movement after restart or a lost response.
+- Activity is projected only from durable real movement, restore, failure, and Undo records.
+- Ordinary Undo uses a one-use server-owned authorization, the shared execution coordinator, and post-Undo verification.
+- Duplicate Bin approval claims every selected and retained group member, and the complete group is rehashed before movement.
+- The scanner prunes the protected Duplicate Bin subtree so stored copies cannot re-enter normal organization planning.
+- Duplicate Bin Restore and Duplicate Bin Activity Undo share one restore service and restore only selected copies to exact previous paths.
+- Fully restored historical duplicate batches are reconciled once on restart and release their active claims without deleting history.
+- Duplicate Bin is reversible protected storage. There is no permanent deletion, Empty Bin, or system Trash handoff.
+- Current behavior requires no LLM. LLM output remains advisory and cannot approve or execute an action.
+
 ## Local Web Invariants
 
 - The browser, all browser-provided values, and all loaded JSON artifacts are untrusted.
@@ -85,21 +107,21 @@
 - A one-time launch token establishes a signed, host-only, browser-lifetime session cookie with `HttpOnly` and `SameSite=Strict`.
 - Launch-token comparison and consumption are atomic; wrong, blank, and replayed tokens receive the same generic failure. A success clears any prior session and redirects away from the secret URL.
 - Signed session data is integrity-protected but not confidential. Store no root or launch token in it, and persist no session secret.
-- Every state-changing request uses POST and requires a session-bound CSRF token, same-origin validation, and the current scan generation. Explicit request revisions and multi-tab stale-state rejection begin in Stage 11.6.
+- Every state-changing request uses POST and requires a session-bound CSRF token and exact same-origin validation. Organization mutations also require the current scan generation and expected decision revision; movement and restore use one-use server-owned authorizations.
 - Origin validation fails closed and requires one exact loopback origin matching scheme, host, and port. Missing or malformed Origin is not accepted.
 - GET requests are read-only. Refreshing a result must not repeat a mutation.
 - Trusted Host validation rejects unexpected hosts, CORS is not enabled, and frontend assets are bundled locally.
-- Stage 11.5 serializes application-session replacement under a lock and binds bulk previews to the browser session and scan generation. Stage 11.6 adds full stale-form and multi-tab rejection.
+- Session replacement is serialized, exact-set bulk previews are bound to the browser session and scan generation, and stale organization revisions are rejected rather than merged.
 - One root-bound process permits one active scan job and one active execution or restore operation at a time.
 - Web routes must not import `executor.py`; only the execution application service may delegate to existing executor functions.
-- Web apply is forbidden before Stage 11.8, and web restore is forbidden before Stage 11.9.
+- Web movement and restore are available only through their authenticated application-service boundaries, fresh validation, exact confirmation, shared coordinator, durable intent, and verification.
 - An arbitrary path-based file-serving endpoint is forbidden.
 - Accessibility targets WCAG 2.2 AA from the first web screen.
 - Stage 11.5 review mutations are POST-only and require authentication, CSRF, Origin, current generation, stable IDs or a one-use opaque preview token, and POST/redirect/GET. GET remains read-only.
 - Web decisions map Organize to `approved`, Keep here to `rejected`, and Review later to `undecided`. Current-page actions affect only the exact frozen page IDs after typed confirmation.
 - Reviewed-plan saving is explicit, collision-safe, includes hidden and off-page rows, and never moves files. There is no autosave or browser-selected output path.
 - Unsaved decisions block a replacement scan with `409 Conflict`; they are never silently discarded or assigned to a later generation.
-- Web apply and restore controls remain absent.
+- Movement, Undo, and Restore controls are rendered only when authoritative production state says the operation is currently eligible.
 - Consumer cards consolidate repeated source findings for presentation only. Duplicate findings take precedence, then organization, then needs attention; secondary rows, decisions, conflicts, and saved output remain intact.
 - A consumer card action changes only its primary row. It must not silently change secondary module choices.
 - Consumer surfaces are strict enums mapped to fixed routes, never browser-provided return URLs or paths.
@@ -115,7 +137,7 @@ The complete controls and threat mappings are in [WEB_THREAT_MODEL](WEB_THREAT_M
 
 Moving a file to another folder on the same filesystem does not save storage space. The primary consumer interface uses `Space used by extra copies` or `Potential duplicate space`. Technical interfaces may report `Potential duplicate bytes` or `Duplicate candidates for review`.
 
-Do not report `Space saved` or `Storage recovered` unless an operation actually removes data from that filesystem or transfers it elsewhere. Stage 11 adds no permanent removal, Trash integration, or automatic disposal. The existing reversible-move, operation-history, and restore requirements remain in force.
+Do not report `Space saved` or `Storage recovered` unless an operation actually removes data from that filesystem or transfers it elsewhere. Loci Flow 1.0E adds no permanent removal, Trash integration, or automatic disposal. The existing reversible-move, operation-history, and restore requirements remain in force.
 
 ## Risk Categories
 

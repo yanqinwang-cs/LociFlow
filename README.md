@@ -2,11 +2,34 @@
 
 `bootAI` is a cautious local file organizer for scanning folders, reviewing metadata, and applying explicitly approved move plans.
 
-The project is safety-first: dry-run is default, real movement requires exact confirmation, the tool never permanently deletes files by default, the tool never overwrites files, and all real movement goes through approved move plans and operation logs.
+The project is safety-first: dry-run is default, real movement requires exact confirmation, the tool never permanently deletes files, the tool never overwrites files, and all real movement goes through approved move plans and operation logs.
 
 ## Current Status
 
-Stages 1 through 10.14 and Stages 11.0 through 11.5.2 are implemented. Stage 11.5.2 adds conservative fresh-web decisions, guided duplicate/organization/attention queues, and independently saved module choices while preserving complete-session Advanced review. It does not move, apply, restore, or remove files. The tool can currently:
+The accepted Loci Flow integration is complete through 1.0E. The primary local
+web application has six areas: **Home**, **Organize**, **Duplicate Bin**,
+**Activity**, **Standards**, and **Settings**. Home summarizes the selected root
+and recent verified work; Organize owns scan results, recommendations, choices,
+approval, and ordinary movement. Duplicate Bin is reversible protected storage,
+not Trash. Activity shows only real filesystem movement, restore, failure, and
+Undo records. Standards are applied before suggestions are displayed, but
+Standards editing is not yet implemented. Settings exposes only currently
+implemented configuration.
+
+The current safe workflow is:
+
+```text
+authenticated root-locked launch
+  -> deterministic scan
+  -> recommendations and choices
+  -> revision-bound decisions and approval
+  -> exact-confirmed movement or Duplicate Bin movement
+  -> durable intent and executor-owned movement
+  -> verification
+  -> Activity and exact-confirmed Undo or Restore
+```
+
+The tool can currently:
 
 - Scan folders read-only.
 - Detect exact duplicates with SHA-256.
@@ -43,16 +66,29 @@ Stages 1 through 10.14 and Stages 11.0 through 11.5.2 are implemented. Stage 11.
 - Launch a single-worker local web shell for one immutable validated root.
 - Establish one browser session through a single-use launch URL, then redirect to a clean authenticated page.
 - Serve locally bundled HTMX and Bootstrap assets with strict Host and response-header controls.
-- Set web review rows to Organize (`approved`), Keep here (`rejected`), or Review later (`undecided`).
-- Apply an exact-confirmed decision to the current review page and explicitly save all rows to a collision-safe reviewed-plan artifact.
-
-Stage 11.1 migrated report generation and review-session creation/resume into application services. Stages 11.3 through 11.5 connect scanning, review exploration, immutable decision updates, and explicit reviewed-plan saving to those services without rescanning during navigation. The interactive CLI review loop and all apply, undo, verification, and movement paths retain their existing owners. The historical OpenRouter assistant remains excluded from bootAI packaging, and the core package still has no mandatory third-party dependencies.
+- Scan and reload real organization state without rescanning during navigation.
+- Review recommended destinations and exact-duplicate choices using server-owned IDs.
+- Approve a complete revision-bound organization plan and inspect its movement tree.
+- Preview and exactly confirm ordinary movement, then verify the result.
+- Recover durable movement state after restart or a lost browser response.
+- Inspect durable Activity and exactly confirm ordinary Undo.
+- Approve, separately confirm, and verify movement into Duplicate Bin.
+- Restore selected Duplicate Bin copies to their exact previous paths.
+- Use the same authoritative restore service from Activity Undo and Duplicate Bin Restore.
+- Start a new organization cycle after completed movement or restore.
 
 ## Interface Direction
 
-The local web application is the intended primary interface for ordinary users. Its implemented Stage 11.2 foundation uses FastAPI, Jinja2, HTMX, Bootstrap, minimal vanilla JavaScript, and Uvicorn, with all assets bundled locally and the server restricted to one validated root on IPv4 loopback.
+The local web application is the intended primary interface for ordinary users.
+It uses a production backend/API → data source → page-specific view model →
+accepted renderer pipeline. Browser mutations are authenticated POSTs protected
+by CSRF, exact same-origin checks, immutable root configuration, scan generation,
+and decision revision. Routes call application services and never import
+`executor.py`; `executor.py` remains the sole user-file movement implementation.
 
-Fresh scan-generated web rows now begin `undecided` when new or stale; only remembered approvals/rejections remain decided. The three guided modules share one authoritative session, track temporary handled/skipped queue state in memory, and save existing-format subset artifacts independently. Replacement scans name every dirty module and remain blocked until all unsaved choices are saved. Stage 11.5.3 planned-change tree and Stage 11.6 resume/revision work remain future.
+The next binding stage is **1.0F — Standards Contract and Owner Inspection**.
+It is an inspection, not approval to implement writable Standards or expose raw
+rule configuration.
 
 See the [local web architecture contract](docs/WEB_ARCHITECTURE.md) and [web threat model](docs/WEB_THREAT_MODEL.md) for the frozen Stage 11 requirements.
 
@@ -72,14 +108,14 @@ PYTHONPATH=src python3 -m unittest discover -s tests
 
 Run commands with `PYTHONPATH=src` from the repository root:
 
-Launch the Stage 11.2 web shell for one folder:
+Launch Loci Flow for one locked folder:
 
 ```bash
 PYTHONPATH=src python3 -m organizer.web --root "$HOME/Downloads"
 PYTHONPATH=src python3 -m organizer.web --root "$HOME/Downloads" --no-browser
 ```
 
-The launcher binds only to `127.0.0.1`, selects a dynamic port unless `--port` is supplied, and uses a private single-use launch URL. The page confirms the locked root and that no scan or movement has occurred.
+The launcher binds only to `127.0.0.1`, selects a dynamic port unless `--port` is supplied, and uses a private single-use launch URL. The authenticated application keeps that validated root immutable for the process lifetime.
 
 Existing CLI commands remain unchanged:
 
@@ -188,8 +224,14 @@ PYTHONPATH=src python3 -m organizer.cli /path/to/folder --apply-refined-organiza
 - Post-apply verification compares the apply summary, operation log, and filesystem without moving files.
 - `executor.py` is the only module that performs real movement.
 - Review, grouping, and LLM modules produce facts or suggestions; they do not execute moves.
-- The Stage 11.4 web explorer has no review mutation, artifact-writing, apply, restore, arbitrary file-serving, or executor route. The only production POST is the explicit Stage 11.3 scan trigger.
+- Loci Flow exposes no arbitrary file-serving route and never accepts source, destination, root, or operation-log paths from the browser.
 - Its signed session cookie is integrity-protected, not confidential; it contains only authentication state and opaque session/CSRF values.
+
+Current limitations are explicit: there is no Search, general Files browser,
+permanent deletion, Empty Bin, system Trash handoff, multi-root execution,
+automatic LLM execution, or writable Standards workflow. Duplicate Bin remains
+reversible protected storage, and occupied exact restore destinations block
+restoration rather than being overwritten.
 
 ## Documentation
 

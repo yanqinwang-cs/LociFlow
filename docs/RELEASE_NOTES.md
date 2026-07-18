@@ -1,6 +1,46 @@
 # Release Notes
 
+## Loci Flow Integration 1.0E — Current Production Checkpoint
+
+Loci Flow now runs the accepted prototype-first six-area shell for Home,
+Organize, Duplicate Bin, Activity, Standards, and Settings. The live application
+uses real root-locked scan state, Standards-filtered organization projections,
+revision-bound destination and duplicate decisions, exact-set bulk acceptance,
+and explicit final approval. Home and Organize remain separate, and production
+data passes through the backend API, data source, page-specific view model, and
+accepted renderer without a fixture fallback.
+
+Approved ordinary movement now requires an opaque server-owned authorization,
+fresh preflight, and exact confirmation. Durable intent is written before
+`executor.py` performs user-file movement, verification runs afterward, and
+replay recovers interrupted or lost-response outcomes without automatic repeat
+movement. Activity projects durable movement, failure, restore, and Undo
+records. Ordinary Undo uses an exact-confirmed authorization and post-Undo
+verification.
+
+Duplicate Bin is integrated as reversible protected storage, not Trash. Durable
+approved batches claim every selected and retained group member, the scanner
+prunes the protected subtree, and the complete duplicate group is rehashed
+before separately confirmed movement. The UI lists only physically moved
+copies. Duplicate Bin Restore and Activity Undo share one restore owner, restore
+selected copies to exact previous paths, reject occupied destinations, and
+reconcile fully restored historical batches across restart so later explicit
+organization cycles can proceed.
+
+All mutations remain authenticated POSTs protected by CSRF, exact same-origin
+validation, server-owned IDs, immutable root configuration, scan generations,
+and decision revisions. Routes do not import `executor.py`; `executor.py`
+remains the sole user-file movement implementation. There is no permanent
+deletion, Empty Bin, system Trash handoff, Search, general Files browser,
+multi-root execution, automatic LLM execution, or writable Standards workflow.
+The next binding stage is the read-only **1.0F Standards Contract and Owner
+Inspection**, not Standards implementation.
+
 ## Stage 11.5.2 — Guided Modular Review and Independent Module Plans
+
+Historical stage. The statements in this and older entries describe the
+capability boundary at that checkpoint; the current production state is the
+Loci Flow 1.0E entry above.
 
 Stage 11.5.2 adds guided Duplicates, Organize, and Needs attention queues over one authoritative review session. Progress is interaction-based, skipped rows remain `undecided` and can be returned through a protected in-memory queue action, and each module shows separate progress and persistence status.
 
@@ -192,7 +232,9 @@ Apply commands require one of:
 ## Known Limitations
 
 - No built-in scheduler daemon or background service.
-- No local web runtime yet; Stage 11.0 defines its architecture and security contract only.
+- Standards editing is not implemented; active Standards are currently read and applied before organization suggestions are displayed.
+- No permanent deletion, Empty Bin, or system Trash handoff; Duplicate Bin is reversible protected storage.
+- No Search, general Files browser, multi-root execution, or automatic LLM execution.
 - No HTML report review actions or apply buttons.
 - No selective subset or interactive editing command for organization-review files.
 - No cloud LLM APIs.
@@ -203,4 +245,6 @@ Apply commands require one of:
 
 ## Future Roadmap
 
-See [ROADMAP](ROADMAP.md). Stage 11.5 is the first product-evaluation checkpoint; apply and undo may remain CLI-only while the web review workflow is evaluated.
+See [ROADMAP](ROADMAP.md). The next binding stage is **1.0F — Standards
+Contract and Owner Inspection**. It must establish the real user need and
+authoritative ownership before any writable Standards design is approved.
