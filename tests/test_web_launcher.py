@@ -2,12 +2,15 @@ from __future__ import annotations
 
 from pathlib import Path
 import tempfile
+from threading import Thread
 import unittest
 from unittest import mock
 
+from organizer.application.runtime_lifecycle import RuntimeLifecycle
 from organizer.web.config import WebAppConfig
 from organizer.web.launcher import (
     LaunchPhase,
+    LaunchRuntimeHandle,
     LaunchStopController,
     LauncherDependencies,
     LauncherError,
@@ -73,6 +76,16 @@ class _Observer:
     def join(self) -> None:
         self.events.append("readiness.join")
         self.joined = True
+
+
+def _capture_runtime_wait_error(
+    handle: LaunchRuntimeHandle,
+    errors: list[str],
+) -> None:
+    try:
+        handle.wait_for_lifecycle()
+    except RuntimeError as error:
+        errors.append(str(error))
 
 
 class WebLauncherTests(unittest.TestCase):
@@ -148,6 +161,158 @@ class WebLauncherTests(unittest.TestCase):
 
                 self.assertFalse(controller.request_stop())
                 request_exit.assert_called_once_with()
+
+    def test_runtime_handle_publishes_once_and_rejects_replacement(self) -> None:
+        handle = LaunchRuntimeHandle(LaunchStopController())
+        lifecycle = RuntimeLifecycle()
+
+        first = handle.publish_lifecycle(lifecycle)
+        repeated = handle.publish_lifecycle(lifecycle)
+
+        self.assertEqual(first, repeated)
+        self.assertIs(handle.wait_for_lifecycle(), lifecycle)
+        with self.assertRaisesRegex(RuntimeError, "different runtime lifecycle"):
+            handle.publish_lifecycle(RuntimeLifecycle())
+
+    def test_runtime_handle_pending_shutdown_begins_once_for_all_waiters(self) -> None:
+        class CountingLifecycle(RuntimeLifecycle):
+            def __init__(inner_self) -> None:
+                super().__init__()
+                inner_self.shutdown_calls = 0
+
+            def begin_shutdown(inner_self):
+                inner_self.shutdown_calls += 1
+                return super().begin_shutdown()
+
+        handle = LaunchRuntimeHandle(LaunchStopController())
+        lifecycle = CountingLifecycle()
+        observed: list[RuntimeLifecycle] = []
+        waiters = [
+            Thread(target=lambda: observed.append(handle.wait_for_lifecycle()))
+            for _ in range(3)
+        ]
+        for waiter in waiters:
+            waiter.start()
+
+        self.assertIsNone(handle.request_shutdown())
+        self.assertIsNone(handle.request_shutdown())
+        handle.publish_lifecycle(lifecycle)
+        handle.request_shutdown()
+        for waiter in waiters:
+            waiter.join(1)
+
+        self.assertEqual(observed, [lifecycle] * 3)
+        self.assertEqual(lifecycle.shutdown_calls, 1)
+
+    def test_terminal_publication_failure_wakes_waiters_without_a_fake_lifecycle(
+        self,
+    ) -> None:
+        handle = LaunchRuntimeHandle(LaunchStopController())
+        errors: list[str] = []
+        waiter = Thread(
+            target=lambda: _capture_runtime_wait_error(handle, errors)
+        )
+        waiter.start()
+
+        handle.finish_lifecycle_publication()
+        waiter.join(1)
+
+        self.assertFalse(waiter.is_alive())
+        self.assertEqual(
+            errors,
+            ["the application runtime lifecycle was not published"],
+        )
+
+    def test_app_creation_failure_finishes_runtime_publication(self) -> None:
+        handle = LaunchRuntimeHandle(LaunchStopController())
+        handle.request_shutdown()
+        dependencies = self.dependencies()
+        dependencies = LauncherDependencies(
+            config_factory=dependencies.config_factory,
+            socket_binder=dependencies.socket_binder,
+            app_factory=mock.Mock(side_effect=RuntimeError("private app detail")),
+            server_factory=dependencies.server_factory,
+            readiness_factory=dependencies.readiness_factory,
+            manual_browser_bootstrap=dependencies.manual_browser_bootstrap,
+            runtime_lifecycle_accessor=lambda app: app,
+        )
+
+        result = launch_configured(
+            dependencies.config_factory(self.root),
+            dependencies=dependencies,
+            runtime_handle=handle,
+        )
+
+        self.assertEqual(result.error.code, "app_creation_failed")
+        with self.assertRaisesRegex(RuntimeError, "was not published"):
+            handle.wait_for_lifecycle()
+
+    def test_pending_shutdown_is_applied_to_exact_lifecycle_before_server_creation(
+        self,
+    ) -> None:
+        lifecycle = RuntimeLifecycle()
+        handle = LaunchRuntimeHandle(LaunchStopController())
+        self.assertIsNone(handle.request_shutdown())
+        dependencies = self.dependencies()
+
+        def app_factory(config: WebAppConfig) -> dict[str, object]:
+            self.events.append("app")
+            return {"root": config.root, "lifecycle": lifecycle}
+
+        def server_factory(app: object, port: int) -> _Server:
+            self.assertTrue(lifecycle.snapshot().is_stopping)
+            self.events.append(f"server:{port}")
+            return self.server
+
+        dependencies = LauncherDependencies(
+            config_factory=dependencies.config_factory,
+            socket_binder=dependencies.socket_binder,
+            app_factory=app_factory,
+            server_factory=server_factory,
+            readiness_factory=dependencies.readiness_factory,
+            manual_browser_bootstrap=dependencies.manual_browser_bootstrap,
+            runtime_lifecycle_accessor=lambda app: app["lifecycle"],
+        )
+        config = dependencies.config_factory(self.root)
+
+        result = launch_configured(
+            config,
+            dependencies=dependencies,
+            runtime_handle=handle,
+        )
+
+        self.assertTrue(result.succeeded)
+        self.assertIs(handle.wait_for_lifecycle(), lifecycle)
+        self.assertLess(self.events.index("app"), self.events.index("server:48123"))
+
+    def test_runtime_publication_precedes_server_execution(self) -> None:
+        lifecycle = RuntimeLifecycle()
+        handle = LaunchRuntimeHandle(LaunchStopController())
+        dependencies = self.dependencies()
+
+        class InspectingServer(_Server):
+            def run(inner_self, *, sockets: list[_Socket]) -> None:
+                self.assertIs(handle.wait_for_lifecycle(), lifecycle)
+                super().run(sockets=sockets)
+
+        self.server = InspectingServer(self.events)
+        dependencies = LauncherDependencies(
+            config_factory=dependencies.config_factory,
+            socket_binder=dependencies.socket_binder,
+            app_factory=lambda _config: lifecycle,
+            server_factory=dependencies.server_factory,
+            readiness_factory=dependencies.readiness_factory,
+            manual_browser_bootstrap=dependencies.manual_browser_bootstrap,
+            runtime_lifecycle_accessor=lambda app: app,
+        )
+
+        result = launch_configured(
+            dependencies.config_factory(self.root),
+            dependencies=dependencies,
+            runtime_handle=handle,
+        )
+
+        self.assertTrue(result.succeeded)
 
     def test_normal_launch_has_explicit_ordered_phases_and_cleanup(self) -> None:
         result = launch(lambda: self.root, dependencies=self.dependencies())

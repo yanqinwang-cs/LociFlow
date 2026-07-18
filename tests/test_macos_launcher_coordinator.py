@@ -11,6 +11,7 @@ from threading import Event, Thread, current_thread, main_thread
 import unittest
 from unittest import mock
 
+from organizer.application.runtime_lifecycle import RuntimeLifecycle
 from organizer.macos_launcher.coordinator import (
     NativeLauncherCoordinator,
     NativeMessage,
@@ -42,6 +43,12 @@ class _Adapter:
         self.running_states: list[bool] = []
         self.browser_result = True
         self.browser_opened = Event()
+        self.termination_handler: Callable[[], bool] | None = None
+        self.finishing_shown = 0
+        self.finishing_closed = 0
+        self.shutdown_failures = 0
+        self.termination_replies: list[bool] = []
+        self.diagnostic_handler: Callable[[str], None] | None = None
 
     def initialize(self) -> None:
         self.events.append("adapter.initialize")
@@ -101,6 +108,26 @@ class _Adapter:
     def set_launch_running(self, running: bool) -> None:
         self.events.append(f"adapter.running:{running}")
         self.running_states.append(running)
+
+    def set_termination_handler(self, handler: Callable[[], bool]) -> None:
+        self.termination_handler = handler
+
+    def set_diagnostic_handler(self, handler: Callable[[str], None]) -> None:
+        self.diagnostic_handler = handler
+
+    def show_finishing_status(self) -> None:
+        self.finishing_shown += 1
+
+    def close_finishing_status(self) -> None:
+        self.finishing_closed += 1
+
+    def show_shutdown_failure(self) -> None:
+        self.shutdown_failures += 1
+
+    def reply_to_termination(self, allow: bool) -> None:
+        self.termination_replies.append(allow)
+        if allow:
+            self.stop_event_loop()
 
 
 class _Socket:
@@ -208,6 +235,34 @@ class _CompletedWorkerInterruptAdapter(_Adapter):
         if not self.terminal_dispatched.wait(2):
             raise AssertionError("terminal worker result was not delivered")
         raise KeyboardInterrupt
+
+
+class _NativeQuitAdapter(_Adapter):
+    def __init__(self, selected: str, server_running: Event) -> None:
+        super().__init__(selected)
+        self.server_running = server_running
+
+    def run_event_loop(self) -> None:
+        self.events.append("adapter.run_loop")
+        self.loop_started.set()
+        try:
+            start_worker = self.callbacks.get(timeout=2)
+        except Empty as error:
+            raise AssertionError("worker-start callback was not delivered") from error
+        start_worker()
+        if not self.server_running.wait(2):
+            raise AssertionError("server did not start")
+        if self.termination_handler is None:
+            raise AssertionError("termination handler was not installed")
+        self.events.append("adapter.quit")
+        if not self.termination_handler():
+            raise AssertionError("native termination was not delayed")
+        while not self.loop_stopped.is_set():
+            try:
+                callback = self.callbacks.get(timeout=2)
+            except Empty as error:
+                raise AssertionError("terminal callback was not delivered") from error
+            callback()
 
 
 class _AsyncObserver:
@@ -319,6 +374,45 @@ class MacOSLauncherCoordinatorTests(unittest.TestCase):
         self.assertEqual(events.count("adapter.dispatch"), 2)
         self.assertEqual(adapter.dispatched_callbacks.count("_complete_on_main"), 1)
         self.assertLess(events.index("adapter.run_loop"), events.index("worker.started"))
+
+    def test_native_idle_quit_uses_exact_app_lifecycle_and_worker_result_owner(
+        self,
+    ) -> None:
+        lifecycle = RuntimeLifecycle()
+        server_running = Event()
+        server = _BlockingServer()
+        original_run = server.run
+
+        def run(*, sockets: list[_Socket]) -> None:
+            server_running.set()
+            original_run(sockets=sockets)
+
+        server.run = run  # type: ignore[method-assign]
+        adapter = _NativeQuitAdapter(str(self.root), server_running)
+        dependencies = LauncherDependencies(
+            config_factory=WebAppConfig,
+            socket_binder=lambda _port: self.socket,
+            app_factory=lambda _config: lifecycle,
+            server_factory=lambda _app, _port: server,
+            readiness_factory=lambda _health, _launch, _stop, _exit: _Observer(),
+            manual_browser_bootstrap=lambda _url: None,
+            runtime_lifecycle_accessor=lambda app: app,
+        )
+
+        coordinator = NativeLauncherCoordinator(
+            adapter,
+            dependencies_factory=lambda _browser: dependencies,
+        )
+        result = coordinator.run()
+
+        self.assertEqual(result, 0)
+        self.assertIs(coordinator._runtime_handle.wait_for_lifecycle(), lifecycle)
+        self.assertTrue(lifecycle.snapshot().is_stopping)
+        self.assertEqual(server.exit_requests, 1)
+        self.assertTrue(self.socket.closed)
+        self.assertEqual(adapter.termination_replies, [True])
+        self.assertIsNotNone(coordinator._worker)
+        self.assertFalse(coordinator._worker.is_alive())
 
     def test_cancellation_creates_no_config_worker_or_browser_side_effect(self) -> None:
         adapter = _Adapter(None)
@@ -734,6 +828,27 @@ class MacOSLauncherCoordinatorTests(unittest.TestCase):
 
         self.assertEqual(result, 1)
         self.assertEqual(stderr.getvalue(), "")
+
+    def test_native_appkit_event_trace_is_safe_and_debug_only(self) -> None:
+        output = StringIO()
+        sink = development_diagnostic_sink(
+            environ={"LOCI_FLOW_NATIVE_DEBUG": "1"},
+            stream=output,
+        )
+        coordinator = NativeLauncherCoordinator(
+            _Adapter(None),
+            diagnostic_sink=sink,
+        )
+
+        coordinator._record_native_event("application_should_terminate")
+
+        trace = output.getvalue()
+        self.assertIn("phase: native_appkit", trace)
+        self.assertIn("code: application_should_terminate", trace)
+        self.assertNotIn("Traceback", trace)
+        self.assertNotIn("/Users/", trace)
+        self.assertNotIn("/launch/", trace)
+        self.assertNotIn("0x", trace)
 
     def test_debug_diagnostics_report_safe_details_and_redact_secrets(self) -> None:
         adapter = _Adapter(str(self.root))

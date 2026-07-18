@@ -16,7 +16,7 @@ import webbrowser
 
 import uvicorn
 
-from organizer.web.app import create_app
+from organizer.web.app import app_runtime_lifecycle, create_app
 from organizer.web.config import WebAppConfig
 from organizer.web.launcher import (
     LauncherDependencies,
@@ -201,6 +201,7 @@ def build_launcher_dependencies(
         server_factory=_create_uvicorn_server,
         readiness_factory=readiness_factory,
         manual_browser_bootstrap=_print_manual_launch_url,
+        runtime_lifecycle_accessor=app_runtime_lifecycle,
     )
 
 

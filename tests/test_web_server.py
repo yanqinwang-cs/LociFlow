@@ -75,6 +75,17 @@ class WebServerTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.temporary_directory.cleanup()
 
+    def test_launcher_dependencies_publish_only_the_exact_app_lifecycle(self) -> None:
+        dependencies = server.build_launcher_dependencies()
+        app = dependencies.app_factory(self.config)
+
+        self.assertIsNotNone(dependencies.runtime_lifecycle_accessor)
+        assert dependencies.runtime_lifecycle_accessor is not None
+        self.assertIs(
+            dependencies.runtime_lifecycle_accessor(app),
+            app.state.runtime_lifecycle,
+        )
+
     def test_parser_supports_only_root_no_browser_and_valid_fixed_port(self) -> None:
         parser = server.build_parser()
         args = parser.parse_args(

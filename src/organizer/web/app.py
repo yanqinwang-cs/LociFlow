@@ -186,3 +186,12 @@ def create_app(config: WebAppConfig) -> FastAPI:
         return apply_security_headers(response)
 
     return app
+
+
+def app_runtime_lifecycle(app: FastAPI) -> RuntimeLifecycle:
+    """Return only the authoritative lifecycle owned by a constructed app."""
+
+    lifecycle = getattr(app.state, "runtime_lifecycle", None)
+    if not isinstance(lifecycle, RuntimeLifecycle):
+        raise RuntimeError("the application runtime lifecycle is unavailable")
+    return lifecycle

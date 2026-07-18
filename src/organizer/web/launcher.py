@@ -4,9 +4,13 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
-from threading import Event, Lock
+from threading import Condition, Event, Lock
 from typing import Any, Protocol
 
+from organizer.application.runtime_lifecycle import (
+    RuntimeLifecycle,
+    RuntimeSnapshot,
+)
 from organizer.web.config import WebAppConfig
 from organizer.web.root_admission import RootAdmissionError
 
@@ -92,6 +96,76 @@ class LaunchStopController:
         return True
 
 
+class LaunchRuntimeHandle:
+    """Publishes one app lifecycle and coordinates its monotonic shutdown."""
+
+    def __init__(self, stop_controller: LaunchStopController) -> None:
+        self._condition = Condition()
+        self._stop_controller = stop_controller
+        self._lifecycle: RuntimeLifecycle | None = None
+        self._publication_finished = False
+        self._shutdown_requested = False
+        self._shutdown_started = False
+
+    def publish_lifecycle(self, lifecycle: RuntimeLifecycle) -> RuntimeSnapshot:
+        if not isinstance(lifecycle, RuntimeLifecycle):
+            raise TypeError("runtime lifecycle is required")
+        with self._condition:
+            if self._publication_finished and self._lifecycle is None:
+                raise RuntimeError("runtime lifecycle publication already failed")
+            if self._lifecycle is not None:
+                if self._lifecycle is lifecycle:
+                    return lifecycle.snapshot()
+                raise RuntimeError("a different runtime lifecycle is already published")
+            self._lifecycle = lifecycle
+            self._publication_finished = True
+            if self._shutdown_requested:
+                self._begin_shutdown_locked()
+            snapshot = lifecycle.snapshot()
+            self._condition.notify_all()
+            return snapshot
+
+    def request_shutdown(self) -> RuntimeSnapshot | None:
+        with self._condition:
+            self._shutdown_requested = True
+            if self._lifecycle is None:
+                return None
+            self._begin_shutdown_locked()
+            return self._lifecycle.snapshot()
+
+    def wait_for_lifecycle(self) -> RuntimeLifecycle:
+        with self._condition:
+            while self._lifecycle is None and not self._publication_finished:
+                self._condition.wait()
+            if self._lifecycle is None:
+                raise RuntimeError(
+                    "the application runtime lifecycle was not published"
+                )
+            return self._lifecycle
+
+    def finish_lifecycle_publication(self) -> None:
+        """Wake publication waiters when application construction is terminal."""
+
+        with self._condition:
+            self._publication_finished = True
+            self._condition.notify_all()
+
+    def lifecycle_snapshot(self) -> RuntimeSnapshot | None:
+        with self._condition:
+            lifecycle = self._lifecycle
+        return None if lifecycle is None else lifecycle.snapshot()
+
+    def request_server_stop(self) -> bool:
+        return self._stop_controller.request_stop()
+
+    def _begin_shutdown_locked(self) -> None:
+        if self._shutdown_started:
+            return
+        assert self._lifecycle is not None
+        self._lifecycle.begin_shutdown()
+        self._shutdown_started = True
+
+
 class ReadinessObserver(Protocol):
     def start(self) -> None: ...
 
@@ -109,6 +183,7 @@ class LauncherDependencies:
         ReadinessObserver,
     ]
     manual_browser_bootstrap: Callable[[str], None]
+    runtime_lifecycle_accessor: Callable[[Any], RuntimeLifecycle] | None = None
 
 
 @dataclass
@@ -187,6 +262,7 @@ def launch_configured(
     propagate_unexpected: bool = False,
     diagnostic: LaunchDiagnostic | None = None,
     stop_controller: LaunchStopController | None = None,
+    runtime_handle: LaunchRuntimeHandle | None = None,
 ) -> LaunchResult:
     recorder = lifecycle or LifecycleRecorder()
     bound_socket: BoundSocket | None = None
@@ -214,6 +290,13 @@ def launch_configured(
 
         try:
             app = dependencies.app_factory(config)
+            if runtime_handle is not None:
+                accessor = dependencies.runtime_lifecycle_accessor
+                if accessor is None:
+                    raise RuntimeError(
+                        "native launch requires a runtime lifecycle accessor"
+                    )
+                runtime_handle.publish_lifecycle(accessor(app))
             server = dependencies.server_factory(app, actual_port)
             if stop_controller is not None:
                 stop_controller.attach(server.request_exit)
@@ -274,6 +357,8 @@ def launch_configured(
                     unexpected = raised
                     _diagnose(diagnostic, LaunchPhase.RUNNING, error, raised)
     finally:
+        if runtime_handle is not None:
+            runtime_handle.finish_lifecycle_publication()
         if bound_socket is not None:
             recorder.record(LaunchPhase.STOPPING)
             stop_event.set()

@@ -5,7 +5,7 @@ import unittest
 
 import httpx
 
-from organizer.web.app import create_app
+from organizer.web.app import app_runtime_lifecycle, create_app
 from organizer.web.config import WebAppConfig
 from organizer.web.security import CONTENT_SECURITY_POLICY, SECURITY_HEADERS
 from organizer.application.runtime_lifecycle import RuntimeOperationKind
@@ -123,6 +123,29 @@ class WebAppTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.app.state.runtime_lifecycle.snapshot().active_count, 1)
         self.assertEqual(other_app.state.runtime_lifecycle.snapshot().active_count, 0)
         first_lease.finish()
+
+    async def test_runtime_accessor_returns_exact_isolated_owner(self) -> None:
+        other_app = create_app(
+            WebAppConfig(
+                self.root,
+                session_secret="v" * 32,
+                launch_token="u" * 32,
+                testing=True,
+            )
+        )
+
+        self.assertIs(
+            app_runtime_lifecycle(self.app),
+            self.app.state.runtime_lifecycle,
+        )
+        self.assertIs(
+            app_runtime_lifecycle(other_app),
+            other_app.state.runtime_lifecycle,
+        )
+        self.assertIsNot(
+            app_runtime_lifecycle(self.app),
+            app_runtime_lifecycle(other_app),
+        )
 
     async def test_altered_signed_cookie_does_not_authenticate(self) -> None:
         async with _client(self.app) as client:

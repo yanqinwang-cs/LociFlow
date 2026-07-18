@@ -11,12 +11,16 @@ from threading import Thread
 import traceback
 from typing import Protocol, TextIO
 
+from organizer.macos_launcher.shutdown_coordinator import (
+    NativeShutdownCoordinator,
+)
 from organizer.web.config import WebAppConfig
 from organizer.web.launcher import (
     LaunchPhase,
     LauncherDependencies,
     LauncherError,
     LaunchResult,
+    LaunchRuntimeHandle,
     LaunchStopController,
     launch_configured,
 )
@@ -61,6 +65,18 @@ class NativeAdapter(Protocol):
 
     def set_launch_running(self, running: bool) -> None: ...
 
+    def set_termination_handler(self, handler: Callable[[], bool]) -> None: ...
+
+    def set_diagnostic_handler(self, handler: Callable[[str], None]) -> None: ...
+
+    def show_finishing_status(self) -> None: ...
+
+    def close_finishing_status(self) -> None: ...
+
+    def show_shutdown_failure(self) -> None: ...
+
+    def reply_to_termination(self, allow: bool) -> None: ...
+
 
 ThreadFactory = Callable[[Callable[[], None], str], Thread]
 DependenciesFactory = Callable[[Callable[[str], bool]], LauncherDependencies]
@@ -91,6 +107,14 @@ class NativeLauncherCoordinator:
         self._sensitive_values: set[str] = set()
         self._terminal_result: Future[LaunchResult] = Future()
         self._stop_controller = LaunchStopController()
+        self._runtime_handle = LaunchRuntimeHandle(self._stop_controller)
+        self._shutdown = NativeShutdownCoordinator(
+            adapter,
+            self._runtime_handle,
+            self._terminal_result,
+            thread_factory=self._thread_factory,
+            diagnostic=self._record_shutdown_diagnostic,
+        )
         self._worker: Thread | None = None
         self._worker_started = False
         self._exit_code = 1
@@ -103,7 +127,11 @@ class NativeLauncherCoordinator:
 
     def _run(self) -> int:
         try:
+            self._adapter.set_diagnostic_handler(self._record_native_event)
             self._adapter.initialize()
+            self._adapter.set_termination_handler(
+                self._shutdown.request_termination
+            )
             raw_root = self._adapter.choose_directory()
         except NativeAdapterError as error:
             self._record_diagnostic("native_shell", error.code, error)
@@ -191,6 +219,11 @@ class NativeLauncherCoordinator:
                 dependencies=dependencies,
                 diagnostic=self._record_launch_diagnostic,
                 stop_controller=self._stop_controller,
+                runtime_handle=(
+                    self._runtime_handle
+                    if dependencies.runtime_lifecycle_accessor is not None
+                    else None
+                ),
             )
         except Exception as error:
             result = LaunchResult(
@@ -207,10 +240,30 @@ class NativeLauncherCoordinator:
                 error,
             )
         self._terminal_result.set_result(result)
-        self._adapter.dispatch_to_main(self._complete_on_main)
+        try:
+            self._adapter.dispatch_to_main(self._complete_on_main)
+        except Exception as error:
+            self._record_diagnostic(
+                "worker_completion",
+                "native_dispatch_failed",
+                error,
+            )
+            if self._shutdown.owns_worker_completion():
+                self._shutdown.main_dispatch_failed(error)
 
     def _complete_on_main(self) -> None:
         result = self._terminal_result.result()
+        if self._shutdown.owns_worker_completion():
+            try:
+                if self._worker_has_started():
+                    assert self._worker is not None
+                    self._worker.join()
+            except Exception as error:
+                self._shutdown.worker_join_failed(error)
+                return
+            self._exit_code = result.exit_code
+            self._shutdown.worker_completed(succeeded=result.succeeded)
+            return
         if self._worker_has_started():
             assert self._worker is not None
             self._worker.join()
@@ -278,6 +331,41 @@ class NativeLauncherCoordinator:
         exception: BaseException | None,
     ) -> None:
         self._record_diagnostic(phase.value, error.code, exception, error)
+
+    def _record_shutdown_diagnostic(
+        self,
+        code: str,
+        exception: BaseException | None,
+    ) -> None:
+        if self._diagnostic_sink is None:
+            return
+        diagnostic = NativeDiagnostic(
+            phase="native_shutdown",
+            code=code,
+            exception_class=(
+                None if exception is None else type(exception).__name__
+            ),
+            traceback=None,
+        )
+        try:
+            self._diagnostic_sink(diagnostic)
+        except Exception:
+            pass
+
+    def _record_native_event(self, event: str) -> None:
+        if self._diagnostic_sink is None:
+            return
+        try:
+            self._diagnostic_sink(
+                NativeDiagnostic(
+                    phase="native_appkit",
+                    code=event,
+                    exception_class=None,
+                    traceback=None,
+                )
+            )
+        except Exception:
+            pass
 
     def _record_diagnostic(
         self,
