@@ -121,6 +121,8 @@ const state = {
       preview: null,
       previewToken: null,
       expiresAt: null,
+      contextExpiresAt: null,
+      contextRevision: null,
       errorMessage: null,
     },
   },
@@ -409,6 +411,8 @@ function closeDialog({ restoreFocus = true } = {}) {
 }
 
 function resetStandardBuilder() {
+  dataSource.clearStandardsCreationContext?.();
+  state.standards.scopeChoices = [];
   state.standards.builder = {
     open: false,
     presetId: "",
@@ -419,6 +423,8 @@ function resetStandardBuilder() {
     preview: null,
     previewToken: null,
     expiresAt: null,
+    contextExpiresAt: null,
+    contextRevision: null,
     errorMessage: null,
   };
 }
@@ -679,11 +685,14 @@ async function loadStandards({ refresh = false } = {}) {
   try {
     const payload = await standardsLoadPromise;
     if (version !== state.standards.loadVersion) return;
-    if (state.standards.builder.open) discardStandardBuilder({ close: true });
+    const revisionChanged = state.standards.revision !== null
+      && state.standards.revision !== payload.revision;
+    if (revisionChanged && state.standards.builder.open) {
+      discardStandardBuilder({ close: true });
+    }
     state.standards.revision = payload.revision;
     state.standards.items = payload.items;
     state.standards.presets = payload.presets;
-    state.standards.scopeChoices = payload.scope_choices;
     state.standards.creationAvailable = payload.creation_available;
     state.standards.creationMessage = payload.creation_message;
     state.standards.loadStatus = "ready";
@@ -760,7 +769,7 @@ async function setStandardActive(target) {
   }
 }
 
-function openStandardBuilder(trigger) {
+async function openStandardBuilder(trigger) {
   if (
     state.standards.loadStatus !== "ready"
     || !state.standards.creationAvailable
@@ -770,10 +779,32 @@ function openStandardBuilder(trigger) {
     return;
   }
   resetStandardBuilder();
-  state.standards.builder.open = true;
   state.standards.conflictMessage = null;
   state.standards.noticeMessage = null;
-  openDialog("standard-builder", {}, trigger);
+  state.standards.mutationPending = true;
+  state.standards.errorMessage = null;
+  announce("Loading folder choices…");
+  render();
+  try {
+    const context = await dataSource.loadStandardsCreationContext(
+      state.standards.revision,
+    );
+    if (context.revision !== state.standards.revision) {
+      throw new Error("Standards changed while folder choices loaded.");
+    }
+    state.standards.scopeChoices = context.scope_choices;
+    state.standards.builder.open = true;
+    state.standards.builder.contextExpiresAt = context.expires_at;
+    state.standards.builder.contextRevision = context.revision;
+    openDialog("standard-builder", {}, trigger);
+  } catch (error) {
+    resetStandardBuilder();
+    state.standards.errorMessage = standardsErrorMessage(error);
+    announce(state.standards.errorMessage);
+  } finally {
+    state.standards.mutationPending = false;
+    render();
+  }
 }
 
 function standardBuilderInputComplete(builder) {

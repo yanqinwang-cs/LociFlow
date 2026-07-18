@@ -31,6 +31,17 @@ def _preview() -> dict[str, object]:
     }
 
 
+def _context() -> dict[str, object]:
+    return {
+        "scope_choices": [
+            {"id": "scope-root", "label": "Selected folder", "kind": "root"},
+            {"id": "scope-documents", "label": "Documents", "kind": "folder"},
+        ],
+        "expires_at": "2026-07-18T10:15:00+00:00",
+        "revision": 7,
+    }
+
+
 class LociFlowStandardsCreationTests(unittest.TestCase):
     maxDiff = None
 
@@ -42,6 +53,7 @@ class LociFlowStandardsCreationTests(unittest.TestCase):
             {imports}
             const organizationPayload={json.dumps(_payload())};
             const standardsPayload={json.dumps(_standards())};
+            const creationContext={json.dumps(_context())};
             const previewPayload={json.dumps(_preview())};
             const clone=(value)=>JSON.parse(JSON.stringify(value));
             {body}
@@ -63,19 +75,28 @@ class LociFlowStandardsCreationTests(unittest.TestCase):
             const calls=[];
             const fetchImpl=async(url,options)=>{
               calls.push({url,fields:Object.fromEntries(options.body.entries())});
+              if(url.endsWith("/creation-context")) return {ok:true,status:200,json:async()=>clone(creationContext)};
               if(url.endsWith("/preview")) return {ok:true,status:200,json:async()=>clone(previewPayload)};
               return {ok:true,status:200,json:async()=>({revision:8,items:clone(standardsPayload.items),fresh_scan_required:true,save_message:"Standard saved."})};
             };
+            await getStandardsCreationContext(7,fetchImpl,"csrf");
             await previewStandardCreation({presetType:"keep_folder_unchanged",scopeId:"scope-documents",expectedRevision:7},fetchImpl,"csrf");
             await previewStandardCreation({presetType:"keep_matching_files_together",scopeId:"scope-root",matcherKind:"course_code",matcherValue:"CS1010X",expectedRevision:7},fetchImpl,"csrf");
             await saveStandardCreation({previewToken:"opaque-preview-token",expectedRevision:7},fetchImpl,"csrf");
             console.log(JSON.stringify(calls));
             """,
-            f'import {{ previewStandardCreation,saveStandardCreation }} from {json.dumps((LOCI / "api.js").as_uri())};',
+            f'import {{ getStandardsCreationContext,previewStandardCreation,saveStandardCreation }} from {json.dumps((LOCI / "api.js").as_uri())};',
         )
         self.assertEqual(
             result,
             [
+                {
+                    "url": "/api/standards/creation-context",
+                    "fields": {
+                        "csrf_token": "csrf",
+                        "expected_revision": "7",
+                    },
+                },
                 {
                     "url": "/api/standards/preview",
                     "fields": {
@@ -110,6 +131,73 @@ class LociFlowStandardsCreationTests(unittest.TestCase):
         for forbidden in ("path", "parameters", "destination", "regex", "json"):
             self.assertNotIn(forbidden, serialized.lower())
 
+    def test_list_refresh_preserves_context_and_revision_change_invalidates_it(self) -> None:
+        result = self.run_node(
+            """
+            let revision=7;let contextCalls=0;let previewCalls=0;
+            const apiClient={
+              getCurrentOrganization:async()=>clone(organizationPayload),
+              getStandards:async()=>({...clone(standardsPayload),revision}),
+              getStandardsCreationContext:async()=>{contextCalls+=1;return clone(creationContext);},
+              previewStandardCreation:async()=>{previewCalls+=1;return clone(previewPayload);},
+            };
+            const source=createBackendDataSource({apiClient,csrfToken:"csrf"});
+            await source.loadStandards();
+            await source.loadStandardsCreationContext(7);
+            await source.loadStandards();
+            await source.previewStandardCreation({presetId:"keep_folder_unchanged",scopeId:"scope-root"},7);
+            revision=8;
+            await source.loadStandards();
+            let stale=null;
+            try{await source.previewStandardCreation({presetId:"keep_folder_unchanged",scopeId:"scope-root"},8);}catch(error){stale=error.code;}
+            console.log(JSON.stringify({contextCalls,previewCalls,stale}));
+            """,
+            f'import {{ createBackendDataSource }} from {json.dumps((LOCI / "data_source.js").as_uri())};',
+        )
+        self.assertEqual(result, {
+            "contextCalls": 1,
+            "previewCalls": 1,
+            "stale": "invalid_standards_contract",
+        })
+
+    def test_add_standard_requests_one_context_and_failure_does_not_open_dialog(self) -> None:
+        app_source = (LOCI / "app.js").read_text(encoding="utf-8")
+        result = self.run_node(
+            """
+            const resetStart=appSource.indexOf("function resetStandardBuilder");
+            const resetEnd=appSource.indexOf("function discardStandardBuilder",resetStart);
+            const openStart=appSource.indexOf("async function openStandardBuilder");
+            const openEnd=appSource.indexOf("function standardBuilderInputComplete",openStart);
+            if(Math.min(resetStart,resetEnd,openStart,openEnd)<0)throw new Error("builder functions unavailable");
+            const make=(fail=false)=>{
+              const state={standards:{loadStatus:"ready",revision:7,scopeChoices:[],creationAvailable:true,creationMessage:null,mutationPending:false,errorMessage:null,conflictMessage:null,noticeMessage:null,builder:{open:false}}};
+              let calls=0;let opens=0;let clears=0;
+              const dataSource={
+                clearStandardsCreationContext:()=>{clears+=1;},
+                loadStandardsCreationContext:async()=>{calls+=1;if(fail)throw {code:"application_stopping"};return clone(creationContext);},
+              };
+              const factory=new Function("state","dataSource","announce","render","openDialog","standardsErrorMessage",`${appSource.slice(resetStart,resetEnd)}\n${appSource.slice(openStart,openEnd)};return {openStandardBuilder,resetStandardBuilder};`);
+              const api=factory(state,dataSource,()=>{},()=>{},()=>{opens+=1;},(error)=>error.code);
+              return {state,api,result:()=>({calls,opens,clears,open:state.standards.builder.open,choices:state.standards.scopeChoices.length,error:state.standards.errorMessage,pending:state.standards.mutationPending})};
+            };
+            const success=make();await success.api.openStandardBuilder({});const successResult=success.result();success.api.resetStandardBuilder();const closed=success.result();
+            const failure=make(true);await failure.api.openStandardBuilder({});const failureResult=failure.result();
+            console.log(JSON.stringify({success:successResult,closed,failure:failureResult}));
+            """,
+            f"const appSource={json.dumps(app_source)};",
+        )
+        self.assertEqual(result["success"]["calls"], 1)
+        self.assertEqual(result["success"]["opens"], 1)
+        self.assertTrue(result["success"]["open"])
+        self.assertEqual(result["success"]["choices"], 2)
+        self.assertFalse(result["success"]["pending"])
+        self.assertFalse(result["closed"]["open"])
+        self.assertEqual(result["closed"]["choices"], 0)
+        self.assertEqual(result["failure"]["calls"], 1)
+        self.assertEqual(result["failure"]["opens"], 0)
+        self.assertFalse(result["failure"]["open"])
+        self.assertEqual(result["failure"]["error"], "application_stopping")
+
     def test_data_source_validates_preview_save_and_blocks_double_submission(self) -> None:
         result = self.run_node(
             """
@@ -120,11 +208,13 @@ class LociFlowStandardsCreationTests(unittest.TestCase):
             const apiClient={
               getCurrentOrganization:async()=>clone(organizationPayload),
               getStandards:async()=>clone(standardsPayload),
+              getStandardsCreationContext:async(value,csrf)=>{calls.push(["context",value,csrf]);return clone(creationContext);},
               previewStandardCreation:async(value,csrf)=>{calls.push(["preview",value,csrf]);return heldPreview;},
               saveStandardCreation:async(value,csrf)=>{calls.push(["save",value,csrf]);return heldSave;},
             };
             const source=createBackendDataSource({apiClient,csrfToken:"csrf"});
             await source.loadStandards();
+            await source.loadStandardsCreationContext(7);
             const previewRequest=source.previewStandardCreation({presetId:"keep_matching_files_together",scopeId:"scope-root",matcherKind:"course_code",matcherValue:"CS1010X"},7);
             let secondPreview=null;
             try{await source.previewStandardCreation({presetId:"keep_matching_files_together",scopeId:"scope-root",matcherKind:"course_code",matcherValue:"CS1010X"},7);}catch(error){secondPreview=error.code;}
@@ -142,7 +232,10 @@ class LociFlowStandardsCreationTests(unittest.TestCase):
             """,
             f'import {{ createBackendDataSource,validateStandardPreviewResponse }} from {json.dumps((LOCI / "data_source.js").as_uri())};',
         )
-        self.assertEqual([call[0] for call in result["calls"]], ["preview", "save"])
+        self.assertEqual(
+            [call[0] for call in result["calls"]],
+            ["context", "preview", "save"],
+        )
         self.assertEqual(result["secondPreview"], "standards_mutation_in_progress")
         self.assertEqual(result["secondSave"], "standards_mutation_in_progress")
         self.assertEqual(result["malformedError"], "invalid_standards_contract")
@@ -154,7 +247,7 @@ class LociFlowStandardsCreationTests(unittest.TestCase):
             """
             const backend=validateOrganizationResponse(clone(organizationPayload));
             const make=(builder,creationAvailable=true,creationMessage=null)=>{
-              const standards={loadStatus:"ready",revision:7,items:clone(standardsPayload.items),presets:clone(standardsPayload.presets),scopeChoices:clone(standardsPayload.scope_choices),creationAvailable,creationMessage,mutationPending:false,freshScanRequired:false,builder};
+              const standards={loadStatus:"ready",revision:7,items:clone(standardsPayload.items),presets:clone(standardsPayload.presets),scopeChoices:clone(creationContext.scope_choices),creationAvailable,creationMessage,mutationPending:false,freshScanRequired:false,builder};
               const contract=buildProductionStageB1Contract({snapshot:{status:"completed",backendState:backend},standards});
               const source={getState:()=>({route:"standards",theme:"light",selectedItemId:null,stageB1:contract})};
               const page=renderRoute(buildStandardsViewModel(source),"standards");
@@ -397,7 +490,7 @@ class LociFlowStandardsCreationTests(unittest.TestCase):
               destinationDrafts:{old:"x"},duplicateDrafts:{old:"x"},workflowOverride:null,
               movement:{previewVersion:0,previewStatus:"idle",preview:null,confirmationText:""},
               duplicateMovement:{previewVersion:0,previewStatus:"idle",preview:null,confirmationText:""},
-              standards:{loadStatus:"ready",revision:7,items:clone(standardsPayload.items),presets:clone(standardsPayload.presets),scopeChoices:clone(standardsPayload.scope_choices),creationAvailable:true,creationMessage:null,mutationPending:false,pendingStandardId:null,errorMessage:null,conflictMessage:null,freshScanRequired:false,noticeMessage:null,loadVersion:0,builder:{open:true,presetId:"keep_matching_files_together",scopeId:"scope-root",matcherKind:"course_code",matcherValue:"OLD",status:"preview_ready",preview:clone(previewPayload.preview),previewToken:"old-token",expiresAt:previewPayload.expires_at,errorMessage:null}},
+              standards:{loadStatus:"ready",revision:7,items:clone(standardsPayload.items),presets:clone(standardsPayload.presets),scopeChoices:clone(creationContext.scope_choices),creationAvailable:true,creationMessage:null,mutationPending:false,pendingStandardId:null,errorMessage:null,conflictMessage:null,freshScanRequired:false,noticeMessage:null,loadVersion:0,builder:{open:true,presetId:"keep_matching_files_together",scopeId:"scope-root",matcherKind:"course_code",matcherValue:"OLD",status:"preview_ready",preview:clone(previewPayload.preview),previewToken:"old-token",expiresAt:previewPayload.expires_at,errorMessage:null}},
             };
             let previewCalls=0;let saveCalls=0;let loadCalls=0;let scanCalls=0;
             let releasePreview;let releaseSave;

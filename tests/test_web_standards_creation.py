@@ -55,6 +55,151 @@ class WebStandardsCreationTests(unittest.IsolatedAsyncioTestCase):
             result=scan_root(self.root),
         )
 
+    async def _issue_context(
+        self,
+        client: httpx.AsyncClient,
+        csrf: str,
+        revision: int = 0,
+    ) -> dict[str, object]:
+        response = await client.post(
+            "/api/standards/creation-context",
+            data={"csrf_token": csrf, "expected_revision": str(revision)},
+            headers=ORIGIN,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        return response.json()
+
+    async def test_standards_list_is_read_only_and_available_while_stopping(self) -> None:
+        self._complete_scan("scan-read-only")
+        async with _client(self.app) as client:
+            await _authenticate(client, self.token)
+            with patch.object(
+                self.app.state.standards_creation,
+                "issue_creation_context",
+                wraps=self.app.state.standards_creation.issue_creation_context,
+            ) as issue:
+                first = await client.get("/api/standards")
+                second = await client.get("/api/standards")
+                self.app.state.runtime_lifecycle.begin_shutdown()
+                stopping = await client.get("/api/standards")
+
+        self.assertEqual(issue.call_count, 0)
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(stopping.status_code, 200)
+        self.assertEqual(first.json(), second.json())
+        self.assertNotIn("scope_choices", first.json())
+        self.assertTrue(first.json()["creation_available"])
+        self.assertFalse(stopping.json()["creation_available"])
+        self.assertIn("closing", stopping.json()["creation_message"])
+        self.assertEqual(stopping.headers["cache-control"], "no-store")
+        self.assertEqual(self.app.state.runtime_lifecycle.snapshot().active_count, 0)
+
+    async def test_shutdown_rejects_context_and_preview_after_security(self) -> None:
+        self._complete_scan("scan-stopping")
+        async with _client(self.app) as client:
+            csrf = await _authenticate(client, self.token)
+            context = await self._issue_context(client, csrf)
+            scope_id = context["scope_choices"][0]["id"]
+            self.app.state.runtime_lifecycle.begin_shutdown()
+            valid_context = {
+                "csrf_token": csrf,
+                "expected_revision": "0",
+            }
+            wrong_origin = await client.post(
+                "/api/standards/creation-context",
+                data=valid_context,
+                headers={"Origin": "http://example.invalid"},
+            )
+            wrong_csrf = await client.post(
+                "/api/standards/creation-context",
+                data={**valid_context, "csrf_token": "wrong"},
+                headers=ORIGIN,
+            )
+            rejected_context = await client.post(
+                "/api/standards/creation-context",
+                data=valid_context,
+                headers=ORIGIN,
+            )
+            rejected_preview = await client.post(
+                "/api/standards/preview",
+                data={
+                    "csrf_token": csrf,
+                    "expected_revision": "0",
+                    "preset_type": "keep_folder_unchanged",
+                    "scope_id": scope_id,
+                },
+                headers=ORIGIN,
+            )
+            invalid_matcher = await client.post(
+                "/api/standards/preview",
+                data={
+                    "csrf_token": csrf,
+                    "expected_revision": "0",
+                    "preset_type": "keep_matching_files_together",
+                    "scope_id": scope_id,
+                    "matcher_kind": "project_code",
+                    "matcher_value": "bad path",
+                },
+                headers=ORIGIN,
+            )
+
+        self.assertEqual(wrong_origin.status_code, 403)
+        self.assertEqual(wrong_csrf.status_code, 403)
+        for response in (rejected_context, rejected_preview):
+            self.assertEqual(response.status_code, 409)
+            self.assertEqual(response.json()["error"]["code"], "application_stopping")
+            self.assertEqual(response.headers["cache-control"], "no-store")
+        self.assertEqual(invalid_matcher.status_code, 400)
+        self.assertEqual(invalid_matcher.json()["error"]["code"], "invalid_matcher")
+        self.app.state.standards_creation.validate_scope_reference(
+            scope_id=scope_id,
+            session_id=next(iter(self.app.state.standards_creation._session_contexts)),
+            root_identity=self.app.state.standards.repository.configured_root_identity,
+            scan_generation="scan-stopping",
+            expected_revision=0,
+        )
+        self.assertEqual(self.app.state.runtime_lifecycle.snapshot().active_count, 0)
+
+    async def test_shutdown_rejected_save_preserves_reusable_preview_reference(self) -> None:
+        self._complete_scan("scan-save-stopping")
+        async with _client(self.app) as client:
+            csrf = await _authenticate(client, self.token)
+            context = await self._issue_context(client, csrf)
+            preview = await client.post(
+                "/api/standards/preview",
+                data={
+                    "csrf_token": csrf,
+                    "expected_revision": "0",
+                    "preset_type": "keep_folder_unchanged",
+                    "scope_id": context["scope_choices"][0]["id"],
+                },
+                headers=ORIGIN,
+            )
+            self.app.state.runtime_lifecycle.begin_shutdown()
+            rejected = await client.post(
+                "/api/standards",
+                data={
+                    "csrf_token": csrf,
+                    "expected_revision": "0",
+                    "preview_token": preview.json()["preview_token"],
+                },
+                headers=ORIGIN,
+            )
+
+        self.assertEqual(rejected.status_code, 409)
+        self.assertEqual(rejected.json()["error"]["code"], "application_stopping")
+        self.assertFalse((self.root / ORGANIZATION_RULES_RELATIVE_PATH).exists())
+        session_id = next(iter(self.app.state.standards_creation._session_contexts))
+        application_preview_id = self.app.state.standards_creation.resolve_preview_token(
+            token=preview.json()["preview_token"],
+            session_id=session_id,
+            root_identity=self.app.state.standards.repository.configured_root_identity,
+            scan_generation="scan-save-stopping",
+            expected_revision=0,
+        )
+        self.assertTrue(application_preview_id)
+
     async def test_server_owned_folder_preview_save_and_fresh_scan_planning(self) -> None:
         documents = self.root / "Documents"
         documents.mkdir()
@@ -76,9 +221,10 @@ class WebStandardsCreationTests(unittest.IsolatedAsyncioTestCase):
         async with _client(self.app) as client:
             csrf = await _authenticate(client, self.token)
             listed = await client.get("/api/standards")
+            context = await self._issue_context(client, csrf)
             folder = next(
                 choice
-                for choice in listed.json()["scope_choices"]
+                for choice in context["scope_choices"]
                 if choice["label"] == "Documents"
             )
             self.assertFalse(rules_path.exists())
@@ -106,7 +252,7 @@ class WebStandardsCreationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(listed.status_code, 200)
         self.assertTrue(listed.json()["creation_available"])
         self.assertEqual(
-            {item["kind"] for item in listed.json()["scope_choices"]},
+            {item["kind"] for item in context["scope_choices"]},
             {"root", "folder"},
         )
         self.assertEqual(preview.status_code, 200)
@@ -157,8 +303,9 @@ class WebStandardsCreationTests(unittest.IsolatedAsyncioTestCase):
         async with _client(self.app) as client:
             csrf = await _authenticate(client, self.token)
             listed = await client.get("/api/standards")
+            context = await self._issue_context(client, csrf)
             root_choice = next(
-                item for item in listed.json()["scope_choices"] if item["kind"] == "root"
+                item for item in context["scope_choices"] if item["kind"] == "root"
             )
             zero = await client.post(
                 "/api/standards/preview",
@@ -218,7 +365,8 @@ class WebStandardsCreationTests(unittest.IsolatedAsyncioTestCase):
             unauthenticated = await client.post("/api/standards/preview")
             csrf = await _authenticate(client, self.token)
             listed = await client.get("/api/standards")
-            scope_id = listed.json()["scope_choices"][0]["id"]
+            context = await self._issue_context(client, csrf)
+            scope_id = context["scope_choices"][0]["id"]
             valid = {
                 "csrf_token": csrf,
                 "expected_revision": "0",
@@ -298,7 +446,8 @@ class WebStandardsCreationTests(unittest.IsolatedAsyncioTestCase):
         async with _client(self.app) as client:
             csrf = await _authenticate(client, self.token)
             listed = await client.get("/api/standards")
-            scope_id = listed.json()["scope_choices"][0]["id"]
+            context = await self._issue_context(client, csrf)
+            scope_id = context["scope_choices"][0]["id"]
             first = await client.post(
                 "/api/standards/preview",
                 data={
@@ -347,23 +496,20 @@ class WebStandardsCreationTests(unittest.IsolatedAsyncioTestCase):
                 side_effect=StandardsApplicationError("active_plan_conflict"),
             ):
                 listed = await client.get("/api/standards")
-                preview = await client.post(
-                    "/api/standards/preview",
+                context = await client.post(
+                    "/api/standards/creation-context",
                     data={
                         "csrf_token": csrf,
                         "expected_revision": "0",
-                        "preset_type": "keep_folder_unchanged",
-                        "scope_id": "opaque-choice",
                     },
                     headers=ORIGIN,
                 )
 
         self.assertEqual(listed.status_code, 200)
         self.assertFalse(listed.json()["creation_available"])
-        self.assertEqual(listed.json()["scope_choices"], [])
         self.assertIn("Finish or restart", listed.json()["creation_message"])
-        self.assertEqual(preview.status_code, 409)
-        self.assertEqual(preview.json()["error"]["code"], "active_plan_conflict")
+        self.assertEqual(context.status_code, 409)
+        self.assertEqual(context.json()["error"]["code"], "active_plan_conflict")
 
     async def test_scope_registry_filters_unsafe_folders_and_revalidates_ownership(self) -> None:
         safe = self.root / "Safe"
@@ -382,13 +528,15 @@ class WebStandardsCreationTests(unittest.IsolatedAsyncioTestCase):
                 FileMetadata(missing, Path("Missing"), "Missing", "", 0, 0, True),
             )
             result = replace(result, metadata_items=(*result.metadata_items, *extras))
-            scan = ScanJobSnapshot(status="completed", job_id="scan-owned", result=result)
             store = StandardsCreationStore(self.root)
-            choices = store.issue_scope_choices(
+            context = store.issue_creation_context(
                 session_id="session-one",
                 root_identity="root-one",
-                scan=scan,
+                scan_generation="scan-owned",
+                expected_revision=4,
+                metadata_items=result.metadata_items,
             )
+            choices = context.scope_choices
 
             self.assertIn("Safe", {choice.label for choice in choices})
             self.assertFalse(
@@ -408,7 +556,9 @@ class WebStandardsCreationTests(unittest.IsolatedAsyncioTestCase):
                         scope_id=safe_choice.id,
                         session_id=session_id,
                         root_identity=root_identity,
-                        scan=scan,
+                        scan_generation="scan-owned",
+                        expected_revision=4,
+                        metadata_items=result.metadata_items,
                     )
             safe.rmdir()
             with self.assertRaisesRegex(
@@ -418,7 +568,9 @@ class WebStandardsCreationTests(unittest.IsolatedAsyncioTestCase):
                     scope_id=safe_choice.id,
                     session_id="session-one",
                     root_identity="root-one",
-                    scan=scan,
+                    scan_generation="scan-owned",
+                    expected_revision=4,
+                    metadata_items=result.metadata_items,
                 )
 
     async def test_v1_preview_is_read_only_and_first_save_migrates_once(self) -> None:
@@ -439,9 +591,10 @@ class WebStandardsCreationTests(unittest.IsolatedAsyncioTestCase):
         async with _client(self.app) as client:
             csrf = await _authenticate(client, self.token)
             listed = await client.get("/api/standards")
+            context = await self._issue_context(client, csrf)
             scope_id = next(
                 item["id"]
-                for item in listed.json()["scope_choices"]
+                for item in context["scope_choices"]
                 if item["kind"] == "root"
             )
             preview = await client.post(

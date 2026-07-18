@@ -60,7 +60,7 @@ class WebStandardsApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             set(response.json()),
             {
-                "revision", "items", "presets", "scope_choices",
+                "revision", "items", "presets",
                 "creation_available", "creation_message",
             },
         )
@@ -69,7 +69,6 @@ class WebStandardsApiTests(unittest.IsolatedAsyncioTestCase):
             {"keep_folder_unchanged", "keep_matching_files_together"},
         )
         self.assertFalse(response.json()["creation_available"])
-        self.assertEqual(response.json()["scope_choices"], [])
         self.assertIn("Check files", response.json()["creation_message"])
         self.assertTrue(response.json()["items"])
         expected_fields = {
@@ -173,6 +172,58 @@ class WebStandardsApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(success.json()["fresh_scan_required"])
         saved = next(item for item in success.json()["items"] if item["id"] == standard_id)
         self.assertFalse(saved["active"])
+
+    async def test_state_shutdown_rejection_follows_security_and_writes_nothing(self) -> None:
+        standard_id, revision = self._saved_standard()
+        path = "/api/standards/state"
+        self.app.state.runtime_lifecycle.begin_shutdown()
+        valid = {
+            "expected_revision": str(revision),
+            "standard_id": standard_id,
+            "active": "false",
+        }
+        async with _client(self.app) as unauthenticated_client:
+            unauthenticated = await unauthenticated_client.post(
+                path, data=valid, headers={"Origin": "http://127.0.0.1"}
+            )
+        async with _client(self.app) as client:
+            csrf = await _authenticate(client, self.token)
+            wrong_origin = await client.post(
+                path,
+                data={**valid, "csrf_token": csrf},
+                headers={"Origin": "http://example.invalid"},
+            )
+            wrong_csrf = await client.post(
+                path,
+                data={**valid, "csrf_token": "wrong"},
+                headers={"Origin": "http://127.0.0.1"},
+            )
+            rejected = await client.post(
+                path,
+                data={**valid, "csrf_token": csrf},
+                headers={"Origin": "http://127.0.0.1"},
+            )
+            unknown = await client.post(
+                path,
+                data={
+                    **valid,
+                    "csrf_token": csrf,
+                    "standard_id": "missing-standard",
+                },
+                headers={"Origin": "http://127.0.0.1"},
+            )
+
+        self.assertEqual(unauthenticated.status_code, 403)
+        self.assertEqual(wrong_origin.status_code, 403)
+        self.assertEqual(wrong_csrf.status_code, 403)
+        self.assertEqual(rejected.status_code, 409)
+        self.assertEqual(rejected.json()["error"]["code"], "application_stopping")
+        self.assertEqual(rejected.headers["cache-control"], "no-store")
+        self.assertEqual(unknown.status_code, 404)
+        self.assertEqual(unknown.json()["error"]["code"], "unknown_standard")
+        snapshot = self.app.state.standards.repository.load()
+        self.assertEqual(snapshot.revision, revision)
+        self.assertTrue(snapshot.catalog.standards[0].active)  # type: ignore[union-attr]
 
     async def test_typed_application_errors_are_safe_and_do_not_write_activity(self) -> None:
         standard_id, revision = self._saved_standard()

@@ -4,8 +4,15 @@ from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
 import tempfile
+from threading import Event, Thread
 import unittest
+from unittest.mock import patch
 
+from organizer.application.runtime_lifecycle import (
+    ApplicationStoppingError,
+    RuntimeLifecycle,
+    RuntimeOperationKind,
+)
 from organizer.application.scan_service import scan_root
 from organizer.application.standards_models import StandardsApplicationError
 from organizer.application.standards_repository import StandardsRepository
@@ -20,6 +27,103 @@ from organizer.organization_rules import (
 
 
 class StandardsServiceTests(unittest.TestCase):
+    def test_save_and_state_reject_shutdown_before_catalog_mutation(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            lifecycle = RuntimeLifecycle()
+            service = StandardsService(
+                StandardsRepository(root), runtime_lifecycle=lifecycle
+            )
+            preview = service.preview(
+                preset_type=STANDARD_KEEP_MATCHING_FILES_TOGETHER,
+                scope=service.resolve_root_scope(),
+                matcher_kind="project_code",
+                matcher_value="BootAI",
+                expected_revision=0,
+            )
+            lifecycle.begin_shutdown()
+
+            with self.assertRaises(ApplicationStoppingError):
+                service.save_preview(preview.preview_id, expected_revision=0)
+
+            self.assertFalse((root / ORGANIZATION_RULES_RELATIVE_PATH).exists())
+            self.assertEqual(lifecycle.snapshot().active_count, 0)
+
+    def test_admitted_save_finishes_while_shutdown_waits(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            lifecycle = RuntimeLifecycle()
+            service = StandardsService(
+                StandardsRepository(root), runtime_lifecycle=lifecycle
+            )
+            preview = service.preview(
+                preset_type=STANDARD_KEEP_MATCHING_FILES_TOGETHER,
+                scope=service.resolve_root_scope(),
+                matcher_kind="project_code",
+                matcher_value="BootAI",
+                expected_revision=0,
+            )
+            entered = Event()
+            release = Event()
+            original_save = service._save
+            result: list[object] = []
+
+            def blocked_save(catalog, expected_revision):  # type: ignore[no-untyped-def]
+                entered.set()
+                release.wait(timeout=5)
+                return original_save(catalog, expected_revision)
+
+            def run_save() -> None:
+                result.append(
+                    service.save_preview(preview.preview_id, expected_revision=0)
+                )
+
+            with patch.object(service, "_save", side_effect=blocked_save):
+                worker = Thread(target=run_save)
+                worker.start()
+                self.assertTrue(entered.wait(timeout=5))
+                stopping = lifecycle.begin_shutdown()
+                self.assertEqual(stopping.active_count, 1)
+                self.assertEqual(
+                    stopping.active_kinds,
+                    (RuntimeOperationKind.STATE_MUTATION,),
+                )
+                release.set()
+                worker.join(timeout=5)
+
+            self.assertFalse(worker.is_alive())
+            self.assertEqual(len(result), 1)
+            self.assertEqual(lifecycle.wait_until_idle().active_count, 0)
+            self.assertEqual(StandardsRepository(root).load().revision, 1)
+
+    def test_state_change_rejects_shutdown_before_catalog_mutation(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            lifecycle = RuntimeLifecycle()
+            service = StandardsService(
+                StandardsRepository(root), runtime_lifecycle=lifecycle
+            )
+            preview = service.preview(
+                preset_type=STANDARD_KEEP_MATCHING_FILES_TOGETHER,
+                scope=service.resolve_root_scope(),
+                matcher_kind="project_code",
+                matcher_value="BootAI",
+                expected_revision=0,
+            )
+            saved = service.save_preview(preview.preview_id, expected_revision=0)
+            lifecycle.begin_shutdown()
+
+            with self.assertRaises(ApplicationStoppingError):
+                service.set_active(
+                    saved.standard.id,
+                    active=False,
+                    expected_revision=1,
+                )
+
+            snapshot = StandardsRepository(root).load()
+            self.assertEqual(snapshot.revision, 1)
+            self.assertTrue(snapshot.catalog.standards[0].active)  # type: ignore[union-attr]
+
     def test_preview_does_not_persist_and_supports_guided_presets(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

@@ -4,6 +4,10 @@ from fastapi import APIRouter
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
+from organizer.application.runtime_lifecycle import (
+    APPLICATION_STOPPING_MESSAGE,
+    ApplicationStoppingError,
+)
 from organizer.application.standards_models import StandardsApplicationError
 from organizer.application.standards_read_models import StandardsReadProjection
 from organizer.organization_rules import (
@@ -84,6 +88,43 @@ def create_standards_api_router() -> APIRouter:
             )
         return _json_response({**_projection_payload(projection), **creation})
 
+    @router.post("/api/standards/creation-context", include_in_schema=False)
+    async def issue_creation_context(request: Request) -> Response:
+        common = _validate_common_request(request)
+        if common is not None:
+            return common
+        expected_fields = {"csrf_token", "expected_revision"}
+        try:
+            form = await _validated_form(request, expected_fields)
+            if set(form) != expected_fields:
+                raise FormDataError("Standards creation-context fields are invalid")
+            expected_revision = _revision(form.get("expected_revision"))
+            scan = _current_scan(request)
+            request.app.state.standards.ensure_creation_available()
+            if request.app.state.standards.list_standards().revision != expected_revision:
+                raise StandardsApplicationError("standard_revision_mismatch")
+            context = request.app.state.standards_creation_service.issue_creation_context(
+                session_id=session_id_for_session(request.session),
+                scan_generation=scan.job_id,
+                scan_result=scan.result,
+                expected_revision=expected_revision,
+            )
+        except ApplicationStoppingError:
+            return _application_stopping_error()
+        except StandardsApplicationError as error:
+            return _standards_error(error)
+        except WebSecurityError:
+            return _authentication_error()
+        except (FormDataError, OSError, TypeError, ValueError):
+            return _invalid_request()
+        return _json_response(
+            {
+                "scope_choices": [choice.to_dict() for choice in context.scope_choices],
+                "expires_at": context.expires_at,
+                "revision": context.revision,
+            }
+        )
+
     @router.post("/api/standards/preview", include_in_schema=False)
     async def preview_standard(request: Request) -> Response:
         common = _validate_common_request(request)
@@ -112,42 +153,24 @@ def create_standards_api_router() -> APIRouter:
                 raise FormDataError("Standards preview fields are invalid")
             scan = _current_scan(request)
             session_id = session_id_for_session(request.session)
-            service = request.app.state.standards
-            service.ensure_creation_available()
-            root_identity = service.repository.configured_root_identity
-            scope_kind, folder, scope_label = (
-                request.app.state.standards_creation.resolve_scope(
-                    scope_id=_required(form.get("scope_id")),
-                    session_id=session_id,
-                    root_identity=root_identity,
-                    scan=scan,
-                )
-            )
-            if scope_kind == "root":
-                scope = service.resolve_root_scope(scan_generation=scan.job_id)
-            else:
-                if folder is None:
-                    raise StandardsApplicationError("folder_scope_stale")
-                scope = service.resolve_folder_scope(
-                    folder,
-                    scan_generation=scan.job_id,
-                )
-            preview = service.preview(
+            request.app.state.standards.validate_preview_request(
                 preset_type=preset_type,
-                scope=scope,
-                expected_revision=_revision(form.get("expected_revision")),
                 matcher_kind=form.get("matcher_kind"),
                 matcher_value=form.get("matcher_value"),
-                scan_result=scan.result,
-                owner_key=session_id,
             )
-            token = request.app.state.standards_creation.issue_preview_token(
+            result = request.app.state.standards_creation_service.preview_standard(
                 session_id=session_id,
-                root_identity=root_identity,
                 scan_generation=scan.job_id,
-                expected_revision=preview.expected_revision,
-                application_preview_id=preview.preview_id,
+                scan_result=scan.result,
+                preset_type=preset_type,
+                expected_revision=_revision(form.get("expected_revision")),
+                scope_id=_required(form.get("scope_id")),
+                matcher_kind=form.get("matcher_kind"),
+                matcher_value=form.get("matcher_value"),
             )
+            preview = result.preview
+        except ApplicationStoppingError:
+            return _application_stopping_error()
         except StandardsApplicationError as error:
             return _standards_error(error)
         except WebSecurityError:
@@ -156,12 +179,12 @@ def create_standards_api_router() -> APIRouter:
             return _invalid_request()
         return _json_response(
             {
-                "preview_token": token,
-                "expires_at": preview.expires_at,
+                "preview_token": result.preview_token,
+                "expires_at": result.expires_at,
                 "preview": {
                     "name": preview.name,
                     "description": preview.description,
-                    "scope_label": scope_label,
+                    "scope_label": result.scope_label,
                     "effect_summary": preview.effect_summary,
                     "matching_files": preview.matching_file_count,
                     "fresh_scan_required": preview.fresh_scan_required,
@@ -189,7 +212,7 @@ def create_standards_api_router() -> APIRouter:
                     token=_required(form.get("preview_token")),
                     session_id=session_id,
                     root_identity=service.repository.configured_root_identity,
-                    scan=scan,
+                    scan_generation=scan.job_id,
                     expected_revision=expected_revision,
                 )
             )
@@ -198,6 +221,8 @@ def create_standards_api_router() -> APIRouter:
                 expected_revision=expected_revision,
                 owner_key=session_id,
             )
+        except ApplicationStoppingError:
+            return _application_stopping_error()
         except StandardsApplicationError as error:
             return _standards_error(error)
         except WebSecurityError:
@@ -226,11 +251,21 @@ def create_standards_api_router() -> APIRouter:
             form = await _validated_form(request, expected)
             if set(form) != expected:
                 raise FormDataError("Standards state fields are invalid")
-            result = request.app.state.standards.set_active(
-                _required(form.get("standard_id")),
-                active=_strict_boolean(form.get("active")),
-                expected_revision=_revision(form.get("expected_revision")),
+            standard_id = _required(form.get("standard_id"))
+            active = _strict_boolean(form.get("active"))
+            expected_revision = _revision(form.get("expected_revision"))
+            request.app.state.standards.validate_state_request(
+                standard_id,
+                active=active,
+                expected_revision=expected_revision,
             )
+            result = request.app.state.standards.set_active(
+                standard_id,
+                active=active,
+                expected_revision=expected_revision,
+            )
+        except ApplicationStoppingError:
+            return _application_stopping_error()
         except StandardsApplicationError as error:
             return _standards_error(error)
         except WebSecurityError:
@@ -275,8 +310,8 @@ async def _validated_form(
     request: Request,
     allowed_fields: set[str],
 ) -> dict[str, str]:
-    form = await read_urlencoded_form(request, allowed_fields=allowed_fields)
     validate_same_origin(request)
+    form = await read_urlencoded_form(request, allowed_fields=allowed_fields)
     validate_csrf_token(request.session, form.get("csrf_token"))
     return form
 
@@ -305,7 +340,6 @@ def _creation_payload(request: Request) -> dict[str, object]:
     if scan.status != "completed" or scan.job_id is None or scan.result is None:
         return {
             "presets": list(_PRESETS),
-            "scope_choices": [],
             "creation_available": False,
             "creation_message": _NO_SCAN_MESSAGE,
         }
@@ -316,7 +350,6 @@ def _creation_payload(request: Request) -> dict[str, object]:
     ):
         return {
             "presets": list(_PRESETS),
-            "scope_choices": [],
             "creation_available": False,
             "creation_message": _STORAGE_MESSAGE,
         }
@@ -331,19 +364,17 @@ def _creation_payload(request: Request) -> dict[str, object]:
             raise
         return {
             "presets": list(_PRESETS),
-            "scope_choices": [],
             "creation_available": False,
             "creation_message": message,
         }
-    service = request.app.state.standards
-    choices = request.app.state.standards_creation.issue_scope_choices(
-        session_id=session_id_for_session(request.session),
-        root_identity=service.repository.configured_root_identity,
-        scan=scan,
-    )
+    if request.app.state.runtime_lifecycle.snapshot().is_stopping:
+        return {
+            "presets": list(_PRESETS),
+            "creation_available": False,
+            "creation_message": APPLICATION_STOPPING_MESSAGE,
+        }
     return {
         "presets": list(_PRESETS),
-        "scope_choices": [choice.to_dict() for choice in choices],
         "creation_available": True,
         "creation_message": None,
     }
@@ -398,6 +429,14 @@ def _authentication_error() -> JSONResponse:
         "request_authentication_failed",
         "The Standards request could not be authenticated.",
         403,
+    )
+
+
+def _application_stopping_error() -> JSONResponse:
+    return _error_response(
+        "application_stopping",
+        APPLICATION_STOPPING_MESSAGE,
+        409,
     )
 
 

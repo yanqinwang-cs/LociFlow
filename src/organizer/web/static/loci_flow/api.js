@@ -11,6 +11,7 @@ const DUPLICATE_BIN_RESTORE_URL = "/api/duplicate-bin/restore";
 const SCAN_URL = "/scan?surface=home";
 const ACTIVITY_URL = "/api/activity";
 const STANDARDS_URL = "/api/standards";
+const STANDARDS_CREATION_CONTEXT_URL = "/api/standards/creation-context";
 const STANDARDS_STATE_URL = "/api/standards/state";
 const STANDARDS_PREVIEW_URL = "/api/standards/preview";
 const MOVEMENT_CONFIRMATION = "MOVE APPROVED FILES";
@@ -249,6 +250,24 @@ export async function getStandards(fetchImpl = defaultFetch) {
     method: "GET",
   });
   return responseJson(response);
+}
+
+export async function getStandardsCreationContext(
+  expectedRevision,
+  fetchImpl = defaultFetch,
+  csrfToken,
+) {
+  if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0) {
+    throw new LociFlowApiError("invalid_standards_contract", "Standards information is invalid.");
+  }
+  return postJson(
+    STANDARDS_CREATION_CONTEXT_URL,
+    {
+      csrf_token: requiredToken(csrfToken),
+      expected_revision: String(expectedRevision),
+    },
+    fetchImpl,
+  );
 }
 
 export async function setStandardActive(
@@ -517,6 +536,9 @@ export function createLociFlowApiClient(fetchImpl = defaultFetch) {
     ),
     getActivity: () => getActivity(fetchImpl),
     getStandards: () => getStandards(fetchImpl),
+    getStandardsCreationContext: (expectedRevision, csrfToken) => (
+      getStandardsCreationContext(expectedRevision, fetchImpl, csrfToken)
+    ),
     setStandardActive: (payload, csrfToken) => (
       setStandardActive(payload, fetchImpl, csrfToken)
     ),

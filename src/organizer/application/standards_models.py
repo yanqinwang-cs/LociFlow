@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from organizer.application.standards_read_models import StandardsReadProjection
+from organizer.models import FileMetadata
 from organizer.organization_rules import StandardRecord, StandardScope
 
 
@@ -56,3 +57,37 @@ class StandardsMutationResult:
     changed: bool
     fresh_scan_required: bool
     projection: StandardsReadProjection
+
+
+@dataclass(frozen=True)
+class StandardsScopeChoice:
+    id: str
+    label: str
+    kind: str
+
+    def to_dict(self) -> dict[str, str]:
+        return {"id": self.id, "label": self.label, "kind": self.kind}
+
+
+@dataclass(frozen=True)
+class StandardsCreationContext:
+    scope_choices: tuple[StandardsScopeChoice, ...]
+    expires_at: str
+    revision: int
+
+
+@dataclass(frozen=True)
+class ResolvedCreationScope:
+    kind: str
+    folder: FileMetadata | None
+    label: str
+
+
+@dataclass(frozen=True)
+class PreparedStandardsPreviewToken:
+    token: str
+    session_id: str
+    root_identity: str
+    scan_generation: str
+    expected_revision: int
+    application_preview_id: str

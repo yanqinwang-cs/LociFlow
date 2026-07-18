@@ -118,6 +118,7 @@ const DUPLICATE_BIN_ERROR_MESSAGES = Object.freeze({
   movement_or_undo_in_progress: "Another file action is running.",
 });
 const STANDARDS_ERROR_MESSAGES = Object.freeze({
+  application_stopping: "Loci Flow is closing. No new work can start.",
   standard_revision_mismatch: "Standards changed. Reload the latest list.",
   standard_conflict: "This Standard conflicts with another active Standard.",
   active_plan_conflict: "Finish or restart the current organization before changing Standards.",
@@ -954,7 +955,7 @@ export function validateStandardsResponse(rawPayload, { mutation = false } = {})
     : mutation
       ? ["revision", "items", "fresh_scan_required"]
       : [
-        "revision", "items", "presets", "scope_choices",
+        "revision", "items", "presets",
         "creation_available", "creation_message",
       ]);
   if (!payload || Object.keys(payload).length !== expected.size || Object.keys(payload).some((key) => !expected.has(key))) {
@@ -976,7 +977,6 @@ export function validateStandardsResponse(rawPayload, { mutation = false } = {})
   if (!mutation) {
     if (
       !Array.isArray(payload.presets)
-      || !Array.isArray(payload.scope_choices)
       || typeof payload.creation_available !== "boolean"
       || (payload.creation_available
         ? payload.creation_message !== null
@@ -994,23 +994,10 @@ export function validateStandardsResponse(rawPayload, { mutation = false } = {})
     ) {
       throw standardsContractError();
     }
-    const scopeChoices = payload.scope_choices.map(validateStandardScopeChoice);
-    const scopeIds = new Set();
-    for (const choice of scopeChoices) {
-      if (scopeIds.has(choice.id)) throw standardsContractError();
-      scopeIds.add(choice.id);
-    }
-    if (
-      payload.creation_available
-      && scopeChoices.filter((choice) => choice.kind === "root").length !== 1
-    ) {
-      throw standardsContractError();
-    }
     return deepFreeze({
       revision: payload.revision,
       items,
       presets,
-      scope_choices: scopeChoices,
       creation_available: payload.creation_available,
       creation_message: payload.creation_message,
     });
@@ -1021,6 +1008,41 @@ export function validateStandardsResponse(rawPayload, { mutation = false } = {})
     items,
     fresh_scan_required: payload.fresh_scan_required,
     ...(mutation === "save" ? { save_message: payload.save_message } : {}),
+  });
+}
+
+export function validateStandardsCreationContext(rawPayload) {
+  const payload = rawPayload && typeof rawPayload === "object" && !Array.isArray(rawPayload)
+    ? rawPayload
+    : null;
+  const expected = new Set(["scope_choices", "expires_at", "revision"]);
+  if (
+    !payload
+    || Object.keys(payload).length !== expected.size
+    || Object.keys(payload).some((key) => !expected.has(key))
+    || !Array.isArray(payload.scope_choices)
+    || !Number.isSafeInteger(payload.revision)
+    || payload.revision < 0
+  ) {
+    throw standardsContractError();
+  }
+  const expiresAt = requireStandardsText(payload.expires_at);
+  if (!/^\d{4}-\d{2}-\d{2}T/.test(expiresAt) || Number.isNaN(Date.parse(expiresAt))) {
+    throw standardsContractError();
+  }
+  const scopeChoices = payload.scope_choices.map(validateStandardScopeChoice);
+  const scopeIds = new Set();
+  for (const choice of scopeChoices) {
+    if (scopeIds.has(choice.id)) throw standardsContractError();
+    scopeIds.add(choice.id);
+  }
+  if (scopeChoices.filter((choice) => choice.kind === "root").length !== 1) {
+    throw standardsContractError();
+  }
+  return deepFreeze({
+    scope_choices: scopeChoices,
+    expires_at: expiresAt,
+    revision: payload.revision,
   });
 }
 
@@ -1275,6 +1297,12 @@ export function createFixtureDataSource(options = {}) {
         "Live Standards cannot be changed in sample mode.",
       );
     },
+    async loadStandardsCreationContext() {
+      throw new StandardsDataError(
+        "standards_unavailable",
+        "Live Standards cannot be changed in sample mode.",
+      );
+    },
     async previewStandardCreation() {
       throw new StandardsDataError(
         "standards_unavailable",
@@ -1317,6 +1345,7 @@ export function createBackendDataSource({
   let duplicateRestorePending = false;
   let duplicateBinState = null;
   let standardsState = null;
+  let standardsCreationContext = null;
   let standardsMutationPending = false;
 
   function assertActive() {
@@ -1724,11 +1753,55 @@ export function createBackendDataSource({
       if (typeof apiClient.getStandards !== "function") {
         throw new TypeError("Standards API is unavailable");
       }
-      standardsState = validateStandardsResponse(await apiClient.getStandards());
+      const loaded = validateStandardsResponse(await apiClient.getStandards());
+      if (
+        standardsCreationContext
+        && standardsCreationContext.revision !== loaded.revision
+      ) {
+        standardsCreationContext = null;
+      }
+      standardsState = loaded;
       return standardsState;
     } catch (error) {
       throw normalizeStandardsError(error);
     }
+  }
+
+  async function loadStandardsCreationContext(expectedRevision) {
+    assertActive();
+    if (standardsMutationPending) {
+      throw new StandardsDataError(
+        "standards_mutation_in_progress",
+        "Another Standard change is being saved.",
+      );
+    }
+    if (
+      !standardsState
+      || !standardsState.creation_available
+      || standardsState.revision !== expectedRevision
+    ) {
+      throw standardsContractError();
+    }
+    standardsMutationPending = true;
+    try {
+      if (typeof apiClient.getStandardsCreationContext !== "function") {
+        throw new TypeError("Standards API is unavailable");
+      }
+      const context = validateStandardsCreationContext(
+        await apiClient.getStandardsCreationContext(expectedRevision, csrfToken),
+      );
+      if (context.revision !== expectedRevision) throw standardsContractError();
+      standardsCreationContext = context;
+      return context;
+    } catch (error) {
+      throw normalizeStandardsError(error);
+    } finally {
+      standardsMutationPending = false;
+    }
+  }
+
+  function clearStandardsCreationContext() {
+    standardsCreationContext = null;
   }
 
   async function setStandardActive(standardId, active, expectedRevision) {
@@ -1765,6 +1838,7 @@ export function createBackendDataSource({
         revision: result.revision,
         items: result.items,
       });
+      if (result.revision !== expectedRevision) standardsCreationContext = null;
       return result;
     } catch (error) {
       throw normalizeStandardsError(error);
@@ -1782,12 +1856,16 @@ export function createBackendDataSource({
       );
     }
     const preset = standardsState?.presets.find((item) => item.id === input?.presetId);
-    const scope = standardsState?.scope_choices.find((item) => item.id === input?.scopeId);
+    const scope = standardsCreationContext?.scope_choices.find(
+      (item) => item.id === input?.scopeId
+    );
     const matching = input?.presetId === "keep_matching_files_together";
     if (
       !standardsState
+      || !standardsCreationContext
       || !standardsState.creation_available
       || standardsState.revision !== expectedRevision
+      || standardsCreationContext.revision !== expectedRevision
       || !preset
       || !scope
       || (matching && !new Set(["course_code", "project_code"]).has(input?.matcherKind))
@@ -1853,6 +1931,7 @@ export function createBackendDataSource({
         revision: result.revision,
         items: result.items,
       });
+      if (result.revision !== expectedRevision) standardsCreationContext = null;
       return result;
     } catch (error) {
       throw normalizeStandardsError(error);
@@ -1950,6 +2029,8 @@ export function createBackendDataSource({
     confirmDuplicateBinRestore,
     loadActivity,
     loadStandards,
+    loadStandardsCreationContext,
+    clearStandardsCreationContext,
     setStandardActive,
     previewStandardCreation,
     saveStandardCreation,

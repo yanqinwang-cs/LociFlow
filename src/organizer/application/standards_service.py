@@ -16,6 +16,10 @@ from organizer.application.standards_models import (
 )
 from organizer.application.standards_read_models import StandardsReadProjection
 from organizer.application.standards_read_service import build_standards_read_projection
+from organizer.application.runtime_lifecycle import (
+    RuntimeLifecycle,
+    RuntimeOperationKind,
+)
 from organizer.application.standards_repository import (
     StandardsRepository,
     StandardsRepositoryError,
@@ -66,6 +70,7 @@ class StandardsService:
         duplicate_bin_restore_repository: object | None = None,
         additional_plan_blocker: Callable[[], bool] | None = None,
         now: Callable[[], datetime] | None = None,
+        runtime_lifecycle: RuntimeLifecycle | None = None,
     ) -> None:
         self.repository = repository
         self._decision_store = decision_store
@@ -76,6 +81,7 @@ class StandardsService:
         self._duplicate_bin_restore_repository = duplicate_bin_restore_repository
         self._additional_plan_blocker = additional_plan_blocker
         self._now = now or (lambda: datetime.now(timezone.utc))
+        self._runtime_lifecycle = runtime_lifecycle or RuntimeLifecycle()
         self._previews: dict[str, StandardPreview] = {}
         self._preview_owners: dict[str, str] = {}
         self._latest_preview_ids: dict[str, str] = {}
@@ -127,6 +133,70 @@ class StandardsService:
         scan_result: ScanApplicationResult | None = None,
         owner_key: str | None = None,
     ) -> StandardPreview:
+        self.validate_preview_request(
+            preset_type=preset_type,
+            matcher_kind=matcher_kind,
+            matcher_value=matcher_value,
+        )
+        with self._runtime_lifecycle.begin_operation(
+            RuntimeOperationKind.STATE_MUTATION
+        ):
+            return self._preview_admitted(
+                preset_type=preset_type,
+                scope=scope,
+                expected_revision=expected_revision,
+                matcher_kind=matcher_kind,
+                matcher_value=matcher_value,
+                scan_result=scan_result,
+                owner_key=owner_key,
+            )
+
+    def validate_preview_request(
+        self,
+        *,
+        preset_type: str,
+        matcher_kind: str | None = None,
+        matcher_value: str | None = None,
+    ) -> None:
+        if preset_type not in WRITABLE_STANDARD_TYPES:
+            raise StandardsApplicationError("invalid_preset")
+        _proposal_parameters(preset_type, matcher_kind, matcher_value)
+
+    def _preview_admitted(
+        self,
+        *,
+        preset_type: str,
+        scope: ResolvedStandardScope,
+        expected_revision: int,
+        matcher_kind: str | None = None,
+        matcher_value: str | None = None,
+        scan_result: ScanApplicationResult | None = None,
+        owner_key: str | None = None,
+    ) -> StandardPreview:
+        preview = self.prepare_preview_admitted(
+            preset_type=preset_type,
+            scope=scope,
+            expected_revision=expected_revision,
+            matcher_kind=matcher_kind,
+            matcher_value=matcher_value,
+            scan_result=scan_result,
+        )
+        self.commit_preview_admitted(
+            preview,
+            owner_key=owner_key or self.repository.configured_root_identity,
+        )
+        return preview
+
+    def prepare_preview_admitted(
+        self,
+        *,
+        preset_type: str,
+        scope: ResolvedStandardScope,
+        expected_revision: int,
+        matcher_kind: str | None = None,
+        matcher_value: str | None = None,
+        scan_result: ScanApplicationResult | None = None,
+    ) -> StandardPreview:
         if preset_type not in WRITABLE_STANDARD_TYPES:
             raise StandardsApplicationError("invalid_preset")
         snapshot = self._load()
@@ -171,13 +241,80 @@ class StandardsService:
             issued_at=issued.isoformat(),
             expires_at=(issued + timedelta(seconds=PREVIEW_LIFETIME_SECONDS)).isoformat(),
         )
-        owner = owner_key or self.repository.configured_root_identity
-        self._previews[preview_id] = preview
-        self._preview_owners[preview_id] = owner
-        self._latest_preview_ids[owner] = preview_id
         return preview
 
+    def commit_preview_admitted(
+        self,
+        preview: StandardPreview,
+        *,
+        owner_key: str,
+    ) -> str | None:
+        previous = self._latest_preview_ids.get(owner_key)
+        self._previews[preview.preview_id] = preview
+        self._preview_owners[preview.preview_id] = owner_key
+        self._latest_preview_ids[owner_key] = preview.preview_id
+        return previous
+
+    def latest_preview_id_admitted(self, owner_key: str) -> str | None:
+        return self._latest_preview_ids.get(owner_key)
+
+    def rollback_preview_admitted(
+        self,
+        preview_id: str,
+        *,
+        owner_key: str,
+        previous_preview_id: str | None,
+    ) -> None:
+        if self._preview_owners.get(preview_id) != owner_key:
+            return
+        self._previews.pop(preview_id, None)
+        self._preview_owners.pop(preview_id, None)
+        self._saved_previews.pop(preview_id, None)
+        if self._latest_preview_ids.get(owner_key) != preview_id:
+            return
+        if (
+            previous_preview_id is not None
+            and self._preview_owners.get(previous_preview_id) == owner_key
+        ):
+            self._latest_preview_ids[owner_key] = previous_preview_id
+        else:
+            self._latest_preview_ids.pop(owner_key, None)
+
     def save_preview(
+        self,
+        preview_id: str,
+        *,
+        expected_revision: int,
+        owner_key: str | None = None,
+    ) -> StandardsMutationResult:
+        self.validate_save_request(
+            preview_id,
+            expected_revision=expected_revision,
+            owner_key=owner_key,
+        )
+        with self._runtime_lifecycle.begin_operation(
+            RuntimeOperationKind.STATE_MUTATION
+        ):
+            return self._save_preview_admitted(
+                preview_id,
+                expected_revision=expected_revision,
+                owner_key=owner_key,
+            )
+
+    def validate_save_request(
+        self,
+        preview_id: str,
+        *,
+        expected_revision: int,
+        owner_key: str | None = None,
+    ) -> None:
+        owner = owner_key or self.repository.configured_root_identity
+        if self._preview_owners.get(preview_id) != owner:
+            raise StandardsApplicationError("preview_expired")
+        if preview_id not in self._saved_previews:
+            self._validated_preview(preview_id, expected_revision, owner)
+
+    def _save_preview_admitted(
         self,
         preview_id: str,
         *,
@@ -245,6 +382,50 @@ class StandardsService:
         return result
 
     def set_active(
+        self,
+        standard_id: str,
+        *,
+        active: bool,
+        expected_revision: int,
+    ) -> StandardsMutationResult:
+        self.validate_state_request(
+            standard_id,
+            active=active,
+            expected_revision=expected_revision,
+        )
+        with self._runtime_lifecycle.begin_operation(
+            RuntimeOperationKind.STATE_MUTATION
+        ):
+            return self._set_active_admitted(
+                standard_id,
+                active=active,
+                expected_revision=expected_revision,
+            )
+
+    def validate_state_request(
+        self,
+        standard_id: str,
+        *,
+        active: bool,
+        expected_revision: int,
+    ) -> None:
+        if not isinstance(active, bool):
+            raise StandardsApplicationError("unknown_standard")
+        if standard_id.startswith("builtin-"):
+            raise StandardsApplicationError("immutable_standard")
+        snapshot = self._load()
+        if snapshot.revision != expected_revision:
+            raise StandardsApplicationError("standard_revision_mismatch")
+        catalog = _catalog_for_mutation(
+            snapshot,
+            self.repository.configured_root_identity,
+            self._now(),
+        )
+        current = next((item for item in catalog.standards if item.id == standard_id), None)
+        if current is None or (current.archived_at is not None and active):
+            raise StandardsApplicationError("unknown_standard")
+
+    def _set_active_admitted(
         self,
         standard_id: str,
         *,

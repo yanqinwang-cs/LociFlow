@@ -30,10 +30,6 @@ def _standards() -> dict[str, object]:
                 "description": "Files with one course or project code stay grouped.",
             },
         ],
-        "scope_choices": [
-            {"id": "scope-root", "label": "Selected folder", "kind": "root"},
-            {"id": "scope-documents", "label": "Documents", "kind": "folder"},
-        ],
         "creation_available": True,
         "creation_message": None,
         "items": [
@@ -193,8 +189,8 @@ class LociFlowStandardsAdapterTests(unittest.TestCase):
               return {model,html:renderRoute(model,"standards")};
             };
             const loading=project({loadStatus:"loading",revision:null,items:[],presets:[],scopeChoices:[],creationAvailable:false});
-            const ready=project({loadStatus:"ready",revision:7,items:clone(standardsPayload.items),presets:clone(standardsPayload.presets),scopeChoices:clone(standardsPayload.scope_choices),creationAvailable:true,mutationPending:false,freshScanRequired:false});
-            const pending=project({loadStatus:"ready",revision:7,items:clone(standardsPayload.items),presets:clone(standardsPayload.presets),scopeChoices:clone(standardsPayload.scope_choices),creationAvailable:true,mutationPending:true,pendingStandardId:standardsPayload.items[1].id,freshScanRequired:true});
+            const ready=project({loadStatus:"ready",revision:7,items:clone(standardsPayload.items),presets:clone(standardsPayload.presets),scopeChoices:[],creationAvailable:true,mutationPending:false,freshScanRequired:false});
+            const pending=project({loadStatus:"ready",revision:7,items:clone(standardsPayload.items),presets:clone(standardsPayload.presets),scopeChoices:[],creationAvailable:true,mutationPending:true,pendingStandardId:standardsPayload.items[1].id,freshScanRequired:true});
             const error=project({loadStatus:"error",revision:null,items:[],presets:[],scopeChoices:[],creationAvailable:false,errorMessage:"Standards could not be loaded."});
             console.log(JSON.stringify({loading:loading.html,ready:ready.html,pending:pending.html,error:error.html,readyModel:ready.model.standards,pendingOrganization:pending.model.organization}));
             """,
