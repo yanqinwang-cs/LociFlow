@@ -117,6 +117,14 @@ const DUPLICATE_BIN_ERROR_MESSAGES = Object.freeze({
   duplicate_bin_unavailable: "Duplicate Bin could not be loaded.",
   movement_or_undo_in_progress: "Another file action is running.",
 });
+const STANDARDS_ERROR_MESSAGES = Object.freeze({
+  standard_revision_mismatch: "Standards changed. Reload the latest list.",
+  standard_conflict: "This Standard conflicts with another active Standard.",
+  active_plan_conflict: "Finish or restart the current organization before changing Standards.",
+  standards_storage_unavailable: "Standards could not be loaded.",
+  unknown_standard: "This Standard is no longer available.",
+  immutable_standard: "This built-in Standard cannot be paused.",
+});
 
 export class OrganizationDataError extends Error {
   constructor(code, message) {
@@ -130,6 +138,14 @@ export class ActivityDataError extends Error {
   constructor(code, message) {
     super(message);
     this.name = "ActivityDataError";
+    this.code = code;
+  }
+}
+
+export class StandardsDataError extends Error {
+  constructor(code, message) {
+    super(message);
+    this.name = "StandardsDataError";
     this.code = code;
   }
 }
@@ -845,6 +861,78 @@ export function validateActivityResponse(rawPayload) {
   return deepFreeze({ activity });
 }
 
+function standardsContractError() {
+  return new StandardsDataError(
+    "invalid_standards_contract",
+    "Standards information could not be loaded.",
+  );
+}
+
+function requireStandardsText(value, { nullable = false } = {}) {
+  if (nullable && value === null) return null;
+  if (typeof value !== "string" || !value || value.length > MAX_TEXT_LENGTH) {
+    throw standardsContractError();
+  }
+  return value;
+}
+
+function validateStandardItem(rawItem) {
+  const item = rawItem && typeof rawItem === "object" && !Array.isArray(rawItem)
+    ? rawItem
+    : null;
+  const expected = new Set([
+    "id", "name", "description", "active", "mutable", "scope_label",
+    "effect_summary", "preset_type", "attention_message",
+  ]);
+  if (!item || Object.keys(item).length !== expected.size || Object.keys(item).some((key) => !expected.has(key))) {
+    throw standardsContractError();
+  }
+  if (typeof item.active !== "boolean" || typeof item.mutable !== "boolean") {
+    throw standardsContractError();
+  }
+  return {
+    id: requireStandardsText(item.id),
+    name: requireStandardsText(item.name),
+    description: requireStandardsText(item.description),
+    active: item.active,
+    mutable: item.mutable,
+    scope_label: requireStandardsText(item.scope_label),
+    effect_summary: requireStandardsText(item.effect_summary),
+    preset_type: requireStandardsText(item.preset_type),
+    attention_message: requireStandardsText(item.attention_message, { nullable: true }),
+  };
+}
+
+export function validateStandardsResponse(rawPayload, { mutation = false } = {}) {
+  const payload = rawPayload && typeof rawPayload === "object" && !Array.isArray(rawPayload)
+    ? rawPayload
+    : null;
+  const expected = new Set(mutation
+    ? ["revision", "items", "fresh_scan_required"]
+    : ["revision", "items"]);
+  if (!payload || Object.keys(payload).length !== expected.size || Object.keys(payload).some((key) => !expected.has(key))) {
+    throw standardsContractError();
+  }
+  if (!Number.isSafeInteger(payload.revision) || payload.revision < 0 || !Array.isArray(payload.items)) {
+    throw standardsContractError();
+  }
+  if (mutation && typeof payload.fresh_scan_required !== "boolean") {
+    throw standardsContractError();
+  }
+  const ids = new Set();
+  const items = payload.items.map((item) => {
+    const validated = validateStandardItem(item);
+    if (ids.has(validated.id)) throw standardsContractError();
+    ids.add(validated.id);
+    return validated;
+  });
+  return deepFreeze({
+    revision: payload.revision,
+    items,
+    ...(mutation ? { fresh_scan_required: payload.fresh_scan_required } : {}),
+  });
+}
+
 export function validateUndoPreview(rawPreview, requestedOperationId) {
   const preview = requireActivityObject(rawPreview);
   requireActivityId(requestedOperationId);
@@ -879,6 +967,14 @@ export function activityErrorMessage(error) {
   return ACTIVITY_ERROR_MESSAGES[error?.code]
     || (error?.code === "activity_unavailable" ? "Activity could not be loaded." : null)
     || "The Activity request could not be completed.";
+}
+
+export function standardsErrorMessage(error) {
+  return STANDARDS_ERROR_MESSAGES[error?.code]
+    || (error?.code === "invalid_standards_contract"
+      ? "Standards information could not be loaded."
+      : null)
+    || "The Standards request could not be completed.";
 }
 
 export function isUncertainUndoError(error) {
@@ -919,6 +1015,14 @@ function normalizeActivityError(error, fallbackMessage) {
     return new ActivityDataError(error.code, ACTIVITY_ERROR_MESSAGES[error.code] || fallbackMessage);
   }
   return new ActivityDataError("request_failed", fallbackMessage);
+}
+
+function normalizeStandardsError(error) {
+  if (error instanceof StandardsDataError) return error;
+  if (error instanceof LociFlowApiError) {
+    return new StandardsDataError(error.code, standardsErrorMessage(error));
+  }
+  return new StandardsDataError("request_failed", "Standards could not be loaded.");
 }
 
 function normalizeMovementError(error) {
@@ -1024,6 +1128,18 @@ export function createFixtureDataSource(options = {}) {
         "Real file restores are unavailable in sample mode.",
       );
     },
+    async loadStandards() {
+      throw new StandardsDataError(
+        "standards_unavailable",
+        "Live Standards are unavailable in sample mode.",
+      );
+    },
+    async setStandardActive() {
+      throw new StandardsDataError(
+        "standards_unavailable",
+        "Live Standards cannot be changed in sample mode.",
+      );
+    },
   });
 }
 
@@ -1053,6 +1169,8 @@ export function createBackendDataSource({
   let duplicateRestorePreviewPending = false;
   let duplicateRestorePending = false;
   let duplicateBinState = null;
+  let standardsState = null;
+  let standardsMutationPending = false;
 
   function assertActive() {
     if (disposed) throw new OrganizationDataError("disposed", "The organization view is unavailable.");
@@ -1453,6 +1571,57 @@ export function createBackendDataSource({
     }
   }
 
+  async function loadStandards() {
+    assertActive();
+    try {
+      if (typeof apiClient.getStandards !== "function") {
+        throw new TypeError("Standards API is unavailable");
+      }
+      standardsState = validateStandardsResponse(await apiClient.getStandards());
+      return standardsState;
+    } catch (error) {
+      throw normalizeStandardsError(error);
+    }
+  }
+
+  async function setStandardActive(standardId, active, expectedRevision) {
+    assertActive();
+    if (standardsMutationPending) {
+      throw new StandardsDataError(
+        "standards_mutation_in_progress",
+        "Another Standard change is being saved.",
+      );
+    }
+    if (
+      !standardsState
+      || standardsState.revision !== expectedRevision
+      || typeof standardId !== "string"
+      || typeof active !== "boolean"
+      || !standardsState.items.some((item) => item.id === standardId && item.mutable)
+    ) {
+      throw standardsContractError();
+    }
+    standardsMutationPending = true;
+    try {
+      if (typeof apiClient.setStandardActive !== "function") {
+        throw new TypeError("Standards API is unavailable");
+      }
+      const result = validateStandardsResponse(
+        await apiClient.setStandardActive(
+          { standardId, active, expectedRevision },
+          csrfToken,
+        ),
+        { mutation: true },
+      );
+      standardsState = deepFreeze({ revision: result.revision, items: result.items });
+      return result;
+    } catch (error) {
+      throw normalizeStandardsError(error);
+    } finally {
+      standardsMutationPending = false;
+    }
+  }
+
   async function withUndoMutation(operation) {
     assertActive();
     if (fileActionPending()) {
@@ -1541,6 +1710,8 @@ export function createBackendDataSource({
     previewDuplicateBinRestore,
     confirmDuplicateBinRestore,
     loadActivity,
+    loadStandards,
+    setStandardActive,
     previewUndo,
     confirmUndo,
     dispose,
@@ -1550,5 +1721,6 @@ export function createBackendDataSource({
     isDuplicateBinPending: () => duplicateMovementPreviewPending
       || duplicateMovementPending || duplicateRestorePreviewPending || duplicateRestorePending,
     isUndoPending: () => undoMutationPending,
+    isStandardsMutationPending: () => standardsMutationPending,
   });
 }

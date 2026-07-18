@@ -19,6 +19,7 @@ from organizer.web.routes.consumer import create_consumer_router
 from organizer.web.routes.loci_flow import create_loci_flow_router
 from organizer.web.routes.organization_api import create_organization_api_router
 from organizer.web.routes.review import create_review_router
+from organizer.web.routes.standards_api import create_standards_api_router
 from organizer.web.review_explorer import ReviewExplorerStore
 from organizer.web.organization_decision_store import OrganizationDecisionStore
 from organizer.web.scan_jobs import ScanJobController
@@ -40,6 +41,8 @@ from organizer.application.organization_operation_repository import (
 from organizer.application.organization_undo_repository import (
     OrganizationUndoRepository,
 )
+from organizer.application.standards_repository import StandardsRepository
+from organizer.application.standards_service import StandardsService
 from organizer.web.security import (
     LaunchTokenGate,
     SecurityHeadersMiddleware,
@@ -94,12 +97,22 @@ def create_app(config: WebAppConfig) -> FastAPI:
     app.state.organization_execution = OrganizationExecutionCoordinator()
     app.state.organization_operations = OrganizationOperationRepository(config.root)
     app.state.organization_undos = OrganizationUndoRepository(config.root)
+    app.state.standards = StandardsService(
+        StandardsRepository(config.root),
+        decision_store=app.state.organization_decisions,
+        execution_coordinator=app.state.organization_execution,
+        operation_repository=app.state.organization_operations,
+        duplicate_bin_repository=app.state.duplicate_bin_batches,
+        duplicate_bin_operation_repository=app.state.duplicate_bin_operations,
+        duplicate_bin_restore_repository=app.state.duplicate_bin_restores,
+    )
     app.include_router(create_home_router(templates))
     app.include_router(create_consumer_router(templates))
     app.include_router(create_loci_flow_router(templates))
     app.include_router(create_organization_api_router())
     app.include_router(create_duplicate_bin_api_router())
     app.include_router(create_activity_api_router())
+    app.include_router(create_standards_api_router())
     app.include_router(create_review_router(templates))
     app.mount(
         "/static",

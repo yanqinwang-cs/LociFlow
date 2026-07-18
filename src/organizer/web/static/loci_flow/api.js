@@ -10,6 +10,8 @@ const DUPLICATE_BIN_RESTORE_PREVIEW_URL = "/api/duplicate-bin/restore/preview";
 const DUPLICATE_BIN_RESTORE_URL = "/api/duplicate-bin/restore";
 const SCAN_URL = "/scan?surface=home";
 const ACTIVITY_URL = "/api/activity";
+const STANDARDS_URL = "/api/standards";
+const STANDARDS_STATE_URL = "/api/standards/state";
 const MOVEMENT_CONFIRMATION = "MOVE APPROVED FILES";
 const UNDO_CONFIRMATION = "UNDO FILE MOVE";
 const DUPLICATE_BIN_MOVEMENT_CONFIRMATION = "MOVE COPIES TO DUPLICATE BIN";
@@ -240,6 +242,40 @@ export async function getActivity(fetchImpl = defaultFetch) {
   return responseJson(response);
 }
 
+export async function getStandards(fetchImpl = defaultFetch) {
+  const response = await fetchImpl(STANDARDS_URL, {
+    ...baseOptions(),
+    method: "GET",
+  });
+  return responseJson(response);
+}
+
+export async function setStandardActive(
+  payload,
+  fetchImpl = defaultFetch,
+  csrfToken,
+) {
+  if (
+    typeof payload?.standardId !== "string"
+    || !payload.standardId
+    || !Number.isSafeInteger(payload.expectedRevision)
+    || payload.expectedRevision < 0
+    || typeof payload.active !== "boolean"
+  ) {
+    throw new LociFlowApiError("invalid_standards_contract", "Standards information is invalid.");
+  }
+  return postJson(
+    STANDARDS_STATE_URL,
+    {
+      csrf_token: requiredToken(csrfToken),
+      expected_revision: String(payload.expectedRevision),
+      standard_id: payload.standardId,
+      active: String(payload.active),
+    },
+    fetchImpl,
+  );
+}
+
 function requiredServerId(value, code = "invalid_duplicate_bin_contract") {
   if (!isCanonicalOperationId(value)) {
     throw new LociFlowApiError(code, "Duplicate Bin information is invalid.");
@@ -420,6 +456,10 @@ export function createLociFlowApiClient(fetchImpl = defaultFetch) {
       confirmDuplicateBinRestore(payload, fetchImpl, csrfToken)
     ),
     getActivity: () => getActivity(fetchImpl),
+    getStandards: () => getStandards(fetchImpl),
+    setStandardActive: (payload, csrfToken) => (
+      setStandardActive(payload, fetchImpl, csrfToken)
+    ),
     previewActivityUndo: (operationId, csrfToken) => (
       previewActivityUndo(operationId, fetchImpl, csrfToken)
     ),

@@ -192,7 +192,7 @@ def _legacy_item(
         name=name,
         description=description,
         active=True,
-        mutable=False,
+        mutable=True,
         scope_label="Selected folder",
         effect_summary=effect_summary,
         preset_type=preset_type,

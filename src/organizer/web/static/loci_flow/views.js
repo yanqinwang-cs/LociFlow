@@ -370,6 +370,49 @@ function standardRow(standard) {
   return `<article class="standard-row"><div><h2>${escapeHtml(standard.name)}</h2><p>${escapeHtml(standard.description)}</p><span>Applies to: ${breadcrumb(standard.appliesTo)}</span></div><strong class="standard-state ${standard.active ? "on" : ""}">${standard.active ? "On" : "Paused"}</strong><div>${button("Edit", "open-standard-builder", { quiet: true, attrs: `data-standard-id="${standard.id}"` })}${button(standard.active ? "Pause" : "Turn on", "toggle-standard", { attrs: `data-standard-id="${standard.id}"` })}</div></article>`;
 }
 
+function productionStandardRow(standard, standards) {
+  const pending = standards.mutationPending && standards.pendingStandardId === standard.id;
+  const action = standard.mutable
+    ? button(
+      standard.active ? "Pause" : "Turn on",
+      "set-standard-active",
+      {
+        attrs: `data-standard-id="${escapeHtml(standard.id)}" data-active="${standard.active ? "false" : "true"}"${pending ? ' aria-busy="true"' : ""}`,
+        disabled: standards.mutationPending,
+      },
+    )
+    : '<span>Always on</span>';
+  const attention = standard.attentionMessage
+    ? `<p role="status">${escapeHtml(standard.attentionMessage)}</p>`
+    : "";
+  return `<article class="standard-row"><div><h2>${escapeHtml(standard.name)}</h2><p>${escapeHtml(standard.description)}</p><p data-standard-scope>Applies to: ${escapeHtml(standard.scopeLabel)}</p><p data-standard-effect>Effect: ${escapeHtml(standard.effectSummary)}</p>${attention}</div><strong class="standard-state ${standard.active ? "on" : ""}">${standard.active ? "On" : "Paused"}</strong><div>${action}</div></article>`;
+}
+
+function renderProductionStandards(store) {
+  const standards = store.standards;
+  const add = button("Add standard", "none", {
+    disabled: true,
+    attrs: 'aria-label="Add standard is not available"',
+  });
+  let content;
+  if (standards.loadStatus === "loading" || standards.loadStatus === "idle") {
+    content = '<div class="empty-state" role="status"><h2>Loading Standards…</h2><p>Loading the instructions that affect organization.</p></div>';
+  } else if (standards.loadStatus === "error") {
+    content = `<div class="empty-state" role="alert"><h2>Standards could not be loaded.</h2><p>${escapeHtml(standards.errorMessage || "Try loading the latest Standards again.")}</p>${button("Try again", "reload-standards")}</div>`;
+  } else if (!standards.items.length) {
+    content = '<div class="empty-state"><h2>No saved Standards</h2><p>Built-in protections will appear here when available.</p></div>';
+  } else {
+    content = standards.items.map((standard) => productionStandardRow(standard, standards)).join("");
+  }
+  const conflict = standards.conflictMessage
+    ? `<p class="activity-notice" role="alert">${escapeHtml(standards.conflictMessage)}</p>`
+    : "";
+  const fresh = standards.freshScanRequired
+    ? '<p class="activity-notice" role="status">Check files again before organizing with the updated Standards.</p>'
+    : "";
+  return `${pageHeader("Standards", "Reusable instructions for future organization.", add, store.scope.displayName)}${conflict}${fresh}<section class="standards-list" aria-label="Saved standards">${content}</section>`;
+}
+
 function suggestedStandards(state) {
   const interpretation = state.interpretation;
   if (interpretation.status === "clarification") {
@@ -390,9 +433,8 @@ function interpretationPanel(state) {
 }
 
 export function renderStandards(store) {
-  if (store?.mode === "production_fixture" && !store.standards.connected) {
-    return `${pageHeader("Standards", "Reusable instructions for future organization.", "", store.scope.displayName)}<section class="standards-list" aria-label="Saved standards"><div class="empty-state"><h2>Standards editing is not connected yet.</h2><p>No active Standards are shown.</p></div></section>`;
-  }
+  if (store?.mode === "production_fixture" && store.standards.connected) return renderProductionStandards(store);
+  if (store?.mode === "production_fixture" && !store.standards.connected) return `${pageHeader("Standards", "Reusable instructions for future organization.", "", store.scope.displayName)}<section class="standards-list" aria-label="Saved standards"><div class="empty-state"><h2>Standards editing is not connected yet.</h2><p>No active Standards are shown.</p></div></section>`;
   const state = store.getState();
   return `${pageHeader("Standards", "Reusable instructions for future organization.", button("Add standard", "open-standard-builder", { primary: true }))}${interpretationPanel(state)}<section class="standards-intro card"><div><strong>Simple and reusable</strong><span>Standards use familiar choices and sample folders.</span></div>${button("See a sample disagreement", "open-standard-conflict", { quiet: true })}</section><section class="standards-list" aria-label="Saved standards">${state.standards.map(standardRow).join("")}</section>`;
 }

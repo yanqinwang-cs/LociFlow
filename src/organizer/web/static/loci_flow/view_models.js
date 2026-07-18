@@ -726,6 +726,30 @@ function duplicateBinContract(state = null) {
   };
 }
 
+function standardsContract(state = null) {
+  return {
+    connected: Boolean(state),
+    loadStatus: state?.loadStatus || "idle",
+    revision: state?.revision ?? null,
+    items: (state?.items || []).map((item) => ({
+      id: item.id,
+      name: item.name,
+      description: item.description,
+      active: item.active,
+      mutable: item.mutable,
+      scopeLabel: item.scope_label,
+      effectSummary: item.effect_summary,
+      presetType: item.preset_type,
+      attentionMessage: item.attention_message,
+    })),
+    mutationPending: Boolean(state?.mutationPending),
+    pendingStandardId: state?.pendingStandardId || null,
+    errorMessage: state?.errorMessage || null,
+    conflictMessage: state?.conflictMessage || null,
+    freshScanRequired: Boolean(state?.freshScanRequired),
+  };
+}
+
 function recommendationModels(backend, scopeName) {
   const decisions = new Map(
     backend.review.recommendations.map((item) => [item.change_id, item.decision]),
@@ -864,13 +888,14 @@ export function buildProductionStageB1Contract({
   movement = null,
   duplicateMovement = null,
   duplicateBin = null,
+  standards = null,
 } = {}) {
   const backend = snapshot?.backendState || null;
   const scopeName = backend?.scope.display_name || "Selected folder";
   const lastCheckedLabel = backend
     ? formatLocalTimestamp(backend.freshness.last_checked_at)
     : snapshot?.status === "checking" ? "Checking now" : "Not checked yet";
-  const organization = backend
+  const organization = backend && !standards?.freshScanRequired
     ? organizationFromBackend(backend, {
       destination: destinationDrafts,
       duplicate: duplicateDrafts,
@@ -913,7 +938,7 @@ export function buildProductionStageB1Contract({
         expandedIds: [],
         lastMoveSummary: lastMoveSummary(execution, activityEntries),
       },
-    standards: { connected: false, items: [] },
+    standards: standardsContract(standards),
     settings: { connected: true },
   };
 }

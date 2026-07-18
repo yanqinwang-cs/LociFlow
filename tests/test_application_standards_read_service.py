@@ -54,7 +54,7 @@ class StandardsReadServiceTests(unittest.TestCase):
         )
         self.assertEqual(existing.preset_type, "existing_folder_policy")
 
-    def test_legacy_v1_projection_is_read_only_safe_and_deterministic(self) -> None:
+    def test_legacy_v1_projection_is_mutable_safe_and_deterministic(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             config = root / ORGANIZATION_RULES_RELATIVE_PATH
@@ -81,7 +81,7 @@ class StandardsReadServiceTests(unittest.TestCase):
             {item.preset_type for item in legacy},
             {"legacy_locked_anchor", "legacy_ignored_term", "legacy_alias"},
         )
-        self.assertTrue(all(item.active and not item.mutable for item in legacy))
+        self.assertTrue(all(item.active and item.mutable for item in legacy))
         serialized = json.dumps(first.to_dict()).lower()
         for forbidden in (
             "preferred_granularities",

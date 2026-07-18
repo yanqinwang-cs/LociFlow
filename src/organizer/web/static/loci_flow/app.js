@@ -7,6 +7,7 @@ import {
   isUncertainMovementError,
   isUncertainUndoError,
   movementErrorMessage,
+  standardsErrorMessage,
 } from "./data_source.js";
 import { renderDialog, renderRoute } from "./views.js";
 import {
@@ -95,6 +96,17 @@ const state = {
     loadVersion: 0,
     previewVersion: 0,
   },
+  standards: {
+    loadStatus: "idle",
+    revision: null,
+    items: [],
+    mutationPending: false,
+    pendingStandardId: null,
+    errorMessage: null,
+    conflictMessage: null,
+    freshScanRequired: false,
+    loadVersion: 0,
+  },
 };
 const viewSource = {
   getState() {
@@ -119,6 +131,7 @@ const viewSource = {
         movement: state.movement,
         duplicateMovement: state.duplicateMovement,
         duplicateBin: state.duplicateBin,
+        standards: state.standards,
       }),
     };
   },
@@ -144,6 +157,7 @@ let dialogPayload = {};
 let dialogTrigger = null;
 let activityLoadPromise = null;
 let duplicateBinLoadPromise = null;
+let standardsLoadPromise = null;
 
 function routeFromHash() {
   const value = window.location.hash.startsWith("#/") ? window.location.hash.slice(2) : "home";
@@ -325,6 +339,7 @@ function navigate(route, options = {}) {
   if (route === "duplicate-bin" && previousRoute !== "duplicate-bin") {
     loadDuplicateBin({ refresh: true });
   }
+  if (route === "standards" && previousRoute !== "standards") loadStandards();
 }
 
 function setDialog(type, payload = {}) {
@@ -587,7 +602,7 @@ function setPending(value) {
 }
 
 async function loadCurrent({ clearOverride = true } = {}) {
-  if (clearOverride) state.workflowOverride = null;
+  if (clearOverride && !state.standards.freshScanRequired) state.workflowOverride = null;
   try {
     applySnapshot(await dataSource.loadCurrentState());
   } catch {
@@ -600,6 +615,94 @@ async function loadCurrent({ clearOverride = true } = {}) {
     );
   }
   render();
+}
+
+async function loadStandards({ refresh = false } = {}) {
+  if (standardsLoadPromise) {
+    await standardsLoadPromise.catch(() => {});
+    return;
+  }
+  if (state.standards.loadStatus === "ready" && !refresh) {
+    if (state.route === "standards") render();
+    return;
+  }
+  const version = ++state.standards.loadVersion;
+  state.standards.loadStatus = "loading";
+  state.standards.errorMessage = null;
+  if (state.route === "standards") render();
+  standardsLoadPromise = dataSource.loadStandards();
+  try {
+    const payload = await standardsLoadPromise;
+    if (version !== state.standards.loadVersion) return;
+    state.standards.revision = payload.revision;
+    state.standards.items = payload.items;
+    state.standards.loadStatus = "ready";
+  } catch (error) {
+    if (version !== state.standards.loadVersion) return;
+    state.standards.revision = null;
+    state.standards.items = [];
+    state.standards.loadStatus = "error";
+    state.standards.errorMessage = standardsErrorMessage(error);
+  } finally {
+    standardsLoadPromise = null;
+  }
+  if (state.route === "standards") render();
+  else syncShell();
+}
+
+async function setStandardActive(target) {
+  if (state.standards.mutationPending || state.standards.loadStatus !== "ready") return;
+  const item = state.standards.items.find(
+    (candidate) => candidate.id === target.dataset.standardId && candidate.mutable,
+  );
+  const active = target.dataset.active === "true";
+  if (!item || !new Set(["true", "false"]).has(target.dataset.active)) return;
+  state.standards.mutationPending = true;
+  state.standards.pendingStandardId = item.id;
+  state.standards.errorMessage = null;
+  state.standards.conflictMessage = null;
+  announce(`Saving ${item.name}…`);
+  render();
+  try {
+    const result = await dataSource.setStandardActive(
+      item.id,
+      active,
+      state.standards.revision,
+    );
+    state.standards.freshScanRequired = result.fresh_scan_required
+      || state.standards.freshScanRequired;
+    if (result.fresh_scan_required) {
+      state.selectedItemId = null;
+      state.selectedRowIds = [];
+      state.destinationDrafts = {};
+      state.duplicateDrafts = {};
+      discardMovementConfirmation();
+      discardDuplicateMovementConfirmation();
+      state.workflowOverride = workflowOverride(
+        "Check files again",
+        "Standards changed. Check the folder again before organizing.",
+        "check-again",
+        "Check again",
+        "generation",
+      );
+    }
+    await loadStandards({ refresh: true });
+    announce(active ? "Standard turned on. Check files again before organizing." : "Standard paused. Check files again before organizing.");
+  } catch (error) {
+    const reloadCodes = new Set([
+      "standard_revision_mismatch",
+      "standard_conflict",
+      "unknown_standard",
+      "immutable_standard",
+    ]);
+    if (reloadCodes.has(error?.code)) await loadStandards({ refresh: true });
+    state.standards.conflictMessage = standardsErrorMessage(error);
+    announce(state.standards.conflictMessage);
+  } finally {
+    state.standards.mutationPending = false;
+    state.standards.pendingStandardId = null;
+    render();
+  }
 }
 
 async function loadActivity({ noticeMessage = null, force = false, refresh = false } = {}) {
@@ -1094,6 +1197,7 @@ async function checkFiles() {
       render();
     });
     applySnapshot(settled, { preserveSelection: false });
+    if (settled.status === "completed") state.standards.freshScanRequired = false;
     state.destinationDrafts = {};
     state.duplicateDrafts = {};
     announce(settled.status === "completed" ? "File check complete." : "File check failed.");
@@ -1322,6 +1426,8 @@ function actionFor(target) {
   }
   if (action === "retry-activity") return loadActivity();
   if (action === "reload-duplicate-bin") return loadDuplicateBin({ refresh: true });
+  if (action === "reload-standards") return loadStandards({ refresh: true });
+  if (action === "set-standard-active") return setStandardActive(target);
   if (action === "toggle-activity") return toggleActivity(target.dataset.activityId);
   if (action === "expand-all-activity") {
     state.activity.expandedIds = new Set(state.activity.entries.map((entry) => entry.id));
@@ -1499,6 +1605,7 @@ window.addEventListener("hashchange", () => {
   if (nextRoute === "duplicate-bin" && previousRoute !== "duplicate-bin") {
     loadDuplicateBin({ refresh: true });
   }
+  if (nextRoute === "standards" && previousRoute !== "standards") loadStandards();
 });
 window.addEventListener("beforeunload", () => dataSource.dispose());
 
@@ -1508,3 +1615,4 @@ render();
 loadCurrent();
 loadActivity({ force: true });
 loadDuplicateBin();
+loadStandards();

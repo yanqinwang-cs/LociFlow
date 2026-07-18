@@ -155,7 +155,7 @@ class LociFlowB4BDuplicateConfirmationTests(unittest.TestCase):
     def test_duplicate_confirmation_does_not_add_execution_or_change_other_confirmations(self) -> None:
         app = (LOCI / "app.js").read_text(encoding="utf-8")
         duplicate = app[
-            app.index("function confirmDuplicate"):app.index("function actionFor")
+            app.index("function confirmDuplicate(target)"):app.index("function actionFor")
         ]
         destination = app[
             app.index("function confirmDestination"):app.index("function duplicateDraft")
@@ -188,6 +188,8 @@ class LociFlowB4BDuplicateConfirmationTests(unittest.TestCase):
               activeDialog:"duplicate",
               activity:{loadStatus:"ready",pendingUndo:false},
               movement:{previewStatus:"idle",executionPending:false,execution:null},
+              duplicateMovement:{previewStatus:"idle",executionPending:false},
+              duplicateBin:{previewStatus:"idle",restorePending:false},
             };
             const viewSource={getState:()=>({stageB1})};
             const events=[];

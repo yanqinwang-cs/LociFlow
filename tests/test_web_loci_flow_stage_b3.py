@@ -22,7 +22,7 @@ class WebLociFlowStageB3Tests(unittest.IsolatedAsyncioTestCase):
     def test_fidelity_locked_files_prototype_and_template_are_unchanged(self) -> None:
         expected_live = {
             "styles.css": "6288229571bb209624e00a2a82c639c93ea8eae1aca3dbad9022cb5203c637dd",
-            "views.js": "6e03253dd361372639df5512cc416c5ce64f5b68d2c6adbbcda16d6adca936b9",
+            "views.js": "07f944278479b809392f0e65d9320fda9d00bb5510652939c217b3c40073a012",
             "tree.js": "5dc9db40114c78f1dd9b7d81dfb2a52c6c5b8f73670d8a6f2bed49cc7d385975",
             "store.js": "ac0876ec961fadd4b62115d1f372606fa536b2a00ac026029578a263bb5ad3be",
             "fixtures.json": "0d614d82bf3aa75b4ab102a77d47e77b3d3ef7ed390afd6119c1e4099e36fec1",
