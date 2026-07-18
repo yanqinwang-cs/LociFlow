@@ -114,6 +114,8 @@ def create_activity_api_router() -> APIRouter:
             return _duplicate_restore_error(error)
         except OrganizationUndoError as error:
             return _undo_error(error)
+        except ApplicationStoppingError as error:
+            return _error_response("application_stopping", str(error), 409)
         except WebSecurityError:
             return _error_response(
                 "request_authentication_failed",
@@ -225,8 +227,8 @@ async def _validated_form(
     request: Request,
     allowed_fields: set[str],
 ) -> dict[str, str]:
-    form = await read_urlencoded_form(request, allowed_fields=allowed_fields)
     validate_same_origin(request)
+    form = await read_urlencoded_form(request, allowed_fields=allowed_fields)
     validate_csrf_token(request.session, form.get("csrf_token"))
     return form
 

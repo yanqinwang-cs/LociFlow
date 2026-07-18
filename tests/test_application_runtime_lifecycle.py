@@ -33,15 +33,17 @@ class RuntimeLifecycleTests(unittest.TestCase):
         second_movement = lifecycle.begin_operation(
             RuntimeOperationKind.ORGANIZATION_MOVEMENT
         )
+        mutation = lifecycle.begin_operation(RuntimeOperationKind.STATE_MUTATION)
 
         self.assertEqual(
             lifecycle.snapshot(),
             RuntimeSnapshot(
                 False,
-                3,
+                4,
                 (
                     RuntimeOperationKind.ORGANIZATION_MOVEMENT,
                     RuntimeOperationKind.SCAN,
+                    RuntimeOperationKind.STATE_MUTATION,
                 ),
             ),
         )
@@ -49,6 +51,7 @@ class RuntimeLifecycleTests(unittest.TestCase):
         self.assertTrue(scan.finish())
         self.assertTrue(movement.finish())
         self.assertTrue(second_movement.finish())
+        self.assertTrue(mutation.finish())
         self.assertEqual(lifecycle.snapshot().active_count, 0)
 
     def test_shutdown_is_monotonic_idempotent_and_rejects_new_work(self) -> None:
@@ -76,6 +79,22 @@ class RuntimeLifecycleTests(unittest.TestCase):
         with lifecycle.begin_operation(RuntimeOperationKind.DUPLICATE_BIN_MOVEMENT):
             self.assertEqual(lifecycle.snapshot().active_count, 1)
         self.assertEqual(lifecycle.snapshot().active_count, 0)
+
+    def test_multiple_state_mutations_are_tracked_and_exception_safe(self) -> None:
+        lifecycle = RuntimeLifecycle()
+        first = lifecycle.begin_operation(RuntimeOperationKind.STATE_MUTATION)
+        second = lifecycle.begin_operation(RuntimeOperationKind.STATE_MUTATION)
+
+        self.assertEqual(lifecycle.snapshot().active_count, 2)
+        self.assertEqual(
+            lifecycle.snapshot().active_kinds,
+            (RuntimeOperationKind.STATE_MUTATION,),
+        )
+        first.finish()
+        with self.assertRaisesRegex(RuntimeError, "mutation failed"):
+            with second:
+                raise RuntimeError("mutation failed")
+        self.assertEqual(lifecycle.wait_until_idle().active_count, 0)
 
         with self.assertRaisesRegex(RuntimeError, "operation failed"):
             with lifecycle.begin_operation(RuntimeOperationKind.DUPLICATE_BIN_RESTORE):
@@ -135,17 +154,19 @@ class RuntimeLifecycleTests(unittest.TestCase):
             start = Barrier(3)
             outcome: list[str] = []
             lease_holder = []
+            mutations: list[str] = []
 
             def admit() -> None:
                 start.wait()
                 try:
                     lease_holder.append(
-                        lifecycle.begin_operation(RuntimeOperationKind.SCAN)
+                        lifecycle.begin_operation(RuntimeOperationKind.STATE_MUTATION)
                     )
                 except ApplicationStoppingError:
                     outcome.append("rejected")
                 else:
                     outcome.append("admitted")
+                    mutations.append("performed-under-lease")
 
             def stop() -> None:
                 start.wait()
@@ -163,9 +184,11 @@ class RuntimeLifecycleTests(unittest.TestCase):
             snapshot = lifecycle.snapshot()
             self.assertTrue(snapshot.is_stopping)
             if outcome == ["admitted"]:
+                self.assertEqual(mutations, ["performed-under-lease"])
                 self.assertEqual(snapshot.active_count, 1)
                 lease_holder[0].finish()
             else:
+                self.assertEqual(mutations, [])
                 self.assertEqual(snapshot.active_count, 0)
 
     def test_snapshots_are_safe_and_lifecycle_instances_are_independent(self) -> None:

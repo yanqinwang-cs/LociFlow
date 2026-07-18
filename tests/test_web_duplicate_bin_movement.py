@@ -114,7 +114,15 @@ class WebDuplicateBinMovementTests(unittest.IsolatedAsyncioTestCase):
                 data={"csrf_token": csrf, "batch_id": self.batch.batch_id},
                 headers=_origin(),
             )
+            authorizations = (
+                self.app.state.duplicate_bin_authorizations.path.read_bytes()
+            )
             self.app.state.runtime_lifecycle.begin_shutdown()
+            rejected_preview = await client.post(
+                "/api/duplicate-bin/move/preview",
+                data={"csrf_token": csrf, "batch_id": self.batch.batch_id},
+                headers=_origin(),
+            )
             response = await client.post(
                 "/api/duplicate-bin/move",
                 data={
@@ -128,6 +136,12 @@ class WebDuplicateBinMovementTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 409)
         self.assertEqual(response.headers["cache-control"], "no-store")
         self.assertEqual(response.json()["error"]["code"], "application_stopping")
+        self.assertEqual(rejected_preview.status_code, 409)
+        self.assertEqual(rejected_preview.headers["cache-control"], "no-store")
+        self.assertEqual(
+            self.app.state.duplicate_bin_authorizations.path.read_bytes(),
+            authorizations,
+        )
         self.assertEqual(self.app.state.duplicate_bin_operations.list_records(), ())
 
     async def test_routes_enforce_auth_origin_csrf_content_type_and_exact_fields(
@@ -291,6 +305,43 @@ class WebDuplicateBinMovementTests(unittest.IsolatedAsyncioTestCase):
         ordinary_preview.assert_not_called()
         ordinary_undo.assert_not_called()
         self.assertEqual(self.app.state.organization_undos.list_records(), ())
+
+    async def test_stopping_rejects_duplicate_activity_undo_preview(self) -> None:
+        async with _client(self.app) as client:
+            csrf = await _authenticate(client, self.token)
+            preview = await client.post(
+                "/api/duplicate-bin/move/preview",
+                data={"csrf_token": csrf, "batch_id": self.batch.batch_id},
+                headers=_origin(),
+            )
+            moved = await client.post(
+                "/api/duplicate-bin/move",
+                data={
+                    "csrf_token": csrf,
+                    "confirmation_token": preview.json()["confirmation_token"],
+                    "confirmation": preview.json()["confirmation"],
+                },
+                headers=_origin(),
+            )
+            operation_id = moved.json()["operation"]["id"]
+            self.app.state.runtime_lifecycle.begin_shutdown()
+            with mock.patch(
+                "organizer.web.routes.activity_api.preview_organization_undo"
+            ) as ordinary_preview:
+                rejected = await client.post(
+                    f"/api/activity/{operation_id}/undo/preview",
+                    data={"csrf_token": csrf},
+                    headers=_origin(),
+                )
+
+        self.assertEqual(rejected.status_code, 409)
+        self.assertEqual(rejected.headers["cache-control"], "no-store")
+        self.assertEqual(rejected.json()["error"]["code"], "application_stopping")
+        ordinary_preview.assert_not_called()
+        self.assertFalse(
+            self.app.state.duplicate_bin_restores.authorization_path.exists()
+        )
+        self.assertEqual(self.app.state.duplicate_bin_restores.list_operations(), ())
 
 
 async def _authenticate(client: httpx.AsyncClient, token: str) -> str:

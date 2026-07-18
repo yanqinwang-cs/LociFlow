@@ -24,6 +24,10 @@ from organizer.application.organization_decision_service import (
 from organizer.application.organization_slice_service import (
     InternalOrganizationProjection,
 )
+from organizer.application.runtime_lifecycle import (
+    RuntimeLifecycle,
+    RuntimeOperationKind,
+)
 from organizer.web.scan_jobs import ScanJobSnapshot
 
 
@@ -40,7 +44,10 @@ class OrganizationDecisionStore:
     def __init__(
         self,
         duplicate_bin_repository: DuplicateBinRepository | None = None,
+        *,
+        runtime_lifecycle: RuntimeLifecycle | None = None,
     ) -> None:
+        self._runtime_lifecycle = runtime_lifecycle or RuntimeLifecycle()
         self._lock = Lock()
         self._sessions: dict[str, OrganizationDecisionSnapshot] = {}
         self._invalidated_generations: set[tuple[Path, str]] = set()
@@ -84,27 +91,30 @@ class OrganizationDecisionStore:
         option_id: str | None = None,
         copy_ids: tuple[str, ...] = (),
     ) -> OrganizationDecisionSnapshot:
-        with self._lock:
-            current = self._mutable_current(
-                browser_session_id,
-                scan,
-                projection,
-                scan_generation,
-                expected_revision,
-            )
-            updated = update_organization_decision(
-                current.session,
-                current.projection,
-                kind=kind,
-                change_id=change_id,
-                decision=decision,
-                choice_id=choice_id,
-                option_id=option_id,
-                copy_ids=copy_ids,
-            )
-            snapshot = OrganizationDecisionSnapshot(current.projection, updated)
-            self._sessions[browser_session_id] = snapshot
-            return snapshot
+        with self._runtime_lifecycle.begin_operation(
+            RuntimeOperationKind.STATE_MUTATION
+        ):
+            with self._lock:
+                current = self._mutable_current(
+                    browser_session_id,
+                    scan,
+                    projection,
+                    scan_generation,
+                    expected_revision,
+                )
+                updated = update_organization_decision(
+                    current.session,
+                    current.projection,
+                    kind=kind,
+                    change_id=change_id,
+                    decision=decision,
+                    choice_id=choice_id,
+                    option_id=option_id,
+                    copy_ids=copy_ids,
+                )
+                snapshot = OrganizationDecisionSnapshot(current.projection, updated)
+                self._sessions[browser_session_id] = snapshot
+                return snapshot
 
     def validate_mutation(
         self,
@@ -118,13 +128,18 @@ class OrganizationDecisionStore:
         """Validate concurrency guards before interpreting a submitted decision."""
 
         with self._lock:
-            self._mutable_current(
-                browser_session_id,
-                scan,
-                projection,
-                scan_generation,
-                expected_revision,
+            self._validate_generation(scan, projection, scan_generation)
+            stored = self._sessions.get(browser_session_id)
+            current = (
+                stored
+                if stored is not None
+                and stored.session.scan_generation == scan.job_id
+                else OrganizationDecisionSnapshot(
+                    projection,
+                    create_organization_decision_session(projection),
+                )
             )
+            self._validate_revision(current.session, expected_revision)
 
     def accept_all_recommended(
         self,
@@ -136,22 +151,25 @@ class OrganizationDecisionStore:
         expected_revision: int,
         expected_change_ids: tuple[str, ...],
     ) -> OrganizationDecisionSnapshot:
-        with self._lock:
-            current = self._mutable_current(
-                browser_session_id,
-                scan,
-                projection,
-                scan_generation,
-                expected_revision,
-            )
-            updated = accept_recommended_changes(
-                current.session,
-                current.projection,
-                expected_change_ids,
-            )
-            snapshot = OrganizationDecisionSnapshot(current.projection, updated)
-            self._sessions[browser_session_id] = snapshot
-            return snapshot
+        with self._runtime_lifecycle.begin_operation(
+            RuntimeOperationKind.STATE_MUTATION
+        ):
+            with self._lock:
+                current = self._mutable_current(
+                    browser_session_id,
+                    scan,
+                    projection,
+                    scan_generation,
+                    expected_revision,
+                )
+                updated = accept_recommended_changes(
+                    current.session,
+                    current.projection,
+                    expected_change_ids,
+                )
+                snapshot = OrganizationDecisionSnapshot(current.projection, updated)
+                self._sessions[browser_session_id] = snapshot
+                return snapshot
 
     def approve(
         self,
@@ -162,53 +180,56 @@ class OrganizationDecisionStore:
         scan_generation: str,
         expected_revision: int,
     ) -> OrganizationDecisionSnapshot:
-        with self._lock:
-            self._validate_generation(scan, projection, scan_generation)
-            stored = self._sessions.get(browser_session_id)
-            if stored is not None and stored.session.scan_generation != scan.job_id:
-                self._sessions.pop(browser_session_id, None)
-                stored = None
-            current = stored or OrganizationDecisionSnapshot(
-                projection,
-                create_organization_decision_session(projection),
-            )
-            if current.session.status == STATUS_READY_TO_MOVE:
-                approved = current.session.approved_plan
-                if (
-                    approved is not None
-                    and approved.decision_revision == expected_revision
-                ):
-                    return current
-                raise OrganizationDecisionError("approval_already_completed")
-            self._validate_revision(current.session, expected_revision)
-            updated = approve_organization_plan(
-                current.session,
-                current.projection,
-            )
-            assert updated.approved_plan is not None
-            repository = self._duplicate_bin_repository
-            if repository is None and updated.approved_plan.duplicate_decisions:
-                repository = DuplicateBinRepository(current.projection.root)
-            try:
-                batch = (
-                    create_or_recover_duplicate_batch(
-                        approved_plan=updated.approved_plan,
-                        projection=current.projection,
-                        browser_session_id=browser_session_id,
-                        repository=repository,
-                    )
-                    if repository is not None
-                    else None
+        with self._runtime_lifecycle.begin_operation(
+            RuntimeOperationKind.STATE_MUTATION
+        ):
+            with self._lock:
+                self._validate_generation(scan, projection, scan_generation)
+                stored = self._sessions.get(browser_session_id)
+                if stored is not None and stored.session.scan_generation != scan.job_id:
+                    self._sessions.pop(browser_session_id, None)
+                    stored = None
+                current = stored or OrganizationDecisionSnapshot(
+                    projection,
+                    create_organization_decision_session(projection),
                 )
-            except DuplicateBinApprovalError as error:
-                raise OrganizationDecisionError(error.code) from error
-            snapshot = OrganizationDecisionSnapshot(
-                current.projection,
-                updated,
-                batch.safe_projection() if batch is not None else None,
-            )
-            self._sessions[browser_session_id] = snapshot
-            return snapshot
+                if current.session.status == STATUS_READY_TO_MOVE:
+                    approved = current.session.approved_plan
+                    if (
+                        approved is not None
+                        and approved.decision_revision == expected_revision
+                    ):
+                        return current
+                    raise OrganizationDecisionError("approval_already_completed")
+                self._validate_revision(current.session, expected_revision)
+                updated = approve_organization_plan(
+                    current.session,
+                    current.projection,
+                )
+                assert updated.approved_plan is not None
+                repository = self._duplicate_bin_repository
+                if repository is None and updated.approved_plan.duplicate_decisions:
+                    repository = DuplicateBinRepository(current.projection.root)
+                try:
+                    batch = (
+                        create_or_recover_duplicate_batch(
+                            approved_plan=updated.approved_plan,
+                            projection=current.projection,
+                            browser_session_id=browser_session_id,
+                            repository=repository,
+                        )
+                        if repository is not None
+                        else None
+                    )
+                except DuplicateBinApprovalError as error:
+                    raise OrganizationDecisionError(error.code) from error
+                snapshot = OrganizationDecisionSnapshot(
+                    current.projection,
+                    updated,
+                    batch.safe_projection() if batch is not None else None,
+                )
+                self._sessions[browser_session_id] = snapshot
+                return snapshot
 
     def approved_for_movement(
         self,

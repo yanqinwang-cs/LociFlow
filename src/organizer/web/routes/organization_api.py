@@ -240,6 +240,8 @@ def create_organization_api_router() -> APIRouter:
             return _error_response(error.code, error.safe_message, 409)
         except OrganizationDecisionError as error:
             return _decision_error(error)
+        except ApplicationStoppingError as error:
+            return _error_response("application_stopping", str(error), 409)
         except WebSecurityError:
             return _error_response(
                 "request_authentication_failed",
@@ -279,6 +281,8 @@ def create_organization_api_router() -> APIRouter:
             return _error_response(error.code, error.safe_message, 409)
         except OrganizationDecisionError as error:
             return _decision_error(error)
+        except ApplicationStoppingError as error:
+            return _error_response("application_stopping", str(error), 409)
         except WebSecurityError:
             return _error_response(
                 "request_authentication_failed",
@@ -324,6 +328,8 @@ def create_organization_api_router() -> APIRouter:
             OrganizationUnavailableError,
         ) as error:
             return _movement_error(error.code)
+        except ApplicationStoppingError as error:
+            return _error_response("application_stopping", str(error), 409)
         except WebSecurityError:
             return _error_response(
                 "request_authentication_failed",
@@ -454,8 +460,8 @@ async def _validated_mutation_form(
     request: Request,
     allowed_fields: set[str],
 ) -> dict[str, str]:
-    form = await read_urlencoded_form(request, allowed_fields=allowed_fields)
     validate_same_origin(request)
+    form = await read_urlencoded_form(request, allowed_fields=allowed_fields)
     validate_csrf_token(request.session, form.get("csrf_token"))
     return form
 

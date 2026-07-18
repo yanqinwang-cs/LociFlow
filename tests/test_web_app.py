@@ -109,6 +109,14 @@ class WebAppTests(unittest.IsolatedAsyncioTestCase):
             self.app.state.organization_execution.runtime_lifecycle,
             self.app.state.runtime_lifecycle,
         )
+        self.assertIs(
+            self.app.state.organization_decisions._runtime_lifecycle,
+            self.app.state.runtime_lifecycle,
+        )
+        self.assertIs(
+            self.app.state.review_explorer._runtime_lifecycle,
+            self.app.state.runtime_lifecycle,
+        )
         first_lease = self.app.state.runtime_lifecycle.begin_operation(
             RuntimeOperationKind.SCAN
         )

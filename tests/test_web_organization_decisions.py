@@ -468,6 +468,89 @@ class WebOrganizationDecisionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(decision_get.status_code, 405)
         self.assertEqual(approval_get.status_code, 405)
 
+    async def test_stopping_rejects_decisions_bulk_and_approval_without_mutation(
+        self,
+    ) -> None:
+        async with _client(self.app) as client:
+            csrf = await self._authenticate(client)
+            baseline = await client.get("/api/organization/current")
+            self.app.state.runtime_lifecycle.begin_shutdown()
+            common = {
+                "csrf_token": csrf,
+                "scan_generation": "scan-one",
+                "expected_revision": "0",
+            }
+            decision = await client.post(
+                "/api/organization/decisions",
+                data={
+                    **common,
+                    "kind": "recommendation",
+                    "change_id": "O1",
+                    "decision": "accept",
+                },
+                headers=_origin(),
+            )
+            bulk = await client.post(
+                "/api/organization/decisions",
+                data={
+                    **common,
+                    "kind": "bulk_recommendations",
+                    "decision": "accept",
+                    "expected_change_ids": json.dumps(["O1", "O2"]),
+                },
+                headers=_origin(),
+            )
+            approval = await client.post(
+                "/api/organization/approval",
+                data=common,
+                headers=_origin(),
+            )
+            wrong_origin = await client.post(
+                "/api/organization/approval",
+                content=b"not-a-valid-form=%FF",
+                headers={
+                    "Origin": "http://evil.example",
+                    "Content-Type": "application/x-www-form-urlencoded",
+                },
+            )
+            wrong_csrf = await client.post(
+                "/api/organization/approval",
+                data={**common, "csrf_token": "wrong"},
+                headers=_origin(),
+            )
+            malformed = await client.post(
+                "/api/organization/approval",
+                content=b"csrf_token=%FF",
+                headers={
+                    **_origin(),
+                    "Content-Type": "application/x-www-form-urlencoded",
+                },
+            )
+            current = await client.get("/api/organization/current")
+            activity = await client.get("/api/activity")
+        async with _client(self.app) as unauthenticated_client:
+            unauthenticated = await unauthenticated_client.post(
+                "/api/organization/approval",
+                data=common,
+                headers=_origin(),
+            )
+
+        for response in (decision, bulk, approval):
+            self.assertEqual(response.status_code, 409)
+            self.assertEqual(response.headers["cache-control"], "no-store")
+            self.assertEqual(response.json()["error"]["code"], "application_stopping")
+        self.assertEqual(wrong_origin.status_code, 403)
+        self.assertEqual(wrong_csrf.status_code, 403)
+        self.assertEqual(malformed.status_code, 400)
+        self.assertEqual(unauthenticated.status_code, 403)
+        self.assertEqual(current.json(), baseline.json())
+        self.assertEqual(activity.json(), {"activity": []})
+        self.assertEqual(self.app.state.organization_decisions._sessions, {})
+        self.assertEqual(
+            self.app.state.duplicate_bin_batches.list_active_approved_batches(),
+            (),
+        )
+
     async def test_duplicate_choice_uses_public_copy_ids_and_never_moves_or_exposes_hash(
         self,
     ) -> None:
@@ -556,6 +639,67 @@ class WebOrganizationDecisionTests(unittest.IsolatedAsyncioTestCase):
                 (root / "AI_Review" / "organization_operations").exists()
             )
             self.assertFalse((root / "AI_Review" / "operation_logs").exists())
+
+    async def test_stopping_approval_does_not_create_durable_duplicate_batch(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            (root / "Inbox").mkdir()
+            (root / "Archive").mkdir()
+            (root / "Inbox" / "copy.txt").write_text("same", encoding="utf-8")
+            (root / "Archive" / "copy.txt").write_text("same", encoding="utf-8")
+            result = scan_root(root)
+            token = "q" * 32
+            app = create_app(
+                WebAppConfig(root, "s" * 32, token, testing=True)
+            )
+            app.state.scan_jobs._snapshot = ScanJobSnapshot(
+                status="completed",
+                job_id="duplicates",
+                completed_at=COMPLETED_AT,
+                result=result,
+            )
+            async with _client(app) as client:
+                await client.get(f"/launch/{token}", follow_redirects=False)
+                shell = await client.get("/loci-flow")
+                csrf = re.search(
+                    r'<meta name="csrf-token" content="([^"]+)">', shell.text
+                ).group(1)  # type: ignore[union-attr]
+                current = await client.get("/api/organization/current")
+                choice = current.json()["choices_needed"][0]
+                decided = await client.post(
+                    "/api/organization/decisions",
+                    data={
+                        "csrf_token": csrf,
+                        "scan_generation": "duplicates",
+                        "expected_revision": "0",
+                        "kind": "choice",
+                        "choice_id": choice["id"],
+                        "option_id": "choose-for-bin",
+                        "copy_ids": json.dumps([choice["copies"][0]["id"]]),
+                    },
+                    headers=_origin(),
+                )
+                app.state.runtime_lifecycle.begin_shutdown()
+                rejected = await client.post(
+                    "/api/organization/approval",
+                    data={
+                        "csrf_token": csrf,
+                        "scan_generation": "duplicates",
+                        "expected_revision": "1",
+                    },
+                    headers=_origin(),
+                )
+                after = await client.get("/api/organization/current")
+
+            self.assertEqual(decided.status_code, 200)
+            self.assertEqual(rejected.status_code, 409)
+            self.assertEqual(rejected.json()["error"]["code"], "application_stopping")
+            self.assertEqual(after.json()["review"]["decision_revision"], 1)
+            self.assertEqual(after.json()["review"]["status"], "ready_for_approval")
+            self.assertEqual(
+                app.state.duplicate_bin_batches.list_active_approved_batches(),
+                (),
+            )
 
     async def _authenticate(self, client: httpx.AsyncClient) -> str:
         await client.get(f"/launch/{self.token}", follow_redirects=False)

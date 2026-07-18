@@ -158,7 +158,15 @@ class WebOrganizationMovementTests(unittest.IsolatedAsyncioTestCase):
                 data={"csrf_token": csrf},
                 headers=_origin(),
             )
+            authorizations = dict(
+                self.app.state.organization_execution._authorizations
+            )
             self.app.state.runtime_lifecycle.begin_shutdown()
+            rejected_preview = await client.post(
+                "/api/organization/move/preview",
+                data={"csrf_token": csrf},
+                headers=_origin(),
+            )
             response = await client.post(
                 "/api/organization/move",
                 data={
@@ -172,6 +180,15 @@ class WebOrganizationMovementTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 409)
         self.assertEqual(response.headers["cache-control"], "no-store")
         self.assertEqual(response.json()["error"]["code"], "application_stopping")
+        self.assertEqual(rejected_preview.status_code, 409)
+        self.assertEqual(rejected_preview.headers["cache-control"], "no-store")
+        self.assertEqual(
+            rejected_preview.json()["error"]["code"], "application_stopping"
+        )
+        self.assertEqual(
+            self.app.state.organization_execution._authorizations,
+            authorizations,
+        )
         self.assertEqual(self.app.state.organization_operations.list_records(), ())
 
     async def test_routes_enforce_auth_origin_csrf_post_forms_and_server_ids_only(self) -> None:

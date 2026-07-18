@@ -10,7 +10,7 @@ from organizer.application.execution_coordinator import (
 from organizer.application.execution_service import (
     CONFIRM_MOVE_APPROVED_FILES,
     OrganizationExecutionError,
-    issue_movement_authorization,
+    _issue_movement_authorization,
     move_approved_organization,
 )
 from organizer.application.organization_decision_models import (
@@ -34,6 +34,7 @@ from organizer.application.organization_operation_models import (
 from organizer.application.organization_operation_repository import (
     OrganizationOperationRepository,
 )
+from organizer.application.runtime_lifecycle import RuntimeOperationKind
 
 
 class OrganizationMovementError(ValueError):
@@ -135,23 +136,26 @@ def preview_organization_movement(
             if blocking.status == STATUS_INTERRUPTED
             else "movement_or_undo_in_progress"
         )
-    if not coordinator.try_acquire():
-        raise OrganizationMovementError("movement_or_undo_in_progress")
-    coordinator.release()
-    authorization = issue_movement_authorization(
-        approved_plan,
-        coordinator,
-        browser_session_id=browser_session_id,
-        configured_root_identity=operation_repository.configured_root_identity,
-    )
-    return OrganizationMovementPreview(
-        files_to_move=len(approved_plan.reviewed_move_items),
-        duplicate_copies_deferred=(
-            approved_plan.summary.duplicate_copies_for_future_bin
-        ),
-        confirmation=CONFIRM_MOVE_APPROVED_FILES,
-        confirmation_token=authorization.authorization_id,
-    )
+    with coordinator.runtime_lifecycle.begin_operation(
+        RuntimeOperationKind.STATE_MUTATION
+    ):
+        if not coordinator.try_acquire():
+            raise OrganizationMovementError("movement_or_undo_in_progress")
+        coordinator.release()
+        authorization = _issue_movement_authorization(
+            approved_plan,
+            coordinator,
+            browser_session_id=browser_session_id,
+            configured_root_identity=operation_repository.configured_root_identity,
+        )
+        return OrganizationMovementPreview(
+            files_to_move=len(approved_plan.reviewed_move_items),
+            duplicate_copies_deferred=(
+                approved_plan.summary.duplicate_copies_for_future_bin
+            ),
+            confirmation=CONFIRM_MOVE_APPROVED_FILES,
+            confirmation_token=authorization.authorization_id,
+        )
 
 
 def execute_organization_movement(

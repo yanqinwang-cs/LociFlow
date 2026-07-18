@@ -7,6 +7,7 @@ from starlette.requests import Request
 from starlette.responses import RedirectResponse, Response
 from starlette.templating import Jinja2Templates
 
+from organizer.application.runtime_lifecycle import ApplicationStoppingError
 from organizer.web.consumer_presenter import (
     ConsumerSurface,
     SURFACE_SPECS,
@@ -238,6 +239,8 @@ def _module_save_handler(templates, surface):
                 "The save request is invalid. No choices were saved.",
                 error.status_code,
             )
+        except ApplicationStoppingError as error:
+            return _consumer_error(request, templates, str(error), 409)
         except ReviewSessionUnavailable:
             return _consumer_error(
                 request, templates, "No completed scan is available.", 409
@@ -291,6 +294,8 @@ def _revisit_handler(templates, surface):
                 "The queue request is invalid. No choices were changed.",
                 error.status_code,
             )
+        except ApplicationStoppingError as error:
+            return _consumer_error(request, templates, str(error), 409)
         except ReviewSessionUnavailable:
             return _consumer_error(
                 request, templates, "No completed scan is available.", 409
@@ -314,6 +319,10 @@ def _revisit_handler(templates, surface):
 
 async def _validated_form(request: Request) -> None:
     try:
+        validate_same_origin(request)
+    except ValueError as error:
+        raise ModuleRequestError(403) from error
+    try:
         form = await read_urlencoded_form(
             request,
             allowed_fields={"csrf_token"},
@@ -321,7 +330,6 @@ async def _validated_form(request: Request) -> None:
     except FormDataError as error:
         raise ModuleRequestError(400) from error
     try:
-        validate_same_origin(request)
         validate_csrf_token(request.session, form.get("csrf_token"))
     except ValueError as error:
         raise ModuleRequestError(403) from error

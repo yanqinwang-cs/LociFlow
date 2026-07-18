@@ -8,6 +8,44 @@ from tests.web_consumer_support import ConsumerWebFixture
 
 
 class WebModuleSavingTests(ConsumerWebFixture, unittest.IsolatedAsyncioTestCase):
+    async def test_stopping_rejects_all_module_saves_and_queue_mutations(self) -> None:
+        client = await self.authenticated_client()
+        try:
+            csrf = await self.csrf(client, "/duplicates")
+            before = self.app.state.review_explorer.snapshot(
+                self.app.state.scan_jobs.snapshot()
+            )
+            self.app.state.runtime_lifecycle.begin_shutdown()
+            responses = []
+            for surface in ("duplicates", "organize", "attention"):
+                responses.append(
+                    await client.post(
+                        f"/{surface}/save",
+                        data={"csrf_token": csrf},
+                        headers=self.origin_headers(),
+                    )
+                )
+                responses.append(
+                    await client.post(
+                        f"/{surface}/revisit-skipped",
+                        data={"csrf_token": csrf},
+                        headers=self.origin_headers(),
+                    )
+                )
+        finally:
+            await client.aclose()
+
+        for response in responses:
+            self.assertEqual(response.status_code, 409)
+            self.assertEqual(response.headers["cache-control"], "no-store")
+            self.assertIn("Loci Flow is closing", response.text)
+        after = self.app.state.review_explorer.snapshot(
+            self.app.state.scan_jobs.snapshot()
+        )
+        self.assertEqual(after.session, before.session)
+        self.assertEqual(after.module_queues, before.module_queues)
+        self.assertFalse((self.root / "AI_Review" / "review_sessions").exists())
+
     async def test_modules_save_independently_and_full_save_still_works(self) -> None:
         client = await self.authenticated_client()
         try:

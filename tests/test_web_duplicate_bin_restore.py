@@ -122,7 +122,18 @@ class WebDuplicateBinRestoreTests(unittest.IsolatedAsyncioTestCase):
                 },
                 headers=_origin(),
             )
+            authorizations = (
+                self.app.state.duplicate_bin_restores.authorization_path.read_bytes()
+            )
             self.app.state.runtime_lifecycle.begin_shutdown()
+            rejected_preview = await client.post(
+                "/api/duplicate-bin/restore/preview",
+                data={
+                    "csrf_token": csrf,
+                    "item_ids": json.dumps([items[0]["id"]]),
+                },
+                headers=_origin(),
+            )
             response = await client.post(
                 "/api/duplicate-bin/restore",
                 data={
@@ -136,6 +147,12 @@ class WebDuplicateBinRestoreTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 409)
         self.assertEqual(response.headers["cache-control"], "no-store")
         self.assertEqual(response.json()["error"]["code"], "application_stopping")
+        self.assertEqual(rejected_preview.status_code, 409)
+        self.assertEqual(rejected_preview.headers["cache-control"], "no-store")
+        self.assertEqual(
+            self.app.state.duplicate_bin_restores.authorization_path.read_bytes(),
+            authorizations,
+        )
         self.assertEqual(self.app.state.duplicate_bin_restores.list_operations(), ())
 
     async def test_restore_routes_enforce_security_and_exact_item_array(self) -> None:

@@ -20,6 +20,7 @@ from organizer.application.review_service import (
     update_review_page_size,
     update_review_sort,
 )
+from organizer.application.runtime_lifecycle import ApplicationStoppingError
 from organizer.application.view_models import ReviewApplicationSession
 from organizer.web.forms import FormDataError, read_urlencoded_form
 from organizer.web.consumer_presenter import (
@@ -211,6 +212,8 @@ def create_review_router(templates: Jinja2Templates) -> APIRouter:
                 "No completed scan review session is available.",
                 409,
             )
+        except ApplicationStoppingError as error:
+            return _review_error(request, templates, str(error), 409)
         except ReviewRequestError as error:
             return _review_error(
                 request,
@@ -293,6 +296,8 @@ def create_review_router(templates: Jinja2Templates) -> APIRouter:
                 "No completed scan review session is available.",
                 409,
             )
+        except ApplicationStoppingError as error:
+            return _review_error(request, templates, str(error), 409)
         except ReviewRequestError as error:
             return _review_error(
                 request,
@@ -362,6 +367,8 @@ def create_review_router(templates: Jinja2Templates) -> APIRouter:
                 "No completed scan review session is available.",
                 409,
             )
+        except ApplicationStoppingError as error:
+            return _review_error(request, templates, str(error), 409)
         except ReviewRequestError as error:
             return _review_error(
                 request,
@@ -416,6 +423,8 @@ def create_review_router(templates: Jinja2Templates) -> APIRouter:
                 "No completed scan review session is available.",
                 409,
             )
+        except ApplicationStoppingError as error:
+            return _review_error(request, templates, str(error), 409)
         except ReviewRequestError as error:
             return _review_error(
                 request,
@@ -528,6 +537,13 @@ async def _validated_mutation_form(
     allowed_fields: set[str],
 ) -> dict[str, str]:
     try:
+        validate_same_origin(request)
+    except ValueError as error:
+        raise ReviewRequestError(
+            "The review request could not be authenticated.",
+            403,
+        ) from error
+    try:
         form = await read_urlencoded_form(
             request,
             allowed_fields=allowed_fields,
@@ -538,7 +554,6 @@ async def _validated_mutation_form(
             400,
         ) from error
     try:
-        validate_same_origin(request)
         validate_csrf_token(request.session, form.get("csrf_token"))
     except ValueError as error:
         raise ReviewRequestError(

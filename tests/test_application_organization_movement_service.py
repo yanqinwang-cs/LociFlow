@@ -3,10 +3,12 @@ from __future__ import annotations
 from dataclasses import replace
 from pathlib import Path
 import tempfile
+from threading import Event, Thread
 import unittest
 import uuid
 from unittest import mock
 
+import organizer.application.organization_movement_service as movement_service
 from organizer.application.activity_service import list_activity_entries
 from organizer.application.execution_coordinator import (
     OrganizationExecutionCoordinator,
@@ -25,10 +27,79 @@ from organizer.application.organization_operation_repository import (
 from organizer.application.organization_undo_repository import (
     OrganizationUndoRepository,
 )
+from organizer.application.runtime_lifecycle import ApplicationStoppingError
 from tests.test_application_execution_service import _approved_plan
 
 
 class OrganizationMovementServiceTests(unittest.TestCase):
+    def test_admitted_preview_finishes_after_shutdown_begins(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            plan = _approved_plan(root, ("a.txt",))
+            coordinator = OrganizationExecutionCoordinator()
+            repository = OrganizationOperationRepository(root)
+            issuing = Event()
+            finish = Event()
+            outcomes = []
+            real_issue = movement_service._issue_movement_authorization
+
+            def paused_issue(*args, **kwargs):
+                self.assertEqual(
+                    coordinator.runtime_lifecycle.snapshot().active_kinds,
+                    (movement_service.RuntimeOperationKind.STATE_MUTATION,),
+                )
+                issuing.set()
+                finish.wait(timeout=2)
+                return real_issue(*args, **kwargs)
+
+            worker = Thread(
+                target=lambda: outcomes.append(
+                    _preview(plan, coordinator, repository)
+                )
+            )
+            with mock.patch.object(
+                movement_service,
+                "_issue_movement_authorization",
+                side_effect=paused_issue,
+            ):
+                worker.start()
+                self.assertTrue(issuing.wait(1))
+                self.assertEqual(
+                    coordinator.runtime_lifecycle.begin_shutdown().active_count,
+                    1,
+                )
+                finish.set()
+                worker.join(2)
+
+            self.assertFalse(worker.is_alive())
+            self.assertEqual(len(outcomes), 1)
+            self.assertIsNotNone(
+                coordinator.authorization_snapshot(outcomes[0].confirmation_token)
+            )
+            self.assertEqual(
+                coordinator.runtime_lifecycle.wait_until_idle().active_count,
+                0,
+            )
+
+    def test_stopping_rejects_preview_without_replacing_authorization(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            plan = _approved_plan(root, ("a.txt",))
+            coordinator = OrganizationExecutionCoordinator()
+            repository = OrganizationOperationRepository(root)
+            existing = _preview(plan, coordinator, repository)
+            before = dict(coordinator._authorizations)
+            coordinator.runtime_lifecycle.begin_shutdown()
+
+            with self.assertRaises(ApplicationStoppingError):
+                _preview(plan, coordinator, repository)
+
+            self.assertEqual(coordinator._authorizations, before)
+            self.assertIsNotNone(
+                coordinator.authorization_snapshot(existing.confirmation_token)
+            )
+            self.assertEqual(repository.list_records(), ())
+
     def test_preview_is_server_derived_bound_and_mutation_free(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()

@@ -64,6 +64,37 @@ from tests.test_application_duplicate_bin_movement_service import (
 
 
 class DuplicateBinRestoreServiceTests(unittest.TestCase):
+    def test_stopping_rejects_restore_previews_without_superseding_authorization(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            owners = _moved(Path(directory).resolve(), selected=1)
+            restores = DuplicateBinRestoreRepository(owners.root)
+            item = owners.batch.items[0]
+            existing = _restore_preview(owners, restores, (item.bin_item_id,))
+            before = restores.authorization_path.read_bytes()
+            owners.coordinator.runtime_lifecycle.begin_shutdown()
+
+            for preview in (
+                lambda: _restore_preview(owners, restores, (item.bin_item_id,)),
+                lambda: preview_duplicate_bin_activity_undo(
+                    movement_operation_id=owners.operations.list_records()[0].operation_id,
+                    browser_session_id="browser-one",
+                    batch_repository=owners.batches,
+                    movement_repository=owners.operations,
+                    restore_repository=restores,
+                    coordinator=owners.coordinator,
+                    issued_at=(ISSUED + timedelta(minutes=1)).isoformat(),
+                ),
+            ):
+                with self.assertRaises(ApplicationStoppingError):
+                    preview()
+
+            self.assertEqual(restores.authorization_path.read_bytes(), before)
+            self.assertEqual(
+                restores.load_authorization(existing.confirmation_token).status,
+                "available",
+            )
+            self.assertEqual(restores.list_operations(), ())
+
     def test_verified_items_preview_restore_verify_and_replay(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             owners = _moved(Path(directory).resolve(), selected=2)

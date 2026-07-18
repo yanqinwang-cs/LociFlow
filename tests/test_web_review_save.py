@@ -12,6 +12,24 @@ class WebReviewSaveTests(
     WebReviewFixture,
     unittest.IsolatedAsyncioTestCase,
 ):
+    async def test_stopping_rejects_full_save_without_writing_artifact(self) -> None:
+        client = await self.authenticated_client()
+        try:
+            csrf = await self.csrf(client)
+            self.app.state.runtime_lifecycle.begin_shutdown()
+            response = await client.post(
+                "/review/save",
+                data={"csrf_token": csrf},
+                headers=self.origin_headers(),
+            )
+        finally:
+            await client.aclose()
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.headers["cache-control"], "no-store")
+        self.assertIn("Loci Flow is closing", response.text)
+        self.assertFalse((self.root / "AI_Review" / "review_sessions").exists())
+
     async def test_explicit_save_writes_all_rows_and_returns_clean_session(self) -> None:
         client = await self.authenticated_client()
         try:

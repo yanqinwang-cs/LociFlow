@@ -91,6 +91,30 @@ def preview_duplicate_bin_movement(
     issued_at: str | None = None,
 ) -> DuplicateBinMovementPreview:
     _server_uuid(batch_id, "duplicate_batch_not_found")
+    with coordinator.runtime_lifecycle.begin_operation(
+        RuntimeOperationKind.STATE_MUTATION
+    ):
+        return _preview_duplicate_bin_movement(
+            batch_id=batch_id,
+            browser_session_id=browser_session_id,
+            batch_repository=batch_repository,
+            authorization_repository=authorization_repository,
+            operation_repository=operation_repository,
+            coordinator=coordinator,
+            issued_at=issued_at,
+        )
+
+
+def _preview_duplicate_bin_movement(
+    *,
+    batch_id: str,
+    browser_session_id: str,
+    batch_repository: DuplicateBinRepository,
+    authorization_repository: DuplicateBinAuthorizationRepository,
+    operation_repository: DuplicateBinOperationRepository,
+    coordinator: OrganizationExecutionCoordinator,
+    issued_at: str | None = None,
+) -> DuplicateBinMovementPreview:
     try:
         batch = batch_repository.load(batch_id)
     except DuplicateBinRepositoryError as error:

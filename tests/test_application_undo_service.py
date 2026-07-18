@@ -42,6 +42,35 @@ from organizer.models import MovePlanItem
 
 
 class OrganizationUndoServiceTests(unittest.TestCase):
+    def test_stopping_rejects_preview_without_replacing_authorization(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            operations, undos, coordinator, record = _verified_operation(root, 1)
+            existing = preview_organization_undo(
+                operation_id=record.operation_id,
+                browser_session_id="browser-one",
+                coordinator=coordinator,
+                operation_repository=operations,
+                undo_repository=undos,
+            )
+            before = dict(coordinator._undo_authorizations)
+            coordinator.runtime_lifecycle.begin_shutdown()
+
+            with self.assertRaises(ApplicationStoppingError):
+                preview_organization_undo(
+                    operation_id=record.operation_id,
+                    browser_session_id="browser-one",
+                    coordinator=coordinator,
+                    operation_repository=operations,
+                    undo_repository=undos,
+                )
+
+            self.assertEqual(coordinator._undo_authorizations, before)
+            self.assertIsNotNone(
+                coordinator.undo_authorization_snapshot(existing.confirmation_token)
+            )
+            self.assertEqual(undos.list_records(), ())
+
     def test_preview_and_complete_undo_are_authorized_durable_verified_and_replay_safe(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()

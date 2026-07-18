@@ -47,6 +47,23 @@ ISSUED = datetime(2026, 7, 16, 10, tzinfo=timezone.utc)
 
 
 class DuplicateBinMovementServiceTests(unittest.TestCase):
+    def test_stopping_rejects_preview_without_superseding_authorization(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            owners = _owners(Path(directory).resolve(), selected=1)
+            existing = _preview(owners, issued=ISSUED)
+            before = owners.authorizations.path.read_bytes()
+            owners.coordinator.runtime_lifecycle.begin_shutdown()
+
+            with self.assertRaises(ApplicationStoppingError):
+                _preview(owners, issued=ISSUED + timedelta(minutes=1))
+
+            self.assertEqual(owners.authorizations.path.read_bytes(), before)
+            self.assertEqual(
+                owners.authorizations.load(existing.confirmation_token).status,
+                "available",
+            )
+            self.assertEqual(owners.operations.list_records(), ())
+
     def test_preview_is_durable_exactly_fifteen_minutes_and_supersedes_unused(
         self,
     ) -> None:

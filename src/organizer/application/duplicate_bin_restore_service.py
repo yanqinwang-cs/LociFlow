@@ -99,6 +99,31 @@ def preview_duplicate_bin_restore(
     coordinator: OrganizationExecutionCoordinator,
     issued_at: str | None = None,
 ) -> DuplicateBinRestorePreview:
+    _selected_ids(item_ids)
+    with coordinator.runtime_lifecycle.begin_operation(
+        RuntimeOperationKind.STATE_MUTATION
+    ):
+        return _preview_duplicate_bin_restore(
+            item_ids=item_ids,
+            browser_session_id=browser_session_id,
+            batch_repository=batch_repository,
+            movement_repository=movement_repository,
+            restore_repository=restore_repository,
+            coordinator=coordinator,
+            issued_at=issued_at,
+        )
+
+
+def _preview_duplicate_bin_restore(
+    *,
+    item_ids: tuple[str, ...],
+    browser_session_id: str,
+    batch_repository: DuplicateBinRepository,
+    movement_repository: DuplicateBinOperationRepository,
+    restore_repository: DuplicateBinRestoreRepository,
+    coordinator: OrganizationExecutionCoordinator,
+    issued_at: str | None = None,
+) -> DuplicateBinRestorePreview:
     selected = _selected_ids(item_ids)
     if not coordinator.try_acquire():
         raise DuplicateBinRestoreError("movement_or_undo_in_progress")
@@ -157,29 +182,32 @@ def preview_duplicate_bin_activity_undo(
         movement = movement_repository.load(movement_operation_id)
     except ValueError as error:
         raise DuplicateBinRestoreError("operation_not_found") from error
-    item_ids = tuple(
-        sorted(
-            move.bin_item_id
-            for move in movement.expected_moves
-            if _is_restorable(
-                move.bin_item_id,
-                batch_repository,
-                movement_repository,
-                restore_repository,
+    with coordinator.runtime_lifecycle.begin_operation(
+        RuntimeOperationKind.STATE_MUTATION
+    ):
+        item_ids = tuple(
+            sorted(
+                move.bin_item_id
+                for move in movement.expected_moves
+                if _is_restorable(
+                    move.bin_item_id,
+                    batch_repository,
+                    movement_repository,
+                    restore_repository,
+                )
             )
         )
-    )
-    if not item_ids:
-        raise DuplicateBinRestoreError("no_restorable_items")
-    return preview_duplicate_bin_restore(
-        item_ids=item_ids,
-        browser_session_id=browser_session_id,
-        batch_repository=batch_repository,
-        movement_repository=movement_repository,
-        restore_repository=restore_repository,
-        coordinator=coordinator,
-        issued_at=issued_at,
-    )
+        if not item_ids:
+            raise DuplicateBinRestoreError("no_restorable_items")
+        return _preview_duplicate_bin_restore(
+            item_ids=item_ids,
+            browser_session_id=browser_session_id,
+            batch_repository=batch_repository,
+            movement_repository=movement_repository,
+            restore_repository=restore_repository,
+            coordinator=coordinator,
+            issued_at=issued_at,
+        )
 
 
 def execute_duplicate_bin_restore(

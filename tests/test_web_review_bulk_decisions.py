@@ -10,6 +10,56 @@ class WebReviewBulkDecisionTests(
     WebReviewFixture,
     unittest.IsolatedAsyncioTestCase,
 ):
+    async def test_stopping_rejects_preview_and_does_not_consume_existing_token(self) -> None:
+        client = await self.authenticated_client()
+        try:
+            csrf = await self.csrf(client)
+            existing = await client.post(
+                "/review/page-decision/preview?page_size=2",
+                data={"csrf_token": csrf, "decision": "rejected"},
+                headers=self.origin_headers(),
+            )
+            token = _hidden(existing.text, "preview_token")
+            before = dict(self.app.state.review_explorer._pending_page_decisions)
+            self.app.state.runtime_lifecycle.begin_shutdown()
+            invalid_confirm = await client.post(
+                "/review/page-decision/confirm",
+                data={
+                    "csrf_token": csrf,
+                    "preview_token": "not-server-issued",
+                    "confirmation": "REJECT CURRENT PAGE",
+                },
+                headers=self.origin_headers(),
+            )
+            rejected_preview = await client.post(
+                "/review/page-decision/preview?page_size=2",
+                data={"csrf_token": csrf, "decision": "approved"},
+                headers=self.origin_headers(),
+            )
+            rejected_confirm = await client.post(
+                "/review/page-decision/confirm",
+                data={
+                    "csrf_token": csrf,
+                    "preview_token": token,
+                    "confirmation": "REJECT CURRENT PAGE",
+                },
+                headers=self.origin_headers(),
+            )
+        finally:
+            await client.aclose()
+
+        for response in (rejected_preview, rejected_confirm):
+            self.assertEqual(response.status_code, 409)
+            self.assertEqual(response.headers["cache-control"], "no-store")
+            self.assertIn("Loci Flow is closing", response.text)
+        self.assertEqual(invalid_confirm.status_code, 400)
+        self.assertNotIn("Loci Flow is closing", invalid_confirm.text)
+        self.assertEqual(
+            self.app.state.review_explorer._pending_page_decisions,
+            before,
+        )
+        self.assertIn(token, before)
+
     async def test_preview_respects_filter_sort_page_and_exposes_no_paths_in_token(self) -> None:
         client = await self.authenticated_client()
         query = "category=review_candidate&sort=source&direction=desc&page=2&page_size=2"

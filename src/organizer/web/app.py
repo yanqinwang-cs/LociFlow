@@ -90,7 +90,10 @@ def create_app(config: WebAppConfig) -> FastAPI:
         config.root,
         runtime_lifecycle=app.state.runtime_lifecycle,
     )
-    app.state.review_explorer = ReviewExplorerStore(config.root)
+    app.state.review_explorer = ReviewExplorerStore(
+        config.root,
+        runtime_lifecycle=app.state.runtime_lifecycle,
+    )
     app.state.duplicate_bin_batches = DuplicateBinRepository(config.root)
     app.state.duplicate_bin_authorizations = DuplicateBinAuthorizationRepository(
         config.root
@@ -98,7 +101,8 @@ def create_app(config: WebAppConfig) -> FastAPI:
     app.state.duplicate_bin_operations = DuplicateBinOperationRepository(config.root)
     app.state.duplicate_bin_restores = DuplicateBinRestoreRepository(config.root)
     app.state.organization_decisions = OrganizationDecisionStore(
-        app.state.duplicate_bin_batches
+        app.state.duplicate_bin_batches,
+        runtime_lifecycle=app.state.runtime_lifecycle,
     )
     app.state.organization_execution = OrganizationExecutionCoordinator(
         app.state.runtime_lifecycle

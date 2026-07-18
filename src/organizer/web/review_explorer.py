@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import wraps
 import hmac
 from pathlib import Path
 import secrets
@@ -17,6 +18,10 @@ from organizer.application.review_service import (
     review_module_category,
     save_review_module,
     save_review_session,
+)
+from organizer.application.runtime_lifecycle import (
+    RuntimeLifecycle,
+    RuntimeOperationKind,
 )
 from organizer.application.view_models import (
     ModuleReviewSaveResult,
@@ -59,6 +64,17 @@ SessionItemValidator = Callable[
     [ReviewApplicationSession, str, "ModuleQueueSnapshot"],
     bool,
 ]
+
+
+def _state_mutation(method):
+    @wraps(method)
+    def admitted(self, *args, **kwargs):
+        with self._runtime_lifecycle.begin_operation(
+            RuntimeOperationKind.STATE_MUTATION
+        ):
+            return method(self, *args, **kwargs)
+
+    return admitted
 
 
 @dataclass(frozen=True)
@@ -107,8 +123,14 @@ class PageDecisionConfirmationResult:
 class ReviewExplorerStore:
     """Own the mutable web pointer to one immutable generation-bound session."""
 
-    def __init__(self, root: Path) -> None:
+    def __init__(
+        self,
+        root: Path,
+        *,
+        runtime_lifecycle: RuntimeLifecycle | None = None,
+    ) -> None:
         self._root = root.resolve()
+        self._runtime_lifecycle = runtime_lifecycle or RuntimeLifecycle()
         self._lock = Lock()
         self._generation_id: str | None = None
         self._session: ReviewApplicationSession | None = None
@@ -134,6 +156,7 @@ class ReviewExplorerStore:
             self._invalidate_locked(started.job_id)
             return started
 
+    @_state_mutation
     def change_decision(
         self,
         scan: ScanJobSnapshot,
@@ -171,6 +194,7 @@ class ReviewExplorerStore:
                 self._pending_page_decisions.clear()
             return result
 
+    @_state_mutation
     def preview_page_decision(
         self,
         scan: ScanJobSnapshot,
@@ -197,6 +221,31 @@ class ReviewExplorerStore:
             return PageDecisionPreviewResult(preview, token)
 
     def confirm_page_decision(
+        self,
+        scan: ScanJobSnapshot,
+        browser_session_id: str,
+        preview_token: str,
+        confirmation: str,
+    ) -> PageDecisionConfirmationResult:
+        # Reject unknown or cross-session IDs without disclosing shutdown state.
+        # Valid tokens are rechecked after atomic admission before any removal.
+        with self._lock:
+            pending = self._pending_page_decisions.get(preview_token)
+            if pending is None or pending.browser_session_id != browser_session_id:
+                raise ReviewPreviewUnavailable(
+                    "That current-page preview is no longer available."
+                )
+        with self._runtime_lifecycle.begin_operation(
+            RuntimeOperationKind.STATE_MUTATION
+        ):
+            return self._confirm_page_decision_admitted(
+                scan,
+                browser_session_id,
+                preview_token,
+                confirmation,
+            )
+
+    def _confirm_page_decision_admitted(
         self,
         scan: ScanJobSnapshot,
         browser_session_id: str,
@@ -238,6 +287,7 @@ class ReviewExplorerStore:
             self._pending_page_decisions.clear()
             return PageDecisionConfirmationResult(change, pending.view_query)
 
+    @_state_mutation
     def save(
         self,
         scan: ScanJobSnapshot,
@@ -252,6 +302,7 @@ class ReviewExplorerStore:
             self._pending_page_decisions.clear()
             return result
 
+    @_state_mutation
     def save_module(
         self,
         scan: ScanJobSnapshot,
@@ -267,6 +318,7 @@ class ReviewExplorerStore:
             self._pending_page_decisions.clear()
             return result
 
+    @_state_mutation
     def revisit_skipped(
         self,
         scan: ScanJobSnapshot,

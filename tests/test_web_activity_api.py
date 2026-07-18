@@ -134,7 +134,15 @@ class WebActivityApiTests(unittest.IsolatedAsyncioTestCase):
                     data={"csrf_token": csrf},
                     headers={"Origin": "http://127.0.0.1"},
                 )
+                authorizations = dict(
+                    app.state.organization_execution._undo_authorizations
+                )
                 app.state.runtime_lifecycle.begin_shutdown()
+                rejected_preview = await client.post(
+                    f"/api/activity/{record.operation_id}/undo/preview",
+                    data={"csrf_token": csrf},
+                    headers={"Origin": "http://127.0.0.1"},
+                )
                 response = await client.post(
                     f"/api/activity/{record.operation_id}/undo",
                     data={
@@ -150,6 +158,12 @@ class WebActivityApiTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 response.json()["error"]["code"],
                 "application_stopping",
+            )
+            self.assertEqual(rejected_preview.status_code, 409)
+            self.assertEqual(rejected_preview.headers["cache-control"], "no-store")
+            self.assertEqual(
+                app.state.organization_execution._undo_authorizations,
+                authorizations,
             )
             self.assertEqual(app.state.organization_undos.list_records(), ())
 

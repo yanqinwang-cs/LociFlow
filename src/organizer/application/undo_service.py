@@ -70,17 +70,20 @@ def preview_organization_undo(
     )
     if not eligibility.undoable:
         raise OrganizationUndoError(eligibility.error_code or "operation_not_undoable")
-    authorization = coordinator.issue_undo_authorization(
-        browser_session_id=browser_session_id,
-        configured_root_identity=operation_repository.configured_root_identity,
-        operation_id=operation_id,
-    )
-    return UndoPreview(
-        operation_id=operation_id,
-        files_to_restore=eligibility.files_to_restore,
-        confirmation_required=CONFIRM_UNDO_FILE_MOVE,
-        confirmation_token=authorization.authorization_id,
-    )
+    with coordinator.runtime_lifecycle.begin_operation(
+        RuntimeOperationKind.STATE_MUTATION
+    ):
+        authorization = coordinator.issue_undo_authorization(
+            browser_session_id=browser_session_id,
+            configured_root_identity=operation_repository.configured_root_identity,
+            operation_id=operation_id,
+        )
+        return UndoPreview(
+            operation_id=operation_id,
+            files_to_restore=eligibility.files_to_restore,
+            confirmation_required=CONFIRM_UNDO_FILE_MOVE,
+            confirmation_token=authorization.authorization_id,
+        )
 
 
 def undo_organization_operation(

@@ -17,6 +17,7 @@ class ApplicationStoppingError(RuntimeError):
 
 class RuntimeOperationKind(StrEnum):
     SCAN = "scan"
+    STATE_MUTATION = "state_mutation"
     ORGANIZATION_MOVEMENT = "organization_movement"
     DUPLICATE_BIN_MOVEMENT = "duplicate_bin_movement"
     DUPLICATE_BIN_RESTORE = "duplicate_bin_restore"

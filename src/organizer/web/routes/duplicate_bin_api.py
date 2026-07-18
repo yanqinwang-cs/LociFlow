@@ -114,6 +114,8 @@ def create_duplicate_bin_api_router() -> APIRouter:
             )
         except DuplicateBinMovementError as error:
             return _movement_error(error)
+        except ApplicationStoppingError as error:
+            return _error("application_stopping", str(error), 409)
         except WebSecurityError:
             return _error(
                 "request_authentication_failed",
@@ -180,6 +182,8 @@ def create_duplicate_bin_api_router() -> APIRouter:
             )
         except DuplicateBinRestoreError as error:
             return _restore_error(error)
+        except ApplicationStoppingError as error:
+            return _error("application_stopping", str(error), 409)
         except WebSecurityError:
             return _error(
                 "request_authentication_failed",
@@ -245,8 +249,8 @@ def _common(request: Request) -> Response | None:
 
 
 async def _form(request: Request, allowed: set[str]) -> dict[str, str]:
-    form = await read_urlencoded_form(request, allowed_fields=allowed)
     validate_same_origin(request)
+    form = await read_urlencoded_form(request, allowed_fields=allowed)
     validate_csrf_token(request.session, form.get("csrf_token"))
     return form
 

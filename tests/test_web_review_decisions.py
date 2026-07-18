@@ -151,6 +151,40 @@ class WebReviewDecisionTests(
             await client.aclose()
         self.assertEqual(response.status_code, 400)
 
+    async def test_stopping_rejects_item_decision_without_changing_session(self) -> None:
+        client = await self.authenticated_client()
+        try:
+            csrf = await self.csrf(client)
+            before = self.app.state.review_explorer.snapshot(
+                self.app.state.scan_jobs.snapshot()
+            )
+            self.app.state.runtime_lifecycle.begin_shutdown()
+            response = await client.post(
+                "/review/items/D1/decision",
+                data={"csrf_token": csrf, "decision": "rejected"},
+                headers=self.origin_headers(),
+            )
+            wrong_origin = await client.post(
+                "/review/items/D1/decision",
+                content=b"not-a-valid-form=%FF",
+                headers={
+                    "Origin": "http://evil.example",
+                    "Content-Type": "application/x-www-form-urlencoded",
+                },
+            )
+        finally:
+            await client.aclose()
+
+        after = self.app.state.review_explorer.snapshot(
+            self.app.state.scan_jobs.snapshot()
+        )
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.headers["cache-control"], "no-store")
+        self.assertIn("Loci Flow is closing", response.text)
+        self.assertEqual(wrong_origin.status_code, 403)
+        self.assertEqual(after.session, before.session)
+
+
 
 def _client(app: object) -> httpx.AsyncClient:
     return httpx.AsyncClient(
