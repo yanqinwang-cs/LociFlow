@@ -107,6 +107,26 @@ class WebScanDashboardTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(response.status_code, 409)
 
+    async def test_stopping_scan_is_safe_no_store_and_starts_no_worker(self) -> None:
+        self.app.state.runtime_lifecycle.begin_shutdown()
+        async with _client(self.app) as client:
+            await client.get(f"/launch/{self.token}")
+            page = await client.get("/")
+            response = await client.post(
+                "/scan",
+                data={"csrf_token": _csrf(page.text)},
+                headers={"Origin": "http://127.0.0.1"},
+            )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.headers["cache-control"], "no-store")
+        self.assertEqual(
+            response.text,
+            "Loci Flow is closing. No new work can start.",
+        )
+        self.assertEqual(self.app.state.scan_jobs.snapshot().status, "not_started")
+        self.assertIsNone(self.app.state.scan_jobs._worker)
+
 
 def _csrf(html: str) -> str:
     match = re.search(r'name="csrf_token" value="([^"]+)"', html)

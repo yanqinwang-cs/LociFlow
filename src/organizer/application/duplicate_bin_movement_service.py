@@ -60,6 +60,7 @@ from organizer.application.duplicate_bin_repository import (
     DuplicateBinRepositoryError,
 )
 from organizer.application.execution_coordinator import OrganizationExecutionCoordinator
+from organizer.application.runtime_lifecycle import RuntimeOperationKind
 from organizer.duplicates import hash_file
 from organizer.executor import MovementRecordingError, apply_move_plan
 from organizer.models import MovePlanItem, MoveResult, OperationLog
@@ -140,7 +141,7 @@ def execute_duplicate_bin_movement(
     existing = operation_repository.find_for_authorization(confirmation_token)
     if existing is not None:
         return _project(existing)
-    if not coordinator.try_acquire():
+    if not coordinator.try_acquire(RuntimeOperationKind.DUPLICATE_BIN_MOVEMENT):
         raise DuplicateBinMovementError("movement_or_undo_in_progress")
     try:
         authorization = _authorization_for_execution(

@@ -20,6 +20,7 @@ from organizer.application.organization_movement_service import (
 from organizer.application.organization_slice_service import (
     build_internal_organization_projection,
 )
+from organizer.application.runtime_lifecycle import ApplicationStoppingError
 from organizer.application.standards_read_models import OrganizationUnavailableError
 from organizer.web.forms import FormDataError, read_urlencoded_form
 from organizer.web.scan_jobs import ScanJobSnapshot
@@ -377,6 +378,8 @@ def create_organization_api_router() -> APIRouter:
             OrganizationUnavailableError,
         ) as error:
             return _movement_error(error.code)
+        except ApplicationStoppingError as error:
+            return _error_response("application_stopping", str(error), 409)
         except WebSecurityError:
             return _error_response(
                 "request_authentication_failed",

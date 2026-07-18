@@ -109,6 +109,35 @@ class WebDuplicateBinRestoreTests(unittest.IsolatedAsyncioTestCase):
         ):
             self.assertNotIn(forbidden, serialized)
 
+    async def test_stopping_execution_returns_safe_conflict_without_restore(self) -> None:
+        async with _client(self.app) as client:
+            csrf = await _authenticate(client, self.token)
+            await _move(client, csrf, self.batch.batch_id)
+            items = (await client.get("/api/duplicate-bin")).json()["items"]
+            preview = await client.post(
+                "/api/duplicate-bin/restore/preview",
+                data={
+                    "csrf_token": csrf,
+                    "item_ids": json.dumps([items[0]["id"]]),
+                },
+                headers=_origin(),
+            )
+            self.app.state.runtime_lifecycle.begin_shutdown()
+            response = await client.post(
+                "/api/duplicate-bin/restore",
+                data={
+                    "csrf_token": csrf,
+                    "confirmation_token": preview.json()["confirmation_token"],
+                    "confirmation": preview.json()["confirmation"],
+                },
+                headers=_origin(),
+            )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.headers["cache-control"], "no-store")
+        self.assertEqual(response.json()["error"]["code"], "application_stopping")
+        self.assertEqual(self.app.state.duplicate_bin_restores.list_operations(), ())
+
     async def test_restore_routes_enforce_security_and_exact_item_array(self) -> None:
         async with _client(self.app) as client:
             unauthenticated = await client.post("/api/duplicate-bin/restore/preview")

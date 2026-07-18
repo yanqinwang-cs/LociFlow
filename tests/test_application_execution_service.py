@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import shutil
 import tempfile
+from threading import Event, Thread
 import unittest
 from unittest import mock
 
@@ -36,6 +37,10 @@ from organizer.application.organization_operation_models import (
 from organizer.application.organization_operation_repository import (
     OrganizationOperationRepository,
 )
+from organizer.application.runtime_lifecycle import (
+    ApplicationStoppingError,
+    RuntimeOperationKind,
+)
 from organizer.models import MovePlanItem, ReviewedPlanItem
 
 
@@ -51,6 +56,10 @@ class ApplicationExecutionServiceTests(unittest.TestCase):
             observed: list[tuple[str, str]] = []
 
             def checked_move(source: str, destination: str) -> str:
+                self.assertEqual(
+                    coordinator.runtime_lifecycle.snapshot().active_kinds,
+                    (RuntimeOperationKind.ORGANIZATION_MOVEMENT,),
+                )
                 record = repository.list_records()[0]
                 index = len(observed)
                 self.assertEqual(record.status, "moving")
@@ -58,7 +67,25 @@ class ApplicationExecutionServiceTests(unittest.TestCase):
                 observed.append((source, destination))
                 return str(real_move(source, destination))
 
-            with mock.patch("organizer.executor.shutil.move", side_effect=checked_move):
+            real_verify = __import__(
+                "organizer.application.execution_service",
+                fromlist=["verify_organization_operation"],
+            ).verify_organization_operation
+
+            def checked_verify(*args, **kwargs):
+                self.assertEqual(
+                    coordinator.runtime_lifecycle.snapshot().active_kinds,
+                    (RuntimeOperationKind.ORGANIZATION_MOVEMENT,),
+                )
+                return real_verify(*args, **kwargs)
+
+            with (
+                mock.patch("organizer.executor.shutil.move", side_effect=checked_move),
+                mock.patch(
+                    "organizer.application.execution_service.verify_organization_operation",
+                    side_effect=checked_verify,
+                ),
+            ):
                 outcome = move_approved_organization(
                     approved_plan=plan,
                     current_scan_generation="scan-one",
@@ -82,6 +109,29 @@ class ApplicationExecutionServiceTests(unittest.TestCase):
             self.assertEqual((root / "Organized" / "a.txt").read_bytes(), b"a.txt-bytes")
             self.assertEqual((root / "Organized" / "b.txt").read_bytes(), b"b.txt-bytes")
             self.assertNotIn(str(root), json.dumps(outcome.__dict__))
+            self.assertEqual(
+                coordinator.runtime_lifecycle.snapshot().active_count,
+                0,
+            )
+
+    def test_stopping_rejects_before_durable_or_filesystem_side_effects(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            plan = _approved_plan(root, ("a.txt",))
+            coordinator = OrganizationExecutionCoordinator()
+            repository = OrganizationOperationRepository(root)
+            authorization = issue_movement_authorization(plan, coordinator)
+            coordinator.runtime_lifecycle.begin_shutdown()
+
+            with self.assertRaises(ApplicationStoppingError):
+                _move(plan, root, authorization, coordinator, repository)
+
+            self.assertTrue((root / "a.txt").is_file())
+            self.assertFalse(repository.directory.exists())
+            self.assertEqual(
+                coordinator.runtime_lifecycle.snapshot().active_count,
+                0,
+            )
 
     def test_wrong_confirmation_creates_nothing_consumes_nothing_and_unlocks(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -488,6 +538,49 @@ class ApplicationExecutionServiceTests(unittest.TestCase):
                 new_authorization = issue_movement_authorization(plan, coordinator)
                 _move(plan, root, new_authorization, coordinator, restarted_repository)
             self.assertTrue((root / "b.txt").exists())
+
+    def test_admitted_movement_completes_after_shutdown_begins(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            plan = _approved_plan(root, ("a.txt",))
+            coordinator = OrganizationExecutionCoordinator()
+            repository = OrganizationOperationRepository(root)
+            authorization = issue_movement_authorization(plan, coordinator)
+            verifying = Event()
+            continue_verification = Event()
+            outcomes = []
+            real_verify = __import__(
+                "organizer.application.execution_service",
+                fromlist=["verify_organization_operation"],
+            ).verify_organization_operation
+
+            def paused_verify(*args, **kwargs):
+                verifying.set()
+                continue_verification.wait(timeout=2)
+                return real_verify(*args, **kwargs)
+
+            worker = Thread(
+                target=lambda: outcomes.append(
+                    _move(plan, root, authorization, coordinator, repository)
+                )
+            )
+            with mock.patch(
+                "organizer.application.execution_service.verify_organization_operation",
+                side_effect=paused_verify,
+            ):
+                worker.start()
+                self.assertTrue(verifying.wait(1))
+                stopping = coordinator.runtime_lifecycle.begin_shutdown()
+                self.assertEqual(stopping.active_count, 1)
+                continue_verification.set()
+                worker.join(2)
+
+            self.assertFalse(worker.is_alive())
+            self.assertEqual(outcomes[0].status, STATUS_VERIFIED)
+            self.assertEqual(
+                coordinator.runtime_lifecycle.wait_until_idle().active_count,
+                0,
+            )
 
 
 def _move(

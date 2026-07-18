@@ -122,6 +122,37 @@ class WebActivityApiTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(invalid_id.status_code, 404)
             self.assertEqual(app.state.organization_undos.list_records(), ())
 
+    async def test_stopping_execution_returns_safe_conflict_without_undo(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            _, _, _, record = _verified_operation(root, 1)
+            app = _app(root)
+            async with _client(app) as client:
+                csrf = await _authenticate(client)
+                preview = await client.post(
+                    f"/api/activity/{record.operation_id}/undo/preview",
+                    data={"csrf_token": csrf},
+                    headers={"Origin": "http://127.0.0.1"},
+                )
+                app.state.runtime_lifecycle.begin_shutdown()
+                response = await client.post(
+                    f"/api/activity/{record.operation_id}/undo",
+                    data={
+                        "csrf_token": csrf,
+                        "confirmation_token": preview.json()["confirmation_token"],
+                        "confirmation": "UNDO FILE MOVE",
+                    },
+                    headers={"Origin": "http://127.0.0.1"},
+                )
+
+            self.assertEqual(response.status_code, 409)
+            self.assertEqual(response.headers["cache-control"], "no-store")
+            self.assertEqual(
+                response.json()["error"]["code"],
+                "application_stopping",
+            )
+            self.assertEqual(app.state.organization_undos.list_records(), ())
+
 
 def _app(root: Path):
     return create_app(WebAppConfig(

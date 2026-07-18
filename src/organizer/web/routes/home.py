@@ -6,6 +6,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, RedirectResponse, Response
 from starlette.templating import Jinja2Templates
 
+from organizer.application.runtime_lifecycle import ApplicationStoppingError
 from organizer.web.security import (
     LaunchTokenGate,
     csrf_token_for_session,
@@ -143,6 +144,13 @@ def create_home_router(templates: Jinja2Templates) -> APIRouter:
             return response
         except ScanAlreadyRunning as error:
             raise HTTPException(status_code=409, detail="scan already running") from error
+        except ApplicationStoppingError as error:
+            return Response(
+                content=str(error),
+                status_code=409,
+                media_type="text/plain",
+                headers={"Cache-Control": "no-store"},
+            )
 
         if request.headers.get("hx-request", "").lower() == "true":
             response = templates.TemplateResponse(

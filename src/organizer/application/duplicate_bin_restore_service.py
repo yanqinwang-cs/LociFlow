@@ -61,6 +61,7 @@ from organizer.application.duplicate_bin_restore_repository import (
     DuplicateBinRestoreRepositoryError,
 )
 from organizer.application.execution_coordinator import OrganizationExecutionCoordinator
+from organizer.application.runtime_lifecycle import RuntimeOperationKind
 from organizer.duplicates import hash_file
 from organizer.executor import MovementRecordingError, apply_move_plan
 from organizer.models import MovePlanItem, MoveResult, OperationLog
@@ -191,6 +192,9 @@ def execute_duplicate_bin_restore(
     restore_repository: DuplicateBinRestoreRepository,
     coordinator: OrganizationExecutionCoordinator,
     now: str | None = None,
+    runtime_operation_kind: RuntimeOperationKind = (
+        RuntimeOperationKind.DUPLICATE_BIN_RESTORE
+    ),
 ) -> DuplicateBinRestoreProjection:
     _uuid(confirmation_token, "invalid_confirmation_token")
     if confirmation != CONFIRM_RESTORE_COPIES:
@@ -204,7 +208,7 @@ def execute_duplicate_bin_restore(
     existing = restore_repository.find_for_authorization(confirmation_token)
     if existing is not None:
         return _reconcile_existing(existing, batch_repository)
-    if not coordinator.try_acquire():
+    if not coordinator.try_acquire(runtime_operation_kind):
         raise DuplicateBinRestoreError("movement_or_undo_in_progress")
     try:
         authorization = _authorization(

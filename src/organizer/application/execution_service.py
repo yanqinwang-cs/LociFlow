@@ -10,6 +10,7 @@ from organizer.application.execution_coordinator import (
     OrganizationExecutionCoordinator,
     approved_plan_identity,
 )
+from organizer.application.runtime_lifecycle import RuntimeOperationKind
 from organizer.application.organization_decision_models import (
     STATUS_READY_TO_MOVE,
     ApprovedOrganizationPlan,
@@ -97,7 +98,7 @@ def move_approved_organization(
     operation_repository: OrganizationOperationRepository,
     confirmation: str,
 ) -> OrganizationOperationOutcome:
-    if not coordinator.try_acquire():
+    if not coordinator.try_acquire(RuntimeOperationKind.ORGANIZATION_MOVEMENT):
         raise OrganizationExecutionError("movement_already_started")
     try:
         if confirmation != CONFIRM_MOVE_APPROVED_FILES:

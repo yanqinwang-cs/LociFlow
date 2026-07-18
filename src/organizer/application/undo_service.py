@@ -8,6 +8,7 @@ import uuid
 
 from organizer.application.activity_service import calculate_undo_eligibility
 from organizer.application.execution_coordinator import OrganizationExecutionCoordinator
+from organizer.application.runtime_lifecycle import RuntimeOperationKind
 from organizer.application.organization_operation_models import OrganizationOperationRecord
 from organizer.application.organization_operation_repository import OrganizationOperationRepository
 from organizer.application.organization_undo_models import (
@@ -92,7 +93,7 @@ def undo_organization_operation(
     operation_repository: OrganizationOperationRepository,
     undo_repository: OrganizationUndoRepository,
 ) -> OrganizationUndoOutcome:
-    if not coordinator.try_acquire():
+    if not coordinator.try_acquire(RuntimeOperationKind.ACTIVITY_UNDO):
         raise OrganizationUndoError("movement_or_undo_in_progress")
     try:
         record = _load_operation(operation_id, operation_repository)

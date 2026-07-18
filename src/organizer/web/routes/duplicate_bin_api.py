@@ -18,6 +18,7 @@ from organizer.application.duplicate_bin_restore_service import (
     list_duplicate_bin_items,
     preview_duplicate_bin_restore,
 )
+from organizer.application.runtime_lifecycle import ApplicationStoppingError
 from organizer.web.forms import FormDataError, read_urlencoded_form
 from organizer.web.security import (
     WebSecurityError,
@@ -146,6 +147,8 @@ def create_duplicate_bin_api_router() -> APIRouter:
             )
         except DuplicateBinMovementError as error:
             return _movement_error(error)
+        except ApplicationStoppingError as error:
+            return _error("application_stopping", str(error), 409)
         except WebSecurityError:
             return _error(
                 "request_authentication_failed",
@@ -210,6 +213,8 @@ def create_duplicate_bin_api_router() -> APIRouter:
             )
         except DuplicateBinRestoreError as error:
             return _restore_error(error)
+        except ApplicationStoppingError as error:
+            return _error("application_stopping", str(error), 409)
         except WebSecurityError:
             return _error(
                 "request_authentication_failed",

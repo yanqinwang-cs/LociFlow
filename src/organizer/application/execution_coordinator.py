@@ -18,13 +18,20 @@ from organizer.application.organization_undo_models import (
     UNDO_AUTHORIZATION_CONSUMED,
     UndoAuthorization,
 )
+from organizer.application.runtime_lifecycle import (
+    OperationLease,
+    RuntimeLifecycle,
+    RuntimeOperationKind,
+)
 
 
 class OrganizationExecutionCoordinator:
     """Own one process-wide execution lock and ephemeral authorizations."""
 
-    def __init__(self) -> None:
+    def __init__(self, runtime_lifecycle: RuntimeLifecycle | None = None) -> None:
+        self.runtime_lifecycle = runtime_lifecycle or RuntimeLifecycle()
         self._execution_lock = Lock()
+        self._execution_lease: OperationLease | None = None
         self._authorization_lock = Lock()
         self._authorizations: dict[str, MovementAuthorization] = {}
         self._undo_authorizations: dict[str, UndoAuthorization] = {}
@@ -53,11 +60,31 @@ class OrganizationExecutionCoordinator:
             self._authorizations[authorization.authorization_id] = authorization
         return authorization
 
-    def try_acquire(self) -> bool:
-        return self._execution_lock.acquire(blocking=False)
+    def try_acquire(
+        self,
+        operation_kind: RuntimeOperationKind | None = None,
+    ) -> bool:
+        lease = (
+            self.runtime_lifecycle.begin_operation(operation_kind)
+            if operation_kind is not None
+            else None
+        )
+        acquired = self._execution_lock.acquire(blocking=False)
+        if not acquired:
+            if lease is not None:
+                lease.finish()
+            return False
+        self._execution_lease = lease
+        return True
 
     def release(self) -> None:
-        self._execution_lock.release()
+        lease = self._execution_lease
+        self._execution_lease = None
+        try:
+            self._execution_lock.release()
+        finally:
+            if lease is not None:
+                lease.finish()
 
     def issue_undo_authorization(
         self,

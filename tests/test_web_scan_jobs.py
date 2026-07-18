@@ -5,7 +5,13 @@ import tempfile
 from threading import Event
 import time
 import unittest
+from unittest import mock
 
+from organizer.application.runtime_lifecycle import (
+    ApplicationStoppingError,
+    RuntimeLifecycle,
+    RuntimeOperationKind,
+)
 from organizer.application.view_models import ScanApplicationResult, ScanSummary
 from organizer.web.scan_jobs import ScanAlreadyRunning, ScanJobController
 
@@ -20,6 +26,141 @@ def _result(root: Path) -> ScanApplicationResult:
 
 
 class ScanJobControllerTests(unittest.TestCase):
+    def test_scan_lease_is_active_until_completed_publication(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            entered = Event()
+            release = Event()
+            lifecycle = RuntimeLifecycle()
+
+            def scan(path: Path) -> ScanApplicationResult:
+                entered.set()
+                release.wait(timeout=2)
+                return _result(path)
+
+            controller = ScanJobController(
+                root,
+                scan=scan,
+                write_report=lambda _: root / "report.json",
+                runtime_lifecycle=lifecycle,
+            )
+
+            controller.start()
+            self.assertTrue(entered.wait(1))
+            self.assertEqual(lifecycle.snapshot().active_count, 1)
+            self.assertEqual(
+                lifecycle.snapshot().active_kinds,
+                (RuntimeOperationKind.SCAN,),
+            )
+            stopping = lifecycle.begin_shutdown()
+            self.assertEqual(stopping.active_count, 1)
+            release.set()
+            lifecycle.wait_until_idle()
+
+            self.assertEqual(controller.snapshot().status, "completed")
+            self.assertTrue(lifecycle.snapshot().is_stopping)
+            controller.join_worker()
+
+    def test_scan_failure_is_published_before_lease_release(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            lifecycle = RuntimeLifecycle()
+            controller = ScanJobController(
+                root,
+                scan=mock.Mock(side_effect=RuntimeError("private")),
+                write_report=lambda _: root / "report.json",
+                runtime_lifecycle=lifecycle,
+            )
+
+            controller.start()
+            lifecycle.wait_until_idle()
+
+            self.assertEqual(controller.snapshot().status, "failed")
+            self.assertEqual(lifecycle.snapshot().active_count, 0)
+            controller.join_worker()
+
+    def test_stopping_rejects_before_snapshot_mutation_or_thread_creation(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            lifecycle = RuntimeLifecycle()
+            lifecycle.begin_shutdown()
+            controller = ScanJobController(
+                Path(directory),
+                runtime_lifecycle=lifecycle,
+            )
+
+            with mock.patch("organizer.web.scan_jobs.Thread") as thread_type:
+                with self.assertRaises(ApplicationStoppingError):
+                    controller.start()
+
+            thread_type.assert_not_called()
+            self.assertEqual(controller.snapshot().status, "not_started")
+            self.assertEqual(lifecycle.snapshot().active_count, 0)
+
+    def test_worker_is_retained_non_daemon_and_joinable(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            gate = Event()
+            controller = ScanJobController(
+                root,
+                scan=lambda path: (gate.wait(timeout=2), _result(path))[1],
+                write_report=lambda _: root / "report.json",
+            )
+
+            controller.start()
+            worker = controller._worker
+
+            self.assertIsNotNone(worker)
+            assert worker is not None
+            self.assertFalse(worker.daemon)
+            self.assertTrue(worker.is_alive())
+            gate.set()
+            controller.join_worker()
+            self.assertFalse(worker.is_alive())
+
+    def test_thread_start_failure_publishes_failure_and_releases_lease(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            lifecycle = RuntimeLifecycle()
+            controller = ScanJobController(
+                Path(directory),
+                runtime_lifecycle=lifecycle,
+            )
+            worker = mock.Mock()
+            worker.start.side_effect = RuntimeError("thread unavailable")
+
+            with mock.patch("organizer.web.scan_jobs.Thread", return_value=worker):
+                with self.assertRaisesRegex(RuntimeError, "thread unavailable"):
+                    controller.start()
+
+            self.assertEqual(controller.snapshot().status, "failed")
+            self.assertEqual(lifecycle.snapshot().active_count, 0)
+            self.assertIsNone(controller._worker)
+            self.assertEqual(controller._workers, [])
+
+    def test_join_retains_ownership_of_every_started_worker(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            controller = ScanJobController(
+                root,
+                scan=lambda path: _result(path),
+                write_report=lambda _: root / "report.json",
+            )
+
+            controller.start()
+            self._wait_for_status(controller, "completed")
+            first = controller._worker
+            assert first is not None
+            first.join()
+
+            controller.start()
+            self._wait_for_status(controller, "completed")
+            second = controller._worker
+            assert second is not None
+            controller.join_worker()
+
+            self.assertEqual(controller._workers, [first, second])
+            self.assertFalse(first.is_alive())
+            self.assertFalse(second.is_alive())
+
     def test_successful_job_writes_before_completed_state(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

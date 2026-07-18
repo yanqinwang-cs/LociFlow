@@ -6,13 +6,18 @@ from copy import deepcopy
 import logging
 from pathlib import Path
 import secrets
-from threading import Lock, Thread
+from threading import Lock, Thread, current_thread
 from typing import Callable
 
 from organizer.application.scan_service import (
     ScanApplicationResult,
     scan_root,
     write_scan_report,
+)
+from organizer.application.runtime_lifecycle import (
+    OperationLease,
+    RuntimeLifecycle,
+    RuntimeOperationKind,
 )
 
 logger = logging.getLogger(__name__)
@@ -46,36 +51,67 @@ class ScanJobController:
         *,
         scan: ScanCallable = scan_root,
         write_report: ReportWriter = write_scan_report,
+        runtime_lifecycle: RuntimeLifecycle | None = None,
     ) -> None:
         self._root = root.resolve()
         self._scan = scan
         self._write_report = write_report
+        self._runtime_lifecycle = runtime_lifecycle or RuntimeLifecycle()
         self._lock = Lock()
         self._snapshot = ScanJobSnapshot(status="not_started")
+        self._worker: Thread | None = None
+        self._workers: list[Thread] = []
 
     def snapshot(self) -> ScanJobSnapshot:
         with self._lock:
             return deepcopy(self._snapshot)
 
     def start(self) -> ScanJobSnapshot:
+        job_id = secrets.token_urlsafe(18)
+        lease = self._runtime_lifecycle.begin_operation(
+            RuntimeOperationKind.SCAN
+        )
         with self._lock:
             if self._snapshot.status == "scanning":
+                lease.finish()
                 raise ScanAlreadyRunning("a scan is already running")
-            job_id = secrets.token_urlsafe(18)
             self._snapshot = ScanJobSnapshot(
                 status="scanning",
                 job_id=job_id,
                 started_at=_now(),
             )
-        Thread(
-            target=self._run,
-            args=(job_id,),
-            name="bootai-scan-job",
-            daemon=True,
-        ).start()
+        worker: Thread | None = None
+        try:
+            worker = Thread(
+                target=self._run,
+                args=(job_id, lease),
+                name="bootai-scan-job",
+                daemon=False,
+            )
+            with self._lock:
+                self._worker = worker
+                self._workers.append(worker)
+            worker.start()
+        except Exception as error:
+            self._fail(job_id, error)
+            with self._lock:
+                if self._worker is worker:
+                    self._worker = None
+                if worker in self._workers:
+                    self._workers.remove(worker)
+            lease.finish()
+            raise
         return self.snapshot()
 
-    def _run(self, job_id: str) -> None:
+    def join_worker(self) -> None:
+        with self._lock:
+            workers = tuple(self._workers)
+        if current_thread() in workers:
+            raise RuntimeError("scan worker cannot join itself")
+        for worker in workers:
+            worker.join()
+
+    def _run(self, job_id: str, lease: OperationLease) -> None:
         try:
             result = self._scan(self._root)
             report_path = self._write_report(result)
@@ -86,8 +122,10 @@ class ScanJobController:
                 type(error).__name__,
             )
             self._fail(job_id, error)
-            return
-        self._complete(job_id, result, report_path)
+        else:
+            self._complete(job_id, result, report_path)
+        finally:
+            lease.finish()
 
     def _complete(
         self,

@@ -6,10 +6,12 @@ from pathlib import Path
 import json
 import shutil
 import tempfile
+from threading import Event, Thread
 import unittest
 from unittest import mock
 import uuid
 
+import organizer.application.duplicate_bin_restore_service as restore_service
 from organizer.application.duplicate_bin_models import (
     BATCH_APPROVED,
     BATCH_COMPLETED,
@@ -47,6 +49,10 @@ from organizer.application.organization_slice_service import (
     build_internal_organization_projection,
 )
 from organizer.application.scan_service import scan_root
+from organizer.application.runtime_lifecycle import (
+    ApplicationStoppingError,
+    RuntimeOperationKind,
+)
 from organizer.duplicates import hash_file
 from tests.test_application_duplicate_bin_movement_service import (
     ISSUED,
@@ -68,13 +74,33 @@ class DuplicateBinRestoreServiceTests(unittest.TestCase):
             observed = []
 
             def checked_move(source: str, destination: str):
+                self.assertEqual(
+                    owners.coordinator.runtime_lifecycle.snapshot().active_kinds,
+                    (RuntimeOperationKind.DUPLICATE_BIN_RESTORE,),
+                )
                 operations = restores.list_operations()
                 self.assertEqual(len(operations), 1)
                 self.assertEqual(operations[0].status, "restoring")
                 observed.append((source, destination))
                 return real_move(source, destination)
 
-            with mock.patch("organizer.executor.shutil.move", side_effect=checked_move):
+            real_verify = restore_service._verify
+
+            def checked_verify(*args, **kwargs):
+                self.assertEqual(
+                    owners.coordinator.runtime_lifecycle.snapshot().active_kinds,
+                    (RuntimeOperationKind.DUPLICATE_BIN_RESTORE,),
+                )
+                return real_verify(*args, **kwargs)
+
+            with (
+                mock.patch("organizer.executor.shutil.move", side_effect=checked_move),
+                mock.patch.object(
+                    restore_service,
+                    "_verify",
+                    side_effect=checked_verify,
+                ),
+            ):
                 result = _restore(owners, restores, preview)
 
             self.assertEqual(result.status, "restored")
@@ -104,6 +130,10 @@ class DuplicateBinRestoreServiceTests(unittest.TestCase):
                 list_duplicate_bin_items(owners.batches, owners.operations, restores),
                 (),
             )
+            self.assertEqual(
+                owners.coordinator.runtime_lifecycle.snapshot().active_count,
+                0,
+            )
 
             with mock.patch(
                 "organizer.application.duplicate_bin_restore_service.apply_move_plan"
@@ -114,6 +144,7 @@ class DuplicateBinRestoreServiceTests(unittest.TestCase):
                     preview,
                     now=ISSUED + timedelta(minutes=2),
                 )
+
             self.assertEqual(replay.id, result.id)
             apply_again.assert_not_called()
 
@@ -126,6 +157,66 @@ class DuplicateBinRestoreServiceTests(unittest.TestCase):
             self.assertEqual(
                 owners.batches.load(owners.batch.batch_id).status,
                 BATCH_COMPLETED,
+            )
+
+    def test_stopping_rejects_before_restore_intent_or_filesystem_side_effects(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            owners = _moved(Path(directory).resolve(), selected=1)
+            restores = DuplicateBinRestoreRepository(owners.root)
+            item = owners.batch.items[0]
+            preview = _restore_preview(
+                owners,
+                restores,
+                (item.bin_item_id,),
+            )
+            owners.coordinator.runtime_lifecycle.begin_shutdown()
+
+            with self.assertRaises(ApplicationStoppingError):
+                _restore(owners, restores, preview)
+
+            self.assertTrue((owners.root / item.future_relative_path).is_file())
+            self.assertFalse((owners.root / item.previous_relative_path).exists())
+            self.assertEqual(restores.list_operations(), ())
+            self.assertEqual(
+                owners.coordinator.runtime_lifecycle.snapshot().active_count,
+                0,
+            )
+
+    def test_duplicate_bin_activity_undo_uses_activity_undo_runtime_kind(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            owners = _moved(Path(directory).resolve(), selected=1)
+            restores = DuplicateBinRestoreRepository(owners.root)
+            preview = _restore_preview(
+                owners,
+                restores,
+                (owners.batch.items[0].bin_item_id,),
+            )
+            observed = []
+            real_verify = restore_service._verify
+
+            def checked_verify(*args, **kwargs):
+                observed.append(
+                    owners.coordinator.runtime_lifecycle.snapshot().active_kinds
+                )
+                return real_verify(*args, **kwargs)
+
+            with mock.patch.object(
+                restore_service,
+                "_verify",
+                side_effect=checked_verify,
+            ):
+                result = _restore(
+                    owners,
+                    restores,
+                    preview,
+                    runtime_operation_kind=RuntimeOperationKind.ACTIVITY_UNDO,
+                )
+
+            self.assertEqual(result.status, "restored")
+            self.assertEqual(observed, [(RuntimeOperationKind.ACTIVITY_UNDO,)])
+            self.assertEqual(
+                owners.coordinator.runtime_lifecycle.snapshot().active_count,
+                0,
             )
 
     def test_authorization_expiry_overlap_and_nonoverlap(self) -> None:
@@ -754,6 +845,47 @@ class DuplicateBinRestoreServiceTests(unittest.TestCase):
                 owners.coordinator.release()
             self.assertEqual(restores.list_operations(), ())
 
+    def test_admitted_restore_completes_after_shutdown_begins(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            owners = _moved(Path(directory).resolve(), selected=1)
+            restores = DuplicateBinRestoreRepository(owners.root)
+            preview = _restore_preview(
+                owners,
+                restores,
+                (owners.batch.items[0].bin_item_id,),
+            )
+            verifying = Event()
+            continue_verification = Event()
+            outcomes = []
+            real_verify = restore_service._verify
+
+            def paused_verify(*args, **kwargs):
+                verifying.set()
+                continue_verification.wait(timeout=2)
+                return real_verify(*args, **kwargs)
+
+            worker = Thread(
+                target=lambda: outcomes.append(_restore(owners, restores, preview))
+            )
+            with mock.patch.object(
+                restore_service,
+                "_verify",
+                side_effect=paused_verify,
+            ):
+                worker.start()
+                self.assertTrue(verifying.wait(1))
+                stopping = owners.coordinator.runtime_lifecycle.begin_shutdown()
+                self.assertEqual(stopping.active_count, 1)
+                continue_verification.set()
+                worker.join(2)
+
+            self.assertFalse(worker.is_alive())
+            self.assertEqual(outcomes[0].status, "restored")
+            self.assertEqual(
+                owners.coordinator.runtime_lifecycle.wait_until_idle().active_count,
+                0,
+            )
+
 
 def _moved(root: Path, *, selected: int):
     owners = _owners(root, selected=selected)
@@ -944,7 +1076,14 @@ def _restore_preview(owners, restores, item_ids, *, issued=ISSUED):
     )
 
 
-def _restore(owners, restores, preview, *, now=ISSUED + timedelta(minutes=1)):
+def _restore(
+    owners,
+    restores,
+    preview,
+    *,
+    now=ISSUED + timedelta(minutes=1),
+    runtime_operation_kind=RuntimeOperationKind.DUPLICATE_BIN_RESTORE,
+):
     return execute_duplicate_bin_restore(
         browser_session_id="browser-one",
         confirmation_token=preview.confirmation_token,
@@ -954,6 +1093,7 @@ def _restore(owners, restores, preview, *, now=ISSUED + timedelta(minutes=1)):
         restore_repository=restores,
         coordinator=owners.coordinator,
         now=now.isoformat(),
+        runtime_operation_kind=runtime_operation_kind,
     )
 
 

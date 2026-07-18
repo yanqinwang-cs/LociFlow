@@ -3,10 +3,12 @@ from __future__ import annotations
 import os
 from pathlib import Path
 import tempfile
+from threading import Event, Thread
 import unittest
 from unittest import mock
 import uuid
 
+import organizer.application.undo_service as undo_service
 from organizer.application.execution_coordinator import OrganizationExecutionCoordinator
 from organizer.application.organization_operation_models import (
     MOVE_MOVED,
@@ -31,6 +33,10 @@ from organizer.application.undo_service import (
     preview_organization_undo,
     undo_organization_operation,
 )
+from organizer.application.runtime_lifecycle import (
+    ApplicationStoppingError,
+    RuntimeOperationKind,
+)
 from organizer.executor import apply_move_plan
 from organizer.models import MovePlanItem
 
@@ -52,15 +58,29 @@ class OrganizationUndoServiceTests(unittest.TestCase):
             self.assertEqual(preview.confirmation_required, CONFIRM_UNDO_FILE_MOVE)
             self.assertEqual(undos.list_records(), ())
 
-            outcome = undo_organization_operation(
-                operation_id=record.operation_id,
-                browser_session_id="browser-one",
-                confirmation_token=preview.confirmation_token,
-                confirmation=CONFIRM_UNDO_FILE_MOVE,
-                coordinator=coordinator,
-                operation_repository=operations,
-                undo_repository=undos,
-            )
+            real_verify = undo_service._verify_and_finish
+
+            def checked_verify(*args, **kwargs):
+                self.assertEqual(
+                    coordinator.runtime_lifecycle.snapshot().active_kinds,
+                    (RuntimeOperationKind.ACTIVITY_UNDO,),
+                )
+                return real_verify(*args, **kwargs)
+
+            with mock.patch.object(
+                undo_service,
+                "_verify_and_finish",
+                side_effect=checked_verify,
+            ):
+                outcome = undo_organization_operation(
+                    operation_id=record.operation_id,
+                    browser_session_id="browser-one",
+                    confirmation_token=preview.confirmation_token,
+                    confirmation=CONFIRM_UNDO_FILE_MOVE,
+                    coordinator=coordinator,
+                    operation_repository=operations,
+                    undo_repository=undos,
+                )
 
             self.assertEqual(outcome.status, UNDO_RESTORED)
             self.assertEqual(outcome.files_restored, 2)
@@ -82,6 +102,42 @@ class OrganizationUndoServiceTests(unittest.TestCase):
                     operation_repository=operations,
                     undo_repository=undos,
                 )
+            self.assertEqual(
+                coordinator.runtime_lifecycle.snapshot().active_count,
+                0,
+            )
+
+    def test_stopping_rejects_before_undo_intent_or_filesystem_side_effects(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            operations, undos, coordinator, record = _verified_operation(root, 1)
+            preview = preview_organization_undo(
+                operation_id=record.operation_id,
+                browser_session_id="browser-one",
+                coordinator=coordinator,
+                operation_repository=operations,
+                undo_repository=undos,
+            )
+            coordinator.runtime_lifecycle.begin_shutdown()
+
+            with self.assertRaises(ApplicationStoppingError):
+                undo_organization_operation(
+                    operation_id=record.operation_id,
+                    browser_session_id="browser-one",
+                    confirmation_token=preview.confirmation_token,
+                    confirmation=CONFIRM_UNDO_FILE_MOVE,
+                    coordinator=coordinator,
+                    operation_repository=operations,
+                    undo_repository=undos,
+                )
+
+            self.assertTrue((root / "Documents/file-0.txt").is_file())
+            self.assertFalse((root / "Inbox/file-0.txt").exists())
+            self.assertEqual(undos.list_records(), ())
+            self.assertEqual(
+                coordinator.runtime_lifecycle.snapshot().active_count,
+                0,
+            )
 
     def test_wrong_session_confirmation_and_shared_lock_restore_nothing(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -308,6 +364,60 @@ class OrganizationUndoServiceTests(unittest.TestCase):
             )
             self.assertEqual(inspection.likely_not_restored, 1)
             self.assertTrue((root / "Documents/file-0.txt").exists())
+
+
+    def test_admitted_activity_undo_completes_after_shutdown_begins(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            operations, undos, coordinator, record = _verified_operation(root, 1)
+            preview = preview_organization_undo(
+                operation_id=record.operation_id,
+                browser_session_id="browser-one",
+                coordinator=coordinator,
+                operation_repository=operations,
+                undo_repository=undos,
+            )
+            verifying = Event()
+            continue_verification = Event()
+            outcomes = []
+            real_verify = undo_service._verify_and_finish
+
+            def paused_verify(*args, **kwargs):
+                verifying.set()
+                continue_verification.wait(timeout=2)
+                return real_verify(*args, **kwargs)
+
+            worker = Thread(
+                target=lambda: outcomes.append(
+                    undo_organization_operation(
+                        operation_id=record.operation_id,
+                        browser_session_id="browser-one",
+                        confirmation_token=preview.confirmation_token,
+                        confirmation=CONFIRM_UNDO_FILE_MOVE,
+                        coordinator=coordinator,
+                        operation_repository=operations,
+                        undo_repository=undos,
+                    )
+                )
+            )
+            with mock.patch.object(
+                undo_service,
+                "_verify_and_finish",
+                side_effect=paused_verify,
+            ):
+                worker.start()
+                self.assertTrue(verifying.wait(1))
+                stopping = coordinator.runtime_lifecycle.begin_shutdown()
+                self.assertEqual(stopping.active_count, 1)
+                continue_verification.set()
+                worker.join(2)
+
+            self.assertFalse(worker.is_alive())
+            self.assertEqual(outcomes[0].status, UNDO_RESTORED)
+            self.assertEqual(
+                coordinator.runtime_lifecycle.wait_until_idle().active_count,
+                0,
+            )
 
 
 def _verified_operation(

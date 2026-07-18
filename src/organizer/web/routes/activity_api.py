@@ -11,6 +11,10 @@ from organizer.application.duplicate_bin_restore_service import (
     execute_duplicate_bin_restore,
     preview_duplicate_bin_activity_undo,
 )
+from organizer.application.runtime_lifecycle import (
+    ApplicationStoppingError,
+    RuntimeOperationKind,
+)
 from organizer.application.undo_service import (
     OrganizationUndoError,
     preview_organization_undo,
@@ -148,6 +152,7 @@ def create_activity_api_router() -> APIRouter:
                     movement_repository=request.app.state.duplicate_bin_operations,
                     restore_repository=request.app.state.duplicate_bin_restores,
                     coordinator=request.app.state.organization_execution,
+                    runtime_operation_kind=RuntimeOperationKind.ACTIVITY_UNDO,
                 )
                 outcome_id = outcome.id
             else:
@@ -177,6 +182,8 @@ def create_activity_api_router() -> APIRouter:
             return _duplicate_restore_error(error)
         except OrganizationUndoError as error:
             return _undo_error(error)
+        except ApplicationStoppingError as error:
+            return _error_response("application_stopping", str(error), 409)
         except WebSecurityError:
             return _error_response(
                 "request_authentication_failed",

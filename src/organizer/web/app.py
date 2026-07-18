@@ -41,6 +41,7 @@ from organizer.application.organization_operation_repository import (
 from organizer.application.organization_undo_repository import (
     OrganizationUndoRepository,
 )
+from organizer.application.runtime_lifecycle import RuntimeLifecycle
 from organizer.application.standards_repository import StandardsRepository
 from organizer.application.standards_service import StandardsService
 from organizer.web.standards_creation_store import StandardsCreationStore
@@ -84,7 +85,11 @@ def create_app(config: WebAppConfig) -> FastAPI:
     app.state.web_config = config
     app.state.templates = templates
     app.state.launch_token_gate = LaunchTokenGate(config.launch_token)
-    app.state.scan_jobs = ScanJobController(config.root)
+    app.state.runtime_lifecycle = RuntimeLifecycle()
+    app.state.scan_jobs = ScanJobController(
+        config.root,
+        runtime_lifecycle=app.state.runtime_lifecycle,
+    )
     app.state.review_explorer = ReviewExplorerStore(config.root)
     app.state.duplicate_bin_batches = DuplicateBinRepository(config.root)
     app.state.duplicate_bin_authorizations = DuplicateBinAuthorizationRepository(
@@ -95,7 +100,9 @@ def create_app(config: WebAppConfig) -> FastAPI:
     app.state.organization_decisions = OrganizationDecisionStore(
         app.state.duplicate_bin_batches
     )
-    app.state.organization_execution = OrganizationExecutionCoordinator()
+    app.state.organization_execution = OrganizationExecutionCoordinator(
+        app.state.runtime_lifecycle
+    )
     app.state.organization_operations = OrganizationOperationRepository(config.root)
     app.state.organization_undos = OrganizationUndoRepository(config.root)
     app.state.standards = StandardsService(

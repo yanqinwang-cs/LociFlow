@@ -5,10 +5,12 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import shutil
 import tempfile
+from threading import Event, Thread
 import unittest
 from unittest import mock
 import uuid
 
+import organizer.application.duplicate_bin_movement_service as movement_service
 from organizer.application.duplicate_bin_authorization_repository import (
     DuplicateBinAuthorizationRepository,
 )
@@ -34,6 +36,10 @@ from organizer.application.duplicate_bin_operation_repository import (
 )
 from organizer.application.duplicate_bin_repository import DuplicateBinRepository
 from organizer.application.execution_coordinator import OrganizationExecutionCoordinator
+from organizer.application.runtime_lifecycle import (
+    ApplicationStoppingError,
+    RuntimeOperationKind,
+)
 from organizer.duplicates import hash_file
 
 
@@ -143,6 +149,10 @@ class DuplicateBinMovementServiceTests(unittest.TestCase):
             observed: list[str] = []
 
             def checked_move(source: str, destination: str) -> str:
+                self.assertEqual(
+                    owners.coordinator.runtime_lifecycle.snapshot().active_kinds,
+                    (RuntimeOperationKind.DUPLICATE_BIN_MOVEMENT,),
+                )
                 record = owners.operations.find_for_authorization(
                     preview.confirmation_token
                 )
@@ -151,7 +161,23 @@ class DuplicateBinMovementServiceTests(unittest.TestCase):
                 observed.append(source)
                 return str(real_move(source, destination))
 
-            with mock.patch("organizer.executor.shutil.move", side_effect=checked_move):
+            real_verify = movement_service._verify
+
+            def checked_verify(*args, **kwargs):
+                self.assertEqual(
+                    owners.coordinator.runtime_lifecycle.snapshot().active_kinds,
+                    (RuntimeOperationKind.DUPLICATE_BIN_MOVEMENT,),
+                )
+                return real_verify(*args, **kwargs)
+
+            with (
+                mock.patch("organizer.executor.shutil.move", side_effect=checked_move),
+                mock.patch.object(
+                    movement_service,
+                    "_verify",
+                    side_effect=checked_verify,
+                ),
+            ):
                 result = _execute(owners, preview, now=ISSUED + timedelta(minutes=1))
 
             self.assertEqual(result.status, "moved")
@@ -177,6 +203,11 @@ class DuplicateBinMovementServiceTests(unittest.TestCase):
                     )
                 ),
             )
+            self.assertEqual(
+                owners.coordinator.runtime_lifecycle.snapshot().active_count,
+                0,
+            )
+
             self.assertEqual(
                 owners.authorizations.load(preview.confirmation_token).operation_id,
                 result.id,
@@ -242,6 +273,23 @@ class DuplicateBinMovementServiceTests(unittest.TestCase):
             self.assertEqual(restarted.load(result.id), operation)
             with self.assertRaisesRegex(ValueError, "authorization already"):
                 restarted.create(replace(operation, operation_id=str(uuid.uuid4())))
+
+    def test_stopping_rejects_before_operation_or_filesystem_side_effects(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            owners = _owners(Path(directory).resolve(), selected=1)
+            preview = _preview(owners, issued=ISSUED)
+            selected = owners.root / owners.batch.items[0].previous_relative_path
+            owners.coordinator.runtime_lifecycle.begin_shutdown()
+
+            with self.assertRaises(ApplicationStoppingError):
+                _execute(owners, preview, now=ISSUED + timedelta(minutes=1))
+
+            self.assertTrue(selected.is_file())
+            self.assertEqual(owners.operations.list_records(), ())
+            self.assertEqual(
+                owners.coordinator.runtime_lifecycle.snapshot().active_count,
+                0,
+            )
 
     def test_expired_wrong_session_and_superseded_authorizations_do_not_move(
         self,
@@ -565,6 +613,44 @@ class DuplicateBinMovementServiceTests(unittest.TestCase):
                     (owners.root / item.previous_relative_path).exists()
                     for item in owners.batch.items
                 )
+            )
+
+    def test_admitted_duplicate_movement_completes_after_shutdown_begins(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            owners = _owners(Path(directory).resolve(), selected=1)
+            preview = _preview(owners, issued=ISSUED)
+            verifying = Event()
+            continue_verification = Event()
+            outcomes = []
+            real_verify = movement_service._verify
+
+            def paused_verify(*args, **kwargs):
+                verifying.set()
+                continue_verification.wait(timeout=2)
+                return real_verify(*args, **kwargs)
+
+            worker = Thread(
+                target=lambda: outcomes.append(
+                    _execute(owners, preview, now=ISSUED + timedelta(minutes=1))
+                )
+            )
+            with mock.patch.object(
+                movement_service,
+                "_verify",
+                side_effect=paused_verify,
+            ):
+                worker.start()
+                self.assertTrue(verifying.wait(1))
+                stopping = owners.coordinator.runtime_lifecycle.begin_shutdown()
+                self.assertEqual(stopping.active_count, 1)
+                continue_verification.set()
+                worker.join(2)
+
+            self.assertFalse(worker.is_alive())
+            self.assertEqual(outcomes[0].status, "moved")
+            self.assertEqual(
+                owners.coordinator.runtime_lifecycle.wait_until_idle().active_count,
+                0,
             )
 
 

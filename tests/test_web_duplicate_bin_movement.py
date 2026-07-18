@@ -106,6 +106,30 @@ class WebDuplicateBinMovementTests(unittest.IsolatedAsyncioTestCase):
         ):
             self.assertNotIn(forbidden, serialized)
 
+    async def test_stopping_execution_returns_safe_conflict_without_movement(self) -> None:
+        async with _client(self.app) as client:
+            csrf = await _authenticate(client, self.token)
+            preview = await client.post(
+                "/api/duplicate-bin/move/preview",
+                data={"csrf_token": csrf, "batch_id": self.batch.batch_id},
+                headers=_origin(),
+            )
+            self.app.state.runtime_lifecycle.begin_shutdown()
+            response = await client.post(
+                "/api/duplicate-bin/move",
+                data={
+                    "csrf_token": csrf,
+                    "confirmation_token": preview.json()["confirmation_token"],
+                    "confirmation": preview.json()["confirmation"],
+                },
+                headers=_origin(),
+            )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.headers["cache-control"], "no-store")
+        self.assertEqual(response.json()["error"]["code"], "application_stopping")
+        self.assertEqual(self.app.state.duplicate_bin_operations.list_records(), ())
+
     async def test_routes_enforce_auth_origin_csrf_content_type_and_exact_fields(
         self,
     ) -> None:

@@ -8,6 +8,7 @@ import httpx
 from organizer.web.app import create_app
 from organizer.web.config import WebAppConfig
 from organizer.web.security import CONTENT_SECURITY_POLICY, SECURITY_HEADERS
+from organizer.application.runtime_lifecycle import RuntimeOperationKind
 
 
 class WebAppTests(unittest.IsolatedAsyncioTestCase):
@@ -103,6 +104,17 @@ class WebAppTests(unittest.IsolatedAsyncioTestCase):
                 (await second.get(f"/launch/{other_token}")).status_code,
                 303,
             )
+
+        self.assertIs(
+            self.app.state.organization_execution.runtime_lifecycle,
+            self.app.state.runtime_lifecycle,
+        )
+        first_lease = self.app.state.runtime_lifecycle.begin_operation(
+            RuntimeOperationKind.SCAN
+        )
+        self.assertEqual(self.app.state.runtime_lifecycle.snapshot().active_count, 1)
+        self.assertEqual(other_app.state.runtime_lifecycle.snapshot().active_count, 0)
+        first_lease.finish()
 
     async def test_altered_signed_cookie_does_not_authenticate(self) -> None:
         async with _client(self.app) as client:
