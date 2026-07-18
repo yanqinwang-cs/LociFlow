@@ -1,6 +1,6 @@
 # Release Notes
 
-## Loci Flow Integration 1.0E — Current Production Checkpoint
+## Loci Flow Integration 1.0F — Current Production Checkpoint
 
 Loci Flow now runs the accepted prototype-first six-area shell for Home,
 Organize, Duplicate Bin, Activity, Standards, and Settings. The live application
@@ -27,20 +27,36 @@ selected copies to exact previous paths, reject occupied destinations, and
 reconcile fully restored historical batches across restart so later explicit
 organization cycles can proceed.
 
+Standards are now an authoritative deterministic product workflow. Loading is
+fail-closed, and one immutable Standards result is bound to each scan so review,
+decisions, approval, and planning cannot reload different rules from disk. A
+durable revision-protected v2 catalog is migrated from valid v1 storage on the
+first mutation. The Standards page lists authoritative saved Standards, supports
+activate/deactivate, and offers guided creation for **Keep a folder unchanged**
+and **Keep matching files together** using a course code or project code.
+
+Standards previews and mutations use server-owned state, revision and conflict
+checks, and block while an approved organization plan is active. A successful
+change requires a fresh Check before it affects planning. Standards operations
+create no Activity records and perform no filesystem movement. The browser is
+not given raw JSON, filesystem paths, regex controls, or an LLM dependency.
+
 All mutations remain authenticated POSTs protected by CSRF, exact same-origin
 validation, server-owned IDs, immutable root configuration, scan generations,
 and decision revisions. Routes do not import `executor.py`; `executor.py`
 remains the sole user-file movement implementation. There is no permanent
 deletion, Empty Bin, system Trash handoff, Search, general Files browser,
-multi-root execution, automatic LLM execution, or writable Standards workflow.
-The next binding stage is the read-only **1.0F Standards Contract and Owner
-Inspection**, not Standards implementation.
+multi-root execution, root switching within a running process, scheduler daemon,
+notifications, natural-language Standards interpretation, automatic LLM
+execution, or speculative Settings workflow. The next binding stage is the
+read-only **1.0G Release Launcher and Packaging Contract Inspection**, not a
+pre-approved launcher implementation.
 
 ## Stage 11.5.2 — Guided Modular Review and Independent Module Plans
 
 Historical stage. The statements in this and older entries describe the
 capability boundary at that checkpoint; the current production state is the
-Loci Flow 1.0E entry above.
+Loci Flow 1.0F entry above.
 
 Stage 11.5.2 adds guided Duplicates, Organize, and Needs attention queues over one authoritative review session. Progress is interaction-based, skipped rows remain `undecided` and can be returned through a protected in-memory queue action, and each module shows separate progress and persistence status.
 
@@ -232,7 +248,8 @@ Apply commands require one of:
 ## Known Limitations
 
 - No built-in scheduler daemon or background service.
-- Standards editing is not implemented; active Standards are currently read and applied before organization suggestions are displayed.
+- Standards creation is deliberately limited to deterministic guided presets;
+  there is no raw JSON, path, regex, or natural-language interpretation input.
 - No permanent deletion, Empty Bin, or system Trash handoff; Duplicate Bin is reversible protected storage.
 - No Search, general Files browser, multi-root execution, or automatic LLM execution.
 - No HTML report review actions or apply buttons.
@@ -245,6 +262,11 @@ Apply commands require one of:
 
 ## Future Roadmap
 
-See [ROADMAP](ROADMAP.md). The next binding stage is **1.0F — Standards
-Contract and Owner Inspection**. It must establish the real user need and
-authoritative ownership before any writable Standards design is approved.
+See [ROADMAP](ROADMAP.md). The next binding stage is **1.0G — Release Launcher
+and Packaging Contract Inspection**. It must resolve folder-selection ownership,
+root validation before server creation, launch authentication and browser
+bootstrap, clean shutdown, packaged lifecycle, macOS packaging, safe terminal
+hiding, failure and cancellation behavior, and dependency constraints without
+pre-approving implementation. Accessibility auditing, large-folder performance,
+and nontechnical-user testing follow as separate release-hardening stages;
+Windows packaging remains deferred.

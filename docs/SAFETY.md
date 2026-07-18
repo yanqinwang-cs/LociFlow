@@ -75,12 +75,32 @@
 - Approved duplicate, organization, and review-candidate moves all use `executor.py`.
 - Organization apply requires exact confirmation and keeps dry-run planning as the default.
 
-## Current Loci Flow 1.0E Protections
+## Current Loci Flow 1.0F Protections
 
 - One process is locked to one resolved, validated root; browser requests cannot change it.
 - Root escape, direct symlink sources, unsafe symlink parents, and destinations outside the root are rejected.
 - Existing destinations are never overwritten. Restore to an occupied previous path is blocked.
+- Standards loading fails closed. Missing storage means no saved user Standards;
+  malformed, unsupported, or unavailable storage cannot silently fall back to a
+  different saved configuration.
+- One scan owns one immutable Standards load result. Grouping, reporting,
+  organization projection, review, decisions, and approval use that scan-bound
+  state without reloading Standards from disk.
 - Active Standards filter forbidden organization changes before remaining recommendations are displayed.
+- The durable v2 Standards catalog is authoritative. Valid v1 storage is migrated
+  only on the first mutation; built-in protections remain distinct from saved
+  Standards.
+- Standards list, activate, deactivate, preview, and creation mutations require
+  authenticated POST, CSRF, exact same-origin validation, a current catalog
+  revision, and conflict rejection.
+- Guided creation is limited to keeping a folder unchanged and keeping matching
+  course-code or project-code files together. The browser receives no raw JSON,
+  filesystem paths, regex, or LLM-dependent interpretation controls.
+- Standards mutation is blocked while an approved organization plan is active.
+  A successful change requires a fresh Check before the new catalog can affect
+  organization planning.
+- Standards mutations create no Activity records, call no movement service, and
+  never import or invoke `executor.py`.
 - Organization mutations validate the immutable scan generation and expected decision revision.
 - Approval is required before an ordinary movement authorization can be issued.
 - Ordinary movement and Duplicate Bin movement each require a separate exact confirmation.
@@ -96,6 +116,23 @@
 - Fully restored historical duplicate batches are reconciled once on restart and release their active claims without deleting history.
 - Duplicate Bin is reversible protected storage. There is no permanent deletion, Empty Bin, or system Trash handoff.
 - Current behavior requires no LLM. LLM output remains advisory and cannot approve or execute an action.
+
+## Release Launcher Inspection Boundary
+
+The next binding stage, 1.0G, is inspection only. Before any packaged launcher
+implementation is approved, it must establish ownership and fail-closed behavior
+for native folder selection, root validation before server creation, launch-token
+handling, browser bootstrap, clean shutdown, packaged process lifecycle, macOS
+packaging, terminal visibility, cancellation and failures, and packaging
+dependencies.
+
+The inspection must preserve one immutable validated root per running process,
+loopback-only binding, single-use launch authentication, and current route and
+movement boundaries. It does not authorize root switching, multi-root operation,
+Windows packaging, a scheduler daemon, notifications, natural-language Standards
+interpretation, speculative Settings, or product workflow redesign. Accessibility
+auditing, large-folder performance, and nontechnical-user testing remain separate
+later release-hardening stages.
 
 ## Local Web Invariants
 
@@ -137,7 +174,7 @@ The complete controls and threat mappings are in [WEB_THREAT_MODEL](WEB_THREAT_M
 
 Moving a file to another folder on the same filesystem does not save storage space. The primary consumer interface uses `Space used by extra copies` or `Potential duplicate space`. Technical interfaces may report `Potential duplicate bytes` or `Duplicate candidates for review`.
 
-Do not report `Space saved` or `Storage recovered` unless an operation actually removes data from that filesystem or transfers it elsewhere. Loci Flow 1.0E adds no permanent removal, Trash integration, or automatic disposal. The existing reversible-move, operation-history, and restore requirements remain in force.
+Do not report `Space saved` or `Storage recovered` unless an operation actually removes data from that filesystem or transfers it elsewhere. Loci Flow through 1.0F adds no permanent removal, Trash integration, or automatic disposal. The existing reversible-move, operation-history, and restore requirements remain in force.
 
 ## Risk Categories
 

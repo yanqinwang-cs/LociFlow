@@ -1,13 +1,13 @@
 # Local Web Architecture Contract
 
 Status: accepted in Stage 11.0; current production implementation completed
-through Loci Flow Integration 1.0E.
+through Loci Flow Integration 1.0F.
 
 This document freezes the architecture that all Stage 11 web work must follow. Stages 11.2 through 11.5 establish the secure scan/review/save workflow; Stage 11.5.1 presents it through consumer responsibilities while retaining Advanced review.
 
 The companion [web threat model](WEB_THREAT_MODEL.md) defines the mandatory security controls. The architecture decisions are also recorded in [ADR 0001](adr/0001-local-web-stack.md), [ADR 0002](adr/0002-web-security-boundary.md), and [ADR 0003](adr/0003-application-service-layer.md).
 
-## Current Production State Through Loci Flow 1.0E
+## Current Production State Through Loci Flow 1.0F
 
 The root-locked local application binds to `127.0.0.1`, establishes an
 authenticated browser session through a single-use launch URL, and renders six
@@ -16,7 +16,10 @@ Home and Organize remain separate. Home summarizes real scope, freshness, and
 verified work. Organize owns the current scan, Standards-filtered
 recommendations, destination and duplicate choices, approval, movement tree,
 and ordinary movement. Activity shows only real filesystem movement, restore,
-failure, and Undo records. Standards editing is not implemented.
+failure, and Undo records. Standards load fail-closed, are bound immutably to the
+scan that consumed them, and filter forbidden changes before the remaining plan
+is displayed. The authoritative Standards page lists the durable v2 catalog,
+supports activate/deactivate, and provides guided deterministic creation.
 
 The production frontend follows backend/API → data source → page-specific view
 model → accepted renderer. Fixture scenarios validate the accepted renderer but
@@ -35,9 +38,10 @@ The authenticated route surface has narrow responsibilities: scan mutation and
 current organization state; decision and approval mutations; ordinary movement
 preview and execution; Activity projection and operation-bound Undo preview and
 execution; and Duplicate Bin projection, batch movement preview/execution, and
-selected restore preview/execution. GET projections are no-store and read-only.
-Each state-changing route accepts only its fixed strict form and delegates to an
-application service.
+selected restore preview/execution; plus authoritative Standards listing,
+preview, activation, deactivation, and creation. GET projections are no-store
+and read-only. Each state-changing route accepts only its fixed strict form and
+delegates to an application service.
 
 Durable intent precedes every user-file movement. Routes call application
 services and never import `executor.py`; application services revalidate intent
@@ -53,6 +57,21 @@ full group before separately confirmed movement. The page lists physically
 moved copies. Duplicate Bin Restore and Activity Undo use the same restore
 service, restore selected copies to exact previous paths, reject occupied
 destinations, verify outcomes, and preserve durable history.
+
+Standards persistence is a configuration boundary, not a movement boundary. A
+durable revision-protected v2 catalog is authoritative; valid v1 storage is
+migrated only on the first mutation. One scan performs one fail-closed load and
+carries that immutable state through grouping, report, organization projection,
+review, decisions, and approval. Repairing or changing storage does not alter an
+existing scan; a fresh Check is required.
+
+Standards mutations validate the expected catalog revision, reject conflicts,
+and block while an approved organization plan is active. Guided creation is
+limited to **Keep a folder unchanged** and **Keep matching files together** with
+a course code or project code. Preview and mutation use server-owned IDs and
+safe labels, effects, and match counts. They create no Activity records, perform
+no filesystem movement, and expose no raw JSON, filesystem paths, regex, or LLM
+dependency to the browser.
 
 ## Loci Flow Integration 1.0C — Historical Checkpoint
 
@@ -155,7 +174,8 @@ restoration remain deferred to 1.0E.
 The preceding statements describe the D2A historical boundary. Browser movement
 was connected in D2B and prototype-first B4; Duplicate Bin approval, movement,
 restoration, Activity integration, and restart reconciliation were implemented
-through 1.0E as summarized in Current Production State above.
+through 1.0E. Standards integration was completed later through 1.0F, as
+summarized in Current Production State above.
 
 ## Product Direction
 
@@ -353,8 +373,8 @@ This integration displays real scope and freshness, recommendations, choices, it
 At that historical checkpoint, the next stage was temporary decisions and
 approval without movement. Decisions, approval, executor-owned browser
 movement, operation records, Activity, Undo, and Duplicate Bin restore were
-implemented later through 1.0E. Persistent writable Standards remain outside
-the current boundary.
+implemented later through 1.0E. Persistent writable Standards were outside that
+historical boundary and were implemented later through 1.0F.
 
 The browser submits stable, session-scoped identifiers and allowed actions. The backend maps those identifiers to server-held state and revalidates the corresponding paths.
 
@@ -509,11 +529,21 @@ choose or accept Downloads
 browser opens automatically
 ```
 
-Packaging belongs to Stage 11.10. A packaged application should hide terminal setup from ordinary users. macOS is the first packaging target and Windows follows later.
+The next binding stage is **1.0G — Release Launcher and Packaging Contract
+Inspection**. It must resolve native folder-selection ownership, root validation
+before server creation, launch-token handling, browser bootstrap, clean shutdown,
+packaged process lifecycle, the macOS packaging approach, safe terminal hiding,
+failure and cancellation behavior, and packaging dependency constraints. This
+inspection does not pre-approve a packaging tool or implementation.
+
+If a launcher is later approved, its first implementation remains separate from
+the later WCAG 2.2 AA audit, large-folder performance testing, and nontechnical-
+user testing. Windows packaging is deferred until after the macOS contract and
+implementation are proven.
 
 ## Historical Stage 11 Sequence
 
-This sequence is retained as project history. Loci Flow 1.0A through 1.0E
+This sequence is retained as project history. Loci Flow 1.0A through 1.0F
 overtook the planned-change tree, revision, preflight, browser apply, Activity,
 Undo, and restore entries below. Current status is defined at the top of this
 document and in `ROADMAP.md`.
@@ -580,7 +610,12 @@ ownership, and verification.
 
 ### Stage 11.10 — Packaging, Onboarding, Accessibility, and Release Hardening
 
-Add low-setup packaging, macOS-first and Windows-later launchers, no visible terminal for ordinary users, native folder selection, clean shutdown, an accessibility audit, large-folder performance testing, and nontechnical-user testing.
+Begin with the inspection-only 1.0G launcher and packaging contract. If accepted
+separately, implement a low-setup macOS launcher with validated native folder
+selection, browser bootstrap, clean shutdown, and no unnecessary terminal
+exposure. Keep the accessibility audit, large-folder performance testing, and
+nontechnical-user testing in later release-hardening stages. Windows packaging
+remains deferred.
 
 Native desktop development remains an optional final extension after Stage 11.
 

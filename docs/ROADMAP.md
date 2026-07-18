@@ -52,10 +52,11 @@
 | Loci Flow 1.0D2 | Activity and durable ordinary Undo | Activity projection, Undo repository and service | none | exact confirmation and post-Undo verification |
 | Prototype-first B1–B4 | Accepted renderer recovery and live workflow wiring | fixture contract, adapters, live shell | none | prototype hierarchy preserved |
 | Loci Flow 1.0E | Durable Duplicate Bin movement and restoration | approval catalog, movement and unified restore owners | none | reversible protected storage; no deletion |
+| Loci Flow 1.0F | Fail-closed, scan-bound, durable guided Standards | rules loader, v2 catalog, Standards application services and accepted UI adapter | none | revision-protected configuration only; no movement or Activity |
 
 ## Current Loci Flow Sequence
 
-The accepted production checkpoint is Loci Flow Integration 1.0E. The
+The accepted production checkpoint is Loci Flow Integration 1.0F. The
 standalone UX under `prototype/loci-flow-ux-1-1-focused-policy-controls/`
 remains the visual and interaction source of truth; production follows
 backend/API → data source → page-specific view model → accepted renderer.
@@ -80,17 +81,42 @@ Completed in sequence:
   Duplicate Bin storage, full-group rehash, separately confirmed movement,
   listing of physically moved copies, unified exact-path restore, Activity Undo,
   and restart reconciliation for fully restored batches.
+- **1.0F-A:** unified fail-closed Standards loading, separated built-in policy
+  from saved Standards, and bound one immutable Standards state to each scan.
+- **1.0F-B:** added the revision-protected durable v2 Standards catalog,
+  first-mutation migration from valid v1 storage, and application-service-owned
+  list and mutation contracts.
+- **1.0F-C:** connected the authoritative Standards list and activate/deactivate
+  actions through the accepted production adapter and renderer.
+- **1.0F-D:** added guided deterministic creation for keeping a folder unchanged
+  and keeping matching course-code or project-code files together, with safe
+  preview, conflict protection, approved-plan blocking, and a fresh Check
+  requirement.
 
 Planned-change presentation, revision protection, browser movement, Activity,
-Undo, and restore are therefore no longer future Loci Flow stages.
+Undo, restore, and guided Standards management are therefore no longer future
+Loci Flow stages. Standards mutation creates no Activity record and performs no
+filesystem movement; the product exposes no raw catalog JSON, filesystem paths,
+regex, or LLM-dependent Standards interpretation.
 
-### Next: 1.0F — Standards Contract and Owner Inspection
+### Next: 1.0G — Release Launcher and Packaging Contract Inspection
 
-Future, inspection only. Determine which current rule and Standards models are
-authoritative, how active Standards filter plans before display, and what safe
-persistence and mutation contracts would be required. The inspection must not
-pre-approve an implementation design, expose raw rule JSON or backend
-configuration, or treat writable Standards as already accepted.
+Future, inspection only. Determine native folder-selection ownership, root
+validation before server creation, launch-token handling, browser bootstrap,
+clean shutdown, packaged process lifecycle, the macOS packaging approach,
+whether the terminal can be hidden safely, failure and cancellation behavior,
+and packaging dependency constraints. The inspection does not pre-approve a
+packaging tool, launcher design, dependency, or implementation commit.
+
+The first launcher implementation, if separately approved after inspection,
+must remain distinct from later release-hardening stages for the WCAG 2.2 AA
+audit, large-folder performance testing, and nontechnical-user testing.
+Windows packaging is later work.
+
+Explicitly out of scope are Search, a general Files browser, permanent deletion,
+system Trash, multi-root operation, root switching within a running process, a
+scheduler daemon, notifications, natural-language Standards interpretation,
+speculative Settings, Windows packaging, and product workflow redesign.
 
 ## Historical Stage 11 Sequence
 
@@ -189,8 +215,13 @@ exact confirmation, and post-restore verification.
 
 ### Stage 11.10 — Packaging, Onboarding, Accessibility, and Release Hardening
 
-- Add a low-setup packaged launcher, macOS first and Windows later.
-- Hide the terminal for ordinary users, open the browser automatically, provide native folder selection, and support clean shutdown.
-- Complete the WCAG 2.2 AA audit, large-folder performance testing, and nontechnical-user testing.
+- Begin with the 1.0G contract inspection; it does not pre-approve packaging or
+  launcher implementation.
+- If approved separately, add a low-setup macOS launcher with validated native
+  folder selection, safe browser bootstrap, clean shutdown, and no unnecessary
+  terminal exposure.
+- Follow in separate release-hardening stages with the WCAG 2.2 AA audit,
+  large-folder performance testing, and nontechnical-user testing.
+- Defer Windows packaging until the macOS contract and implementation are proven.
 
 Native desktop development remains an optional final extension after Stage 11. Stage 11 usability should be evaluated at the 11.5 checkpoint rather than postponed until all execution and packaging stages are complete.

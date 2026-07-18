@@ -6,15 +6,17 @@ The project is safety-first: dry-run is default, real movement requires exact co
 
 ## Current Status
 
-The accepted Loci Flow integration is complete through 1.0E. The primary local
+The accepted Loci Flow integration is complete through 1.0F. The primary local
 web application has six areas: **Home**, **Organize**, **Duplicate Bin**,
 **Activity**, **Standards**, and **Settings**. Home summarizes the selected root
 and recent verified work; Organize owns scan results, recommendations, choices,
 approval, and ordinary movement. Duplicate Bin is reversible protected storage,
 not Trash. Activity shows only real filesystem movement, restore, failure, and
-Undo records. Standards are applied before suggestions are displayed, but
-Standards editing is not yet implemented. Settings exposes only currently
-implemented configuration.
+Undo records. Standards are loaded fail-closed once per scan and filter forbidden
+changes before suggestions are displayed. The authoritative Standards page lists
+the durable v2 catalog, supports activate/deactivate, and provides guided creation
+for keeping a folder unchanged or keeping matching course-code or project-code
+files together. Settings exposes only currently implemented configuration.
 
 The current safe workflow is:
 
@@ -37,7 +39,7 @@ The tool can currently:
 - Apply approved duplicate review moves with undo logs.
 - Detect review candidates.
 - Group document-like files deterministically.
-- Load optional read-only organization rules from `AI_Review/config/organization_rules.json`.
+- Load saved organization rules fail-closed and bind them immutably to one scan.
 - Report alias-normalized anchor decisions for suggested groups, anchors needing a user decision, and ignored terms.
 - Infer existing organization patterns for reports without writing rules.
 - Export inferred organization rule candidates for manual review.
@@ -76,6 +78,14 @@ The tool can currently:
 - Restore selected Duplicate Bin copies to their exact previous paths.
 - Use the same authoritative restore service from Activity Undo and Duplicate Bin Restore.
 - Start a new organization cycle after completed movement or restore.
+- Load Standards fail-closed and bind one immutable Standards state to each scan.
+- Read and mutate a revision-protected durable v2 Standards catalog, migrating a
+  valid v1 file on the first mutation.
+- List authoritative Standards and activate or deactivate them without moving files.
+- Preview and create deterministic Standards for keeping a folder unchanged or
+  keeping matching course-code or project-code files together.
+- Require a fresh Check before changed Standards affect organization planning and
+  block Standards mutation while an approved plan is active.
 
 ## Interface Direction
 
@@ -86,9 +96,14 @@ by CSRF, exact same-origin checks, immutable root configuration, scan generation
 and decision revision. Routes call application services and never import
 `executor.py`; `executor.py` remains the sole user-file movement implementation.
 
-The next binding stage is **1.0F — Standards Contract and Owner Inspection**.
-It is an inspection, not approval to implement writable Standards or expose raw
-rule configuration.
+The next binding stage is **1.0G — Release Launcher and Packaging Contract
+Inspection**. It is inspection only: it must resolve native folder-selection
+ownership, root validation before server creation, launch-token and browser
+bootstrap handling, clean shutdown, packaged process lifecycle, the macOS
+packaging approach, safe terminal hiding, failure and cancellation behavior, and
+packaging dependency constraints before any launcher implementation is approved.
+Accessibility auditing, large-folder performance testing, and nontechnical-user
+testing remain separate later release-hardening stages.
 
 See the [local web architecture contract](docs/WEB_ARCHITECTURE.md) and [web threat model](docs/WEB_THREAT_MODEL.md) for the frozen Stage 11 requirements.
 
@@ -229,9 +244,12 @@ PYTHONPATH=src python3 -m organizer.cli /path/to/folder --apply-refined-organiza
 
 Current limitations are explicit: there is no Search, general Files browser,
 permanent deletion, Empty Bin, system Trash handoff, multi-root execution,
-automatic LLM execution, or writable Standards workflow. Duplicate Bin remains
-reversible protected storage, and occupied exact restore destinations block
-restoration rather than being overwritten.
+root switching within a running process, scheduler daemon, notifications,
+natural-language Standards interpretation, automatic LLM execution, or
+speculative Settings workflow. Duplicate Bin remains reversible protected
+storage, and occupied exact restore destinations block restoration rather than
+being overwritten. Standards expose guided deterministic controls rather than
+raw JSON, filesystem paths, regex, or LLM-dependent interpretation.
 
 ## Documentation
 

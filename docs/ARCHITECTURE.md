@@ -13,9 +13,16 @@ Filesystem
      -> reports.py and html_report.py
      -> review_session.py and review_state.py
   -> scan application state
+     -> fail-closed Standards load
+     -> immutable scan-bound Standards state
   -> Standards-first organization projection
      -> deterministic owner modules
      -> recommendations, choices, kept items, movement tree
+  -> durable Standards catalog
+     -> revision-protected list and mutations
+     -> v1-to-v2 migration on first mutation
+     -> activate/deactivate or guided deterministic creation
+     -> fresh Check before changed Standards affect planning
   -> revision-bound decisions and approval
      -> immutable approved organization plan
   -> ordinary movement authorization
@@ -65,7 +72,7 @@ Production frontend
 | `planner.py` | duplicate review planning |
 | `review.py` | heuristic review candidate detection and review planning |
 | `scope.py` | deterministic organization-scope and orphan-code classification helpers |
-| `organization_rules.py` | organization rules loading, validation, and serialization support |
+| `organization_rules.py` | fail-closed organization-rules loading, validation, immutable rules snapshots, and serialization support |
 | `grouping.py` | deterministic project grouping and organization suggestions |
 | `pattern_inference.py` | report-only inference of existing folder organization patterns |
 | `rule_review.py` | organization rule candidate export, reviewed-decision validation, and confirmed config updates |
@@ -84,6 +91,7 @@ Production frontend
 | `application/artifact_service.py` | root-contained listing/loading of scan reports and reviewed plans only |
 | `application/view_models.py` | frozen, interface-independent application result types |
 | Loci Flow organization projection and decision services | Standards-first consumer projection, temporary revisions, exact-set decisions, validation, and approval |
+| Loci Flow Standards catalog and application services | durable v2 catalog ownership, valid v1 first-mutation migration, revision/conflict checks, authoritative list projection, activation, deactivation, guided preview and creation, approved-plan blocking, and fresh-Check state |
 | Loci Flow organization operation repositories and services | durable ordinary movement authorization, intent, replay, verification, and recovery projection |
 | `application/activity_service.py` | Activity projection from durable movement, Undo, Duplicate Bin movement, and restore records |
 | Loci Flow ordinary Undo repositories and services | authorization, durable restore intent, executor delegation, and verification |
@@ -103,13 +111,24 @@ Production frontend
 
 ## Current Loci Flow Web Direction
 
-Loci Flow through Integration 1.0E is bootAI's primary consumer interface. Its
+Loci Flow through Integration 1.0F is bootAI's primary consumer interface. Its
 six areas are Home, Organize, Duplicate Bin, Activity, Standards, and Settings.
 Home summarizes real scope and verified work; Organize owns recommendations,
 choices, approval, and ordinary movement. Activity contains only real
-filesystem operations and their outcomes. Standards filter forbidden changes
-before the remaining plan is displayed, but writable Standards are not yet an
-implemented product capability.
+filesystem operations and their outcomes. Standards load fail-closed once per
+scan, and the resulting immutable state filters forbidden changes before the
+remaining plan is displayed. The authoritative Standards surface lists the
+durable v2 catalog, supports activate/deactivate, and creates deterministic
+Standards through the accepted folder-protection, course-code, and project-code
+presets.
+
+Standards mutation is configuration, not movement. It is revision- and
+conflict-protected, migrates valid v1 storage only on the first mutation, blocks
+while an approved organization plan is active, and requires a fresh Check before
+the changed catalog affects planning. It creates no Activity record and never
+calls `executor.py`. The browser receives safe labels, effects, match counts,
+and server-owned identifiers rather than raw JSON, filesystem paths, regex, or
+LLM-derived interpretation.
 
 The required and implemented dependency direction is:
 
@@ -150,6 +169,14 @@ The complete contract is in [WEB_ARCHITECTURE](WEB_ARCHITECTURE.md), and mandato
 
 The current deterministic behavior requires no LLM. `llm_refinement.py` remains
 advisory only: LLM output cannot authorize, approve, or execute movement.
+
+The next binding stage is the inspection-only **1.0G — Release Launcher and
+Packaging Contract Inspection**. It must settle native folder-selection
+ownership, validation before server creation, launch authentication, browser
+bootstrap, clean shutdown, packaged lifecycle, macOS packaging, terminal
+visibility, cancellation and failure behavior, and dependency constraints before
+implementation is considered. Accessibility auditing, large-folder performance,
+and nontechnical-user testing remain separate later release-hardening stages.
 
 ## Facts, Suggestions, Approved Moves, Execution, Undo
 
