@@ -20,6 +20,7 @@ from organizer.web.app import create_app
 from organizer.web.config import WebAppConfig
 from organizer.web.launcher import (
     LauncherDependencies,
+    LauncherError,
     launch,
     launch_configured,
 )
@@ -32,6 +33,58 @@ _MAX_DYNAMIC_BIND_ATTEMPTS = 3
 
 class WebServerError(ValueError):
     pass
+
+
+class _UvicornServerRunner:
+    def __init__(self, server: uvicorn.Server) -> None:
+        self._server = server
+
+    def run(self, *, sockets: list[socket.socket]) -> None:
+        self._server.run(sockets=sockets)
+
+    def request_exit(self) -> None:
+        self._server.should_exit = True
+
+
+class _FailClosedReadinessObserver:
+    def __init__(
+        self,
+        health_url: str,
+        launch_url: str,
+        stop_event: Event,
+        request_exit: Callable[[], None],
+        browser_opener: Callable[[str], bool],
+    ) -> None:
+        self.error: LauncherError | None = None
+        self._request_exit = request_exit
+        self._thread = Thread(
+            target=self._observe,
+            args=(health_url, launch_url, stop_event, browser_opener),
+            name="bootai-native-browser-launch",
+        )
+
+    def start(self) -> None:
+        self._thread.start()
+
+    def join(self) -> None:
+        self._thread.join()
+
+    def _observe(
+        self,
+        health_url: str,
+        launch_url: str,
+        stop_event: Event,
+        browser_opener: Callable[[str], bool],
+    ) -> None:
+        self.error = _open_browser_when_ready(
+            health_url,
+            launch_url,
+            stop_event,
+            browser_opener=browser_opener,
+            fail_closed=True,
+        )
+        if self.error is not None:
+            self._request_exit()
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -122,18 +175,40 @@ def bind_loopback_socket(port: int | None = None) -> socket.socket:
     ) from last_error
 
 
-def _launcher_dependencies() -> LauncherDependencies:
+def build_launcher_dependencies(
+    *,
+    browser_opener: Callable[[str], bool] | None = None,
+    fail_closed_readiness: bool = False,
+) -> LauncherDependencies:
+    if fail_closed_readiness:
+        if browser_opener is None:
+            raise ValueError("fail-closed readiness requires a browser opener")
+        readiness_factory = lambda health, launch, stop, request_exit: (
+            _FailClosedReadinessObserver(
+                health,
+                launch,
+                stop,
+                request_exit,
+                browser_opener,
+            )
+        )
+    else:
+        readiness_factory = _create_readiness_thread
     return LauncherDependencies(
         config_factory=lambda root: WebAppConfig(root=root),
         socket_binder=bind_loopback_socket,
         app_factory=create_app,
         server_factory=_create_uvicorn_server,
-        readiness_factory=_create_readiness_thread,
+        readiness_factory=readiness_factory,
         manual_browser_bootstrap=_print_manual_launch_url,
     )
 
 
-def _create_uvicorn_server(app: Any, port: int) -> uvicorn.Server:
+def _launcher_dependencies() -> LauncherDependencies:
+    return build_launcher_dependencies()
+
+
+def _create_uvicorn_server(app: Any, port: int) -> _UvicornServerRunner:
     uvicorn_config = uvicorn.Config(
         app=app,
         host=LOOPBACK_HOST,
@@ -143,13 +218,14 @@ def _create_uvicorn_server(app: Any, port: int) -> uvicorn.Server:
         access_log=False,
         proxy_headers=False,
     )
-    return uvicorn.Server(uvicorn_config)
+    return _UvicornServerRunner(uvicorn.Server(uvicorn_config))
 
 
 def _create_readiness_thread(
     health_url: str,
     launch_url: str,
     stop_event: Event,
+    _request_exit: Callable[[], None],
 ) -> Thread:
     return Thread(
         target=_open_browser_when_ready,
@@ -176,24 +252,42 @@ def _open_browser_when_ready(
     timeout_seconds: float = DEFAULT_READY_TIMEOUT_SECONDS,
     health_opener: Callable[..., Any] = urlopen,
     browser_opener: Callable[[str], bool] = webbrowser.open,
-) -> None:
+    fail_closed: bool = False,
+) -> LauncherError | None:
     deadline = time.monotonic() + timeout_seconds
     while not stop_event.is_set() and time.monotonic() < deadline:
         try:
             with closing(health_opener(health_url, timeout=0.25)) as response:
-                if response.status == 200:
-                    if not browser_opener(launch_url):
-                        _print_manual_launch_url(launch_url)
-                    return
+                ready = response.status == 200
         except (OSError, URLError):
-            pass
+            ready = False
+        if ready:
+            try:
+                opened = bool(browser_opener(launch_url))
+            except Exception:
+                opened = False
+            if opened:
+                return None
+            if fail_closed:
+                return LauncherError(
+                    code="browser_open_failed",
+                    safe_message="The browser could not be opened.",
+                )
+            _print_manual_launch_url(launch_url)
+            return None
         stop_event.wait(0.05)
 
     if not stop_event.is_set():
+        if fail_closed:
+            return LauncherError(
+                code="readiness_failed",
+                safe_message="The local server did not become ready.",
+            )
         print(
             "bootAI could not confirm that the local web server was ready.",
             file=sys.stderr,
         )
+    return None
 
 
 def _print_manual_launch_url(launch_url: str) -> None:

@@ -41,6 +41,12 @@ class LaunchResult:
         return self.exit_code == 0 and self.error is None
 
 
+LaunchDiagnostic = Callable[
+    [LaunchPhase, LauncherError, BaseException | None],
+    None,
+]
+
+
 class BoundSocket(Protocol):
     def getsockname(self) -> tuple[str, int]: ...
 
@@ -49,6 +55,41 @@ class BoundSocket(Protocol):
 
 class ServerRunner(Protocol):
     def run(self, *, sockets: list[BoundSocket]) -> None: ...
+
+    def request_exit(self) -> None: ...
+
+
+class LaunchStopController:
+    def __init__(self) -> None:
+        self._lock = Lock()
+        self._request_exit: Callable[[], None] | None = None
+        self._requested = False
+        self._dispatched = False
+
+    def attach(self, request_exit: Callable[[], None]) -> None:
+        should_dispatch = False
+        with self._lock:
+            if self._request_exit is not None:
+                raise RuntimeError("launch stop controller is already attached")
+            self._request_exit = request_exit
+            if self._requested and not self._dispatched:
+                self._dispatched = True
+                should_dispatch = True
+        if should_dispatch:
+            request_exit()
+
+    def request_stop(self) -> bool:
+        request_exit: Callable[[], None] | None = None
+        with self._lock:
+            if self._requested:
+                return False
+            self._requested = True
+            if self._request_exit is not None and not self._dispatched:
+                self._dispatched = True
+                request_exit = self._request_exit
+        if request_exit is not None:
+            request_exit()
+        return True
 
 
 class ReadinessObserver(Protocol):
@@ -63,7 +104,10 @@ class LauncherDependencies:
     socket_binder: Callable[[int | None], BoundSocket]
     app_factory: Callable[[WebAppConfig], Any]
     server_factory: Callable[[Any, int], ServerRunner]
-    readiness_factory: Callable[[str, str, Event], ReadinessObserver]
+    readiness_factory: Callable[
+        [str, str, Event, Callable[[], None]],
+        ReadinessObserver,
+    ]
     manual_browser_bootstrap: Callable[[str], None]
 
 
@@ -141,6 +185,8 @@ def launch_configured(
     open_browser: bool = True,
     lifecycle: LifecycleRecorder | None = None,
     propagate_unexpected: bool = False,
+    diagnostic: LaunchDiagnostic | None = None,
+    stop_controller: LaunchStopController | None = None,
 ) -> LaunchResult:
     recorder = lifecycle or LifecycleRecorder()
     bound_socket: BoundSocket | None = None
@@ -152,11 +198,12 @@ def launch_configured(
     try:
         try:
             bound_socket = dependencies.socket_binder(port)
-        except (OSError, ValueError):
+        except (OSError, ValueError) as raised:
             error = LauncherError(
                 code="bind_failed",
                 safe_message="The local server could not reserve a private port.",
             )
+            _diagnose(diagnostic, LaunchPhase.SOCKET_BOUND, error, raised)
             return _finalize_without_socket(recorder, error)
 
         recorder.record(LaunchPhase.SOCKET_BOUND)
@@ -168,11 +215,14 @@ def launch_configured(
         try:
             app = dependencies.app_factory(config)
             server = dependencies.server_factory(app, actual_port)
-        except Exception:
+            if stop_controller is not None:
+                stop_controller.attach(server.request_exit)
+        except Exception as raised:
             error = LauncherError(
                 code="app_creation_failed",
                 safe_message="The local application could not be started.",
             )
+            _diagnose(diagnostic, LaunchPhase.APP_CREATED, error, raised)
         else:
             recorder.record(LaunchPhase.APP_CREATED)
             try:
@@ -182,12 +232,17 @@ def launch_configured(
                         health_url,
                         launch_url,
                         stop_event,
+                        (
+                            server.request_exit
+                            if stop_controller is None
+                            else lambda: stop_controller.request_stop()
+                        ),
                     )
                     readiness_observer.start()
                 else:
                     dependencies.manual_browser_bootstrap(launch_url)
                 recorder.record(LaunchPhase.BROWSER_BOOTSTRAPPED)
-            except Exception:
+            except Exception as raised:
                 error = LauncherError(
                     code=(
                         "readiness_failed" if open_browser else "browser_open_failed"
@@ -197,6 +252,12 @@ def launch_configured(
                         if open_browser
                         else "The private browser link could not be prepared."
                     ),
+                )
+                _diagnose(
+                    diagnostic,
+                    LaunchPhase.WAITING_FOR_READY,
+                    error,
+                    raised,
                 )
 
             if error is None:
@@ -211,6 +272,7 @@ def launch_configured(
                         safe_message="The local server stopped unexpectedly.",
                     )
                     unexpected = raised
+                    _diagnose(diagnostic, LaunchPhase.RUNNING, error, raised)
     finally:
         if bound_socket is not None:
             recorder.record(LaunchPhase.STOPPING)
@@ -218,19 +280,40 @@ def launch_configured(
             if readiness_observer is not None:
                 try:
                     readiness_observer.join()
-                except Exception:
+                except Exception as raised:
                     if error is None:
                         error = LauncherError(
                             code="readiness_failed",
                             safe_message="The local server readiness check did not stop cleanly.",
                         )
+                        _diagnose(
+                            diagnostic,
+                            LaunchPhase.STOPPING,
+                            error,
+                            raised,
+                        )
+                readiness_error = getattr(readiness_observer, "error", None)
+                if error is None and isinstance(readiness_error, LauncherError):
+                    error = readiness_error
+                    _diagnose(
+                        diagnostic,
+                        LaunchPhase.WAITING_FOR_READY,
+                        error,
+                        None,
+                    )
             try:
                 bound_socket.close()
-            except OSError:
+            except OSError as raised:
                 if error is None:
                     error = LauncherError(
                         code="cleanup_failed",
                         safe_message="The local server did not stop cleanly.",
+                    )
+                    _diagnose(
+                        diagnostic,
+                        LaunchPhase.STOPPING,
+                        error,
+                        raised,
                     )
 
     recorder.record(LaunchPhase.FAILED if error is not None else LaunchPhase.STOPPED)
@@ -261,3 +344,13 @@ def _result(
         phases=recorder.snapshot(),
         error=LauncherError(code=code, safe_message=safe_message),
     )
+
+
+def _diagnose(
+    diagnostic: LaunchDiagnostic | None,
+    phase: LaunchPhase,
+    error: LauncherError,
+    exception: BaseException | None,
+) -> None:
+    if diagnostic is not None:
+        diagnostic(phase, error, exception)

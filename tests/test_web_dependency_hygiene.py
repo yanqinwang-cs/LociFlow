@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import hashlib
 from pathlib import Path
+import re
 import subprocess
 import sys
 import tomllib
@@ -35,6 +36,17 @@ class WebDependencyHygieneTests(unittest.TestCase):
             project["optional-dependencies"]["web-test"],
             ["httpx==0.28.1"],
         )
+        self.assertEqual(
+            project["optional-dependencies"]["macos-launcher"],
+            [
+                "pyobjc-core==12.2.1; sys_platform == 'darwin'",
+                "pyobjc-framework-Cocoa==12.2.1; sys_platform == 'darwin'",
+            ],
+        )
+        self.assertNotIn(
+            "pyobjc",
+            "\n".join(project["optional-dependencies"]["web"]).lower(),
+        )
 
         all_requirements = "\n".join(
             requirement.lower()
@@ -59,8 +71,37 @@ class WebDependencyHygieneTests(unittest.TestCase):
             "jinja2": "3.1.6",
             "itsdangerous": "2.2.0",
             "httpx": "0.28.1",
+            "pyobjc-core": "12.2.1",
+            "pyobjc-framework-cocoa": "12.2.1",
         }.items():
             self.assertIn(f'name = "{name}"\nversion = "{version}"', lock)
+
+    def test_native_dependencies_and_imports_are_isolated(self) -> None:
+        data = tomllib.loads(
+            (REPOSITORY_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+        )
+        optional = data["project"]["optional-dependencies"]
+        self.assertFalse(
+            any("pyobjc" in item.lower() for item in optional["web"])
+        )
+
+        native_root = REPOSITORY_ROOT / "src" / "organizer" / "macos_launcher"
+        restricted_import = re.compile(
+            r"^\s*(?:from|import)\s+"
+            r"(?:AppKit|Foundation|objc|PyObjCTools)(?:\s|\.|$)",
+            re.MULTILINE,
+        )
+        for path in sorted(native_root.glob("*.py")):
+            if path.name == "appkit_adapter.py":
+                continue
+            source = path.read_text(encoding="utf-8")
+            self.assertIsNone(restricted_import.search(source), path)
+
+        web_source = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in sorted(WEB_ROOT.rglob("*.py"))
+        )
+        self.assertNotIn("organizer.macos_launcher", web_source)
 
     def test_package_data_covers_all_web_resources(self) -> None:
         data = tomllib.loads(
@@ -173,6 +214,35 @@ class WebDependencyHygieneTests(unittest.TestCase):
             "-S",
             "-c",
             "import organizer; import organizer.web; from organizer.web import WebAppConfig",
+        ]
+        environment = {"PYTHONPATH": str(REPOSITORY_ROOT / "src")}
+        result = subprocess.run(
+            command,
+            cwd=REPOSITORY_ROOT,
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_development_web_imports_never_require_pyobjc(self) -> None:
+        command = [
+            sys.executable,
+            "-c",
+            """
+import builtins
+original_import = builtins.__import__
+def guarded_import(name, *args, **kwargs):
+    if name.split('.', 1)[0] in {'AppKit', 'Foundation', 'objc', 'PyObjCTools'}:
+        raise AssertionError(f'unexpected native import: {name}')
+    return original_import(name, *args, **kwargs)
+builtins.__import__ = guarded_import
+import organizer
+import organizer.web
+import organizer.web.launcher
+import organizer.web.server
+""",
         ]
         environment = {"PYTHONPATH": str(REPOSITORY_ROOT / "src")}
         result = subprocess.run(

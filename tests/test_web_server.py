@@ -238,6 +238,71 @@ class WebServerTests(unittest.TestCase):
         self.assertIn("temporary private URL", stdout.getvalue())
         self.assertIn("/launch/private-token", stdout.getvalue())
 
+    def test_native_browser_failure_is_fail_closed_and_never_prints_url(self) -> None:
+        stdout = StringIO()
+        launch_url = "http://127.0.0.1:4000/launch/" + "t" * 32
+        browser_opener = Mock(return_value=False)
+        with redirect_stdout(stdout):
+            error = server._open_browser_when_ready(
+                "http://127.0.0.1:4000/healthz",
+                launch_url,
+                Event(),
+                health_opener=Mock(return_value=_HealthyResponse()),
+                browser_opener=browser_opener,
+                fail_closed=True,
+            )
+
+        self.assertEqual(error.code, "browser_open_failed")
+        browser_opener.assert_called_once_with(launch_url)
+        self.assertEqual(stdout.getvalue(), "")
+        self.assertNotIn("t" * 32, error.safe_message)
+
+    def test_native_readiness_timeout_returns_safe_error(self) -> None:
+        error = server._open_browser_when_ready(
+            "http://127.0.0.1:4000/healthz",
+            "http://127.0.0.1:4000/launch/private-token",
+            Event(),
+            timeout_seconds=0,
+            health_opener=Mock(side_effect=OSError("not ready")),
+            browser_opener=Mock(),
+            fail_closed=True,
+        )
+
+        self.assertEqual(error.code, "readiness_failed")
+        self.assertNotIn("private-token", error.safe_message)
+
+    def test_fail_closed_observer_requests_controlled_server_exit(self) -> None:
+        request_exit = Mock()
+        expected_error = server.LauncherError(
+            code="browser_open_failed",
+            safe_message="safe",
+        )
+        observer = server._FailClosedReadinessObserver(
+            "health",
+            "launch-private",
+            Event(),
+            request_exit,
+            Mock(),
+        )
+        with patch.object(
+            server,
+            "_open_browser_when_ready",
+            return_value=expected_error,
+        ):
+            observer.start()
+            observer.join()
+
+        self.assertIs(observer.error, expected_error)
+        request_exit.assert_called_once_with()
+
+    def test_uvicorn_runner_exposes_only_controlled_exit_request(self) -> None:
+        uvicorn_server = Mock()
+        runner = server._UvicornServerRunner(uvicorn_server)
+
+        runner.request_exit()
+
+        self.assertTrue(uvicorn_server.should_exit)
+
     def test_no_browser_uses_one_worker_and_always_closes_socket(self) -> None:
         fake_socket = _FakeSocket()
         fake_uvicorn_server = Mock()

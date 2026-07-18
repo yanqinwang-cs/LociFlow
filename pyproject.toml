@@ -17,6 +17,10 @@ web = [
 web-test = [
     "httpx==0.28.1",
 ]
+macos-launcher = [
+    "pyobjc-core==12.2.1; sys_platform == 'darwin'",
+    "pyobjc-framework-Cocoa==12.2.1; sys_platform == 'darwin'",
+]
 
 [tool.setuptools]
 package-dir = {"" = "src"}

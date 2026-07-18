@@ -918,6 +918,29 @@ Check is required and must not start that Check automatically.
 
 Delete the disposable root when acceptance is complete.
 
+## Loci Flow 1.0G-B1 macOS Native Launcher
+
+Run this check only in an interactive macOS graphical session with the `web`
+and `macos-launcher` optional dependencies installed. Use disposable folders.
+
+1. Run `PYTHONPATH=src python3 -m organizer.macos_launcher`.
+2. Confirm the native folder panel initially shows Downloads when it exists.
+3. Confirm files cannot be selected and only one directory can be selected.
+4. Cancel and confirm no browser opens and no local server remains running.
+5. Start again, select a normal disposable folder, and confirm the authenticated
+   Loci Flow page opens in the default browser.
+6. Start again and select an application bundle. Confirm the native launcher
+   rejects it without exposing its full path or a traceback.
+7. Create a POSIX symlink to a disposable directory and select the symlink in
+   the panel. Confirm the launcher receives the lexical symlink path and shared
+   root admission rejects it.
+
+If the final check instead admits the resolved target, stop acceptance and
+report the contradiction. Do not weaken shared root admission or treat the
+resolved target as the user-selected entry. Coordinated Quit while the server
+is running remains deferred to G-B2; the B1 menu must refuse that request
+truthfully rather than terminating the process.
+
 ## Final Git Hygiene Check
 
 From the repository root:

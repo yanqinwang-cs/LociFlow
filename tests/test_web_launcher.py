@@ -8,8 +8,11 @@ from unittest import mock
 from organizer.web.config import WebAppConfig
 from organizer.web.launcher import (
     LaunchPhase,
+    LaunchStopController,
     LauncherDependencies,
+    LauncherError,
     launch,
+    launch_configured,
 )
 
 
@@ -36,12 +39,17 @@ class _Server:
         self.events = events
         self.side_effect = side_effect
         self.sockets: list[_Socket] | None = None
+        self.exit_requested = False
 
     def run(self, *, sockets: list[_Socket]) -> None:
         self.events.append("server.run")
         self.sockets = sockets
         if self.side_effect is not None:
             raise self.side_effect
+
+    def request_exit(self) -> None:
+        self.events.append("server.request_exit")
+        self.exit_requested = True
 
 
 class _Observer:
@@ -53,6 +61,7 @@ class _Observer:
         self.events = events
         self.start_error = start_error
         self.joined = False
+        self.error: LauncherError | None = None
 
     def start(self) -> None:
         self.events.append("readiness.start")
@@ -105,9 +114,11 @@ class WebLauncherTests(unittest.TestCase):
             health_url: str,
             launch_url: str,
             stop_event: object,
+            request_exit: object,
         ) -> _Observer:
             self.events.append("readiness.create")
             self.assertNotIn("t" * 32, health_url)
+            self.assertTrue(callable(request_exit))
             self.seen_launch_url = launch_url
             return self.observer
 
@@ -123,6 +134,20 @@ class WebLauncherTests(unittest.TestCase):
             readiness_factory=readiness_factory,
             manual_browser_bootstrap=manual_browser_bootstrap,
         )
+
+    def test_stop_controller_dispatches_one_pending_or_attached_request(self) -> None:
+        for request_before_attach in (False, True):
+            with self.subTest(request_before_attach=request_before_attach):
+                controller = LaunchStopController()
+                request_exit = mock.Mock()
+                if request_before_attach:
+                    self.assertTrue(controller.request_stop())
+                controller.attach(request_exit)
+                if not request_before_attach:
+                    self.assertTrue(controller.request_stop())
+
+                self.assertFalse(controller.request_stop())
+                request_exit.assert_called_once_with()
 
     def test_normal_launch_has_explicit_ordered_phases_and_cleanup(self) -> None:
         result = launch(lambda: self.root, dependencies=self.dependencies())
@@ -250,6 +275,39 @@ class WebLauncherTests(unittest.TestCase):
         dependencies.server_factory.assert_not_called()
         dependencies.readiness_factory.assert_not_called()
 
+    def test_app_creation_diagnostic_receives_original_exception(self) -> None:
+        raised = RuntimeError("private app detail")
+        diagnostics: list[tuple[LaunchPhase, LauncherError, BaseException | None]] = []
+        dependencies = self.dependencies()
+        dependencies = LauncherDependencies(
+            config_factory=dependencies.config_factory,
+            socket_binder=dependencies.socket_binder,
+            app_factory=mock.Mock(side_effect=raised),
+            server_factory=dependencies.server_factory,
+            readiness_factory=dependencies.readiness_factory,
+            manual_browser_bootstrap=dependencies.manual_browser_bootstrap,
+        )
+        config = WebAppConfig(
+            self.root,
+            session_secret="s" * 32,
+            launch_token="t" * 32,
+            testing=True,
+        )
+
+        result = launch_configured(
+            config,
+            dependencies=dependencies,
+            diagnostic=lambda phase, error, exception: diagnostics.append(
+                (phase, error, exception)
+            ),
+        )
+
+        self.assertEqual(result.error.code, "app_creation_failed")
+        self.assertEqual(len(diagnostics), 1)
+        self.assertEqual(diagnostics[0][0], LaunchPhase.APP_CREATED)
+        self.assertEqual(diagnostics[0][1].code, "app_creation_failed")
+        self.assertIs(diagnostics[0][2], raised)
+
     def test_readiness_start_failure_closes_socket_and_joins_observer(self) -> None:
         self.observer = _Observer(
             self.events,
@@ -261,6 +319,19 @@ class WebLauncherTests(unittest.TestCase):
         self.assertEqual(result.error.code, "readiness_failed")
         self.assertNotIn("private readiness detail", result.error.safe_message)
         self.assertNotIn("server.run", self.events)
+        self.assertTrue(self.observer.joined)
+        self.assertTrue(self.socket.closed)
+
+    def test_asynchronous_readiness_error_becomes_terminal_launch_error(self) -> None:
+        self.observer.error = LauncherError(
+            code="browser_open_failed",
+            safe_message="The browser could not be opened.",
+        )
+
+        result = launch(lambda: self.root, dependencies=self.dependencies())
+
+        self.assertEqual(result.error.code, "browser_open_failed")
+        self.assertEqual(result.phases[-1], LaunchPhase.FAILED)
         self.assertTrue(self.observer.joined)
         self.assertTrue(self.socket.closed)
 
