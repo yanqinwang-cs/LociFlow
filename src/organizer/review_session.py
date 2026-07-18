@@ -10,7 +10,7 @@ from typing import Any
 from organizer.duplicates import find_exact_duplicates
 from organizer.grouping import build_organization_suggestions, find_project_groups
 from organizer.models import FileMetadata, MovePlanItem, OrganizationSuggestion, ReviewedPlanItem
-from organizer.organization_rules import load_organization_rules
+from organizer.organization_rules import OrganizationRules
 from organizer.planner import build_duplicate_review_plan
 from organizer.review import build_review_candidate_plan, detect_review_candidates
 from organizer.safety import validate_under_root
@@ -385,9 +385,10 @@ def _review_sort_value(
 def build_review_session_items(
     files: list[FileMetadata],
     root: Path,
+    *,
+    organization_rules: OrganizationRules,
 ) -> list[ReviewedPlanItem]:
     resolved_root = root.resolve()
-    organization_rules = load_organization_rules(resolved_root).rules
     duplicate_groups = find_exact_duplicates(files)
     duplicate_plan_items = build_duplicate_review_plan(
         duplicate_groups,

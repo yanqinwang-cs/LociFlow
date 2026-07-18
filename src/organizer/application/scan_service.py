@@ -3,8 +3,13 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from organizer.application.standards_read_service import (
+    build_standards_read_projection,
+)
 from organizer.application.view_models import ScanApplicationResult, ScanSummary
+from organizer.grouping import analyze_anchor_decisions
 from organizer.ollama_client import OllamaClient
+from organizer.organization_rules import load_organization_rules
 from organizer.reports import build_scan_report, write_report
 from organizer.scanner import scan_directory
 
@@ -17,12 +22,28 @@ def scan_root(
     llm_client: OllamaClient | None = None,
 ) -> ScanApplicationResult:
     metadata_items = tuple(scan_directory(root, max_depth=max_depth))
+    organization_rules = load_organization_rules(root)
     report = build_scan_report(
         root,
         max_depth=max_depth,
         refine_groups=refine_groups,
         llm_client=llm_client,
         metadata_items=metadata_items,
+        organization_rules=organization_rules,
+    )
+    anchor_decisions = (
+        tuple(
+            analyze_anchor_decisions(
+                list(metadata_items),
+                rules=organization_rules.require_rules(),
+            )
+        )
+        if organization_rules.available
+        else ()
+    )
+    standards = build_standards_read_projection(
+        organization_rules,
+        anchor_decisions,
     )
     resolved_root = root.resolve()
     summary_data = _mapping(report.get("summary"), "report summary")
@@ -51,6 +72,8 @@ def scan_root(
         ),
         warnings=warnings,
         metadata_items=metadata_items,
+        standards=standards,
+        organization_rules_load_result=organization_rules,
     )
 
 

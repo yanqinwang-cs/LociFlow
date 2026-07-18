@@ -13,7 +13,13 @@ from organizer.application.view_models import (
     ReviewSaveResult,
 )
 from organizer.application.view_models import ScanApplicationResult
+from organizer.application.standards_read_models import OrganizationUnavailableError
 from organizer.models import FileMetadata, ReviewedPlanItem
+from organizer.organization_rules import (
+    ORGANIZATION_RULES_UNAVAILABLE_CODE,
+    ORGANIZATION_RULES_UNAVAILABLE_MESSAGE,
+    load_organization_rules,
+)
 from organizer.review_session import (
     DECISION_APPROVED,
     DECISION_REJECTED,
@@ -86,7 +92,17 @@ def create_review_session(
 ) -> ReviewApplicationSession:
     resolved_root = root.resolve()
     metadata_items = scan_directory(resolved_root, max_depth=max_depth)
-    items = build_review_session_items(metadata_items, resolved_root)
+    organization_rules = load_organization_rules(resolved_root)
+    if not organization_rules.available:
+        raise OrganizationUnavailableError(
+            organization_rules.error_code or ORGANIZATION_RULES_UNAVAILABLE_CODE,
+            ORGANIZATION_RULES_UNAVAILABLE_MESSAGE,
+        )
+    items = build_review_session_items(
+        metadata_items,
+        resolved_root,
+        organization_rules=organization_rules.require_rules(),
+    )
 
     state: ReviewState | None = None
     if not ignore_review_state:
@@ -109,6 +125,17 @@ def create_review_session_from_scan_result(
     result: ScanApplicationResult,
 ) -> ReviewApplicationSession:
     """Create review rows from one completed scan result without rescanning."""
+    organization_rules = result.organization_rules_load_result
+    if organization_rules is None or not organization_rules.available:
+        raise OrganizationUnavailableError(
+            (
+                organization_rules.error_code
+                if organization_rules is not None
+                else ORGANIZATION_RULES_UNAVAILABLE_CODE
+            )
+            or ORGANIZATION_RULES_UNAVAILABLE_CODE,
+            ORGANIZATION_RULES_UNAVAILABLE_MESSAGE,
+        )
     resolved_root = result.root.resolve()
     items = build_review_session_items_from_report(result.report, resolved_root)
     state = load_review_state(resolved_root)

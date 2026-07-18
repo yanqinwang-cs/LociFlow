@@ -5,7 +5,9 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
+from organizer.application.standards_read_models import StandardsReadProjection
 from organizer.models import FileMetadata, ReviewedPlanItem
+from organizer.organization_rules import OrganizationRulesLoadResult
 from organizer.review_session import ReviewViewState
 from organizer.review_state import ReviewState
 
@@ -33,6 +35,8 @@ class ScanApplicationResult:
     summary: ScanSummary
     warnings: tuple[str, ...]
     metadata_items: tuple[FileMetadata, ...] = ()
+    standards: StandardsReadProjection | None = None
+    organization_rules_load_result: OrganizationRulesLoadResult | None = None
 
 
 @dataclass(frozen=True)

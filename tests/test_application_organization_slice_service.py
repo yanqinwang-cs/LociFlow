@@ -14,7 +14,9 @@ from organizer.application.file_kinds import consumer_file_kind
 from organizer.application.organization_slice_service import (
     build_read_only_organization_slice,
 )
+from organizer.application.standards_read_models import OrganizationUnavailableError
 from organizer.application.scan_service import scan_root
+from organizer.organization_rules import ORGANIZATION_RULES_RELATIVE_PATH
 
 
 COMPLETED_AT = datetime(2026, 7, 14, 10, 20, 30, tzinfo=timezone.utc)
@@ -42,6 +44,22 @@ class FileKindTests(unittest.TestCase):
 
 
 class OrganizationSliceServiceTests(unittest.TestCase):
+    def _write_rules(self, root: Path, **rules: object) -> None:
+        config = root / ORGANIZATION_RULES_RELATIVE_PATH
+        config.parent.mkdir(parents=True, exist_ok=True)
+        config.write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "locked_anchors": [],
+                    "ignored_terms": [],
+                    "anchor_aliases": {},
+                    **rules,
+                }
+            ),
+            encoding="utf-8",
+        )
+
     def test_projection_uses_scan_time_metadata_without_restating(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -126,6 +144,149 @@ class OrganizationSliceServiceTests(unittest.TestCase):
                 projection.summary.kept_by_standards,
                 len(projection.kept_by_standards),
             )
+
+    def test_saved_ignored_term_suppresses_plan_before_public_projection(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            destination = root / "Organized" / "EvoSim_project_slides" / "slides"
+            destination.mkdir(parents=True)
+            for name in (
+                "EvoSim_project_slides.pptx",
+                "EvoSim_project_slides_final.pptx",
+            ):
+                (root / name).write_text(name, encoding="utf-8")
+            self._write_rules(root, ignored_terms=["EvoSim project slides"])
+
+            result = scan_root(root)
+            projection = build_read_only_organization_slice(
+                scan_result=result,
+                scan_generation="scan-ignored",
+                completed_at=COMPLETED_AT,
+            )
+
+            self.assertEqual(result.report["organization_suggestions"], [])
+            self.assertFalse(projection.recommended_changes)
+            self.assertFalse(projection.choices_needed)
+            self.assertFalse(projection.summary.movement_tree)
+            kept = [
+                item for item in projection.kept_by_standards
+                if item.reason_code == "saved_standard_kept"
+            ]
+            self.assertEqual(len(kept), 2)
+            self.assertTrue(
+                all(item.standard.name == "Do not organize by EvoSim project slides" for item in kept)
+            )
+
+    def test_saved_locked_course_anchor_shapes_grouping_before_projection(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for folder in ("lectures", "recitations", "exams"):
+                (root / "Organized" / "CS1010X" / folder).mkdir(parents=True)
+            for name in (
+                "CS1010X lecture 1.pdf",
+                "CS1010X recitation 1.pdf",
+                "CS1010X finals 2026.pdf",
+            ):
+                (root / name).write_text(name, encoding="utf-8")
+            self._write_rules(root, locked_anchors=["CS1010X"])
+
+            result = scan_root(root)
+            projection = build_read_only_organization_slice(
+                scan_result=result,
+                scan_generation="scan-locked",
+                completed_at=COMPLETED_AT,
+            )
+
+            self.assertEqual(result.report["project_groups"][0]["group_name"], "CS1010X")
+            self.assertEqual(len(projection.recommended_changes), 3)
+            self.assertTrue(
+                all(
+                    change.destination_folder.startswith("Organized/CS1010X/")
+                    for change in projection.recommended_changes
+                )
+            )
+
+    def test_saved_alias_resolves_in_same_grouping_owner(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for folder in ("notes", "other"):
+                (root / "Organized" / "EvoSim" / folder).mkdir(parents=True)
+            (root / "Evo_notes.txt").write_text("notes", encoding="utf-8")
+            (root / "Evo_report.pdf").write_text("report", encoding="utf-8")
+            self._write_rules(
+                root,
+                locked_anchors=["EvoSim"],
+                anchor_aliases={"Evo": "EvoSim"},
+            )
+
+            result = scan_root(root)
+            projection = build_read_only_organization_slice(
+                scan_result=result,
+                scan_generation="scan-alias",
+                completed_at=COMPLETED_AT,
+            )
+
+            self.assertEqual(result.report["project_groups"][0]["group_name"], "EvoSim")
+            self.assertTrue(projection.recommended_changes)
+            self.assertEqual(
+                len(
+                    [
+                        item for item in result.standards.items
+                        if item.preset_type == "legacy_alias"
+                    ]
+                ),
+                1,
+            )
+
+    def test_built_in_protection_overrides_saved_locked_anchor(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            submissions = root / "Submissions"
+            submissions.mkdir()
+            (submissions / "CS1010X lecture 1.pdf").write_text("one", encoding="utf-8")
+            (submissions / "CS1010X lecture 2.pdf").write_text("two", encoding="utf-8")
+            self._write_rules(root, locked_anchors=["CS1010X"])
+
+            result = scan_root(root)
+            projection = build_read_only_organization_slice(
+                scan_result=result,
+                scan_generation="scan-protected-rule",
+                completed_at=COMPLETED_AT,
+            )
+
+            self.assertFalse(result.report["organization_suggestions"])
+            self.assertFalse(projection.recommended_changes)
+            self.assertEqual(len(projection.kept_by_standards), 2)
+            self.assertTrue(
+                all(
+                    item.standard.id == "builtin-protect-submission-folders"
+                    for item in projection.kept_by_standards
+                )
+            )
+
+    def test_unavailable_standards_cannot_create_public_slice(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "notes.txt").write_text("notes", encoding="utf-8")
+            config = root / ORGANIZATION_RULES_RELATIVE_PATH
+            config.parent.mkdir(parents=True)
+            config.write_text("{invalid", encoding="utf-8")
+            result = scan_root(root)
+
+            with self.assertRaises(OrganizationUnavailableError) as raised:
+                build_read_only_organization_slice(
+                    scan_result=result,
+                    scan_generation="scan-unavailable",
+                    completed_at=COMPLETED_AT,
+                )
+
+            self.assertEqual(raised.exception.code, "standards_unavailable")
+            self.assertGreaterEqual(result.summary.file_count, 1)
+            self.assertIn(
+                "notes.txt",
+                {item.relative_path.as_posix() for item in result.metadata_items},
+            )
+            self.assertEqual(result.summary.organization_suggestion_count, 0)
 
     def test_low_risk_existing_destination_is_recommended(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

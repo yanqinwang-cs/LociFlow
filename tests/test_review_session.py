@@ -13,7 +13,7 @@ from organizer.models import MovePlanItem, MoveResult, OperationLog, ReviewedPla
 from organizer.review_session import (
     approve_items,
     approved_plan_items,
-    build_review_session_items,
+    build_review_session_items as build_review_session_items_from_rules_snapshot,
     find_approved_move_conflicts,
     get_item,
     load_reviewed_plan_move_items,
@@ -22,8 +22,18 @@ from organizer.review_session import (
     reviewed_plan_data_to_move_items,
     summarize_review_items,
 )
+from organizer.organization_rules import load_organization_rules
 from organizer.review_state import load_review_state, review_state_path
 from organizer.scanner import scan_directory
+
+
+def build_review_session_items(files, root):
+    rules_snapshot = load_organization_rules(root).require_rules()
+    return build_review_session_items_from_rules_snapshot(
+        files,
+        root,
+        organization_rules=rules_snapshot,
+    )
 
 
 class ReviewSessionConstructionTests(unittest.TestCase):

@@ -20,24 +20,19 @@ from organizer.application.organization_slice_models import (
     OrganizationSliceSummary,
     RecommendedChange,
 )
+from organizer.application.standards_read_models import (
+    OrganizationUnavailableError,
+    StandardsReadProjection,
+)
+from organizer.application.standards_read_service import read_item_by_id
 from organizer.application.view_models import ScanApplicationResult
 from organizer.models import FileMetadata, MovePlanItem
 from organizer.organization_review import build_organization_review
 from organizer.scope import (
-    PROJECT_PROTECTION_STANDARD_ID,
-    SHARED_PROTECTION_STANDARD_ID,
-    SUBMISSION_PROTECTION_STANDARD_ID,
     ActionableEligibility,
     evaluate_actionable_source_path,
     is_actionable_destination_path,
 )
-
-
-_STANDARD_NAMES = {
-    PROJECT_PROTECTION_STANDARD_ID: "Protect project folders",
-    SUBMISSION_PROTECTION_STANDARD_ID: "Protect submission folders",
-    SHARED_PROTECTION_STANDARD_ID: "Protect shared folders",
-}
 
 
 @dataclass(frozen=True)
@@ -91,6 +86,7 @@ class InternalOrganizationProjection:
     protected_item_ids: frozenset[str]
     source_metadata_by_item_id: Mapping[str, FileMetadata]
     metadata_items: tuple[FileMetadata, ...]
+    standards: StandardsReadProjection
 
 
 def build_read_only_organization_slice(
@@ -118,6 +114,18 @@ def build_internal_organization_projection(
         raise ValueError("scan generation is required")
     if completed_at.tzinfo is None:
         raise ValueError("completed scan timestamp must include a timezone")
+    standards = scan_result.standards
+    if standards is None:
+        raise OrganizationUnavailableError(
+            "standards_unavailable",
+            "Standards could not be loaded. Fix them before organizing.",
+        )
+    if not standards.organization_available:
+        raise OrganizationUnavailableError(
+            standards.error_code or "standards_unavailable",
+            standards.attention_message
+            or "Standards could not be loaded. Fix them before organizing.",
+        )
     metadata_items = scan_result.metadata_items
     if not metadata_items:
         raise ValueError("completed scan metadata snapshot is unavailable")
@@ -151,7 +159,6 @@ def build_internal_organization_projection(
         for relative_path, metadata in metadata_by_path.items()
     }
 
-    kept = _kept_by_standards(evaluations, snapshots)
     duplicate_choices, duplicate_paths, internal_duplicates = _duplicate_choices(
         scan_result.report,
         evaluations,
@@ -178,6 +185,25 @@ def build_internal_organization_projection(
         metadata_by_path=metadata_by_path,
         evaluations=evaluations,
         root=scan_result.root,
+    )
+    visible_paths = {
+        change.item.relative_path for change in recommended
+    }
+    visible_paths.update(
+        choice.item.relative_path
+        for choice in destination_choices
+        if choice.item is not None
+    )
+    visible_paths.update(
+        copy.relative_path
+        for choice in duplicate_choices
+        for copy in choice.copies
+    )
+    kept = _kept_by_standards(
+        evaluations,
+        snapshots,
+        standards,
+        visible_paths=frozenset(visible_paths),
     )
     choices = tuple((*destination_choices, *duplicate_choices))
     movement_tree = _movement_tree(recommended)
@@ -218,6 +244,7 @@ def build_internal_organization_projection(
             }
         ),
         metadata_items=tuple(metadata_items),
+        standards=standards,
     )
 
 
@@ -248,27 +275,52 @@ def _consumer_snapshot(
 def _kept_by_standards(
     evaluations: dict[str, ActionableEligibility],
     snapshots: dict[str, ConsumerFileSnapshot],
+    standards: StandardsReadProjection,
+    *,
+    visible_paths: frozenset[str],
 ) -> tuple[KeptByStandard, ...]:
     kept: list[KeptByStandard] = []
+    kept_paths: set[str] = set()
     for relative_path in sorted(snapshots):
         evaluation = evaluations[relative_path]
+        standard = read_item_by_id(standards, evaluation.standard_id)
         if (
             evaluation.allowed
             or evaluation.reason_code is None
-            or evaluation.standard_id not in _STANDARD_NAMES
+            or standard is None
         ):
             continue
         kept.append(
             KeptByStandard(
                 item=snapshots[relative_path],
                 standard=ConsumerStandard(
-                    id=evaluation.standard_id,
-                    name=_STANDARD_NAMES[evaluation.standard_id],
+                    id=standard.id,
+                    name=standard.name,
                 ),
                 reason_code=evaluation.reason_code,
             )
         )
-    return tuple(kept)
+        kept_paths.add(relative_path)
+
+    for standard in standards.items:
+        if standard.preset_type != "legacy_ignored_term":
+            continue
+        for relative_path in standard.matched_relative_paths:
+            if (
+                relative_path not in snapshots
+                or relative_path in kept_paths
+                or relative_path in visible_paths
+            ):
+                continue
+            kept.append(
+                KeptByStandard(
+                    item=snapshots[relative_path],
+                    standard=ConsumerStandard(id=standard.id, name=standard.name),
+                    reason_code="saved_standard_kept",
+                )
+            )
+            kept_paths.add(relative_path)
+    return tuple(sorted(kept, key=lambda item: item.item.relative_path))
 
 
 def _duplicate_choices(

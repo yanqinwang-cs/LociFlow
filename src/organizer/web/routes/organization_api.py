@@ -20,6 +20,7 @@ from organizer.application.organization_movement_service import (
 from organizer.application.organization_slice_service import (
     build_internal_organization_projection,
 )
+from organizer.application.standards_read_models import OrganizationUnavailableError
 from organizer.web.forms import FormDataError, read_urlencoded_form
 from organizer.web.scan_jobs import ScanJobSnapshot
 from organizer.web.security import (
@@ -47,6 +48,10 @@ _MAX_ID_COUNT = 500
 _MAX_ID_LENGTH = 2048
 
 _ERRORS = {
+    "standards_unavailable": (
+        409,
+        "Standards could not be loaded. Fix them before organizing.",
+    ),
     "scan_generation_mismatch": (
         409,
         "The organization review belongs to an earlier scan.",
@@ -82,6 +87,10 @@ _ERRORS = {
 }
 
 _MOVEMENT_ERRORS = {
+    "standards_unavailable": (
+        409,
+        "Standards could not be loaded. Fix them before organizing.",
+    ),
     "approved_plan_not_found": (409, "The approved organization plan is unavailable."),
     "approved_plan_stale": (409, "The approved organization plan is stale."),
     "scan_generation_mismatch": (
@@ -121,6 +130,8 @@ def create_organization_api_router() -> APIRouter:
                 scan_or_response,
                 projection,
             )
+        except OrganizationUnavailableError as error:
+            return _error_response(error.code, error.safe_message, 409)
         except (OSError, TypeError, ValueError):
             return _error_response(
                 "organization_unavailable",
@@ -224,6 +235,8 @@ def create_organization_api_router() -> APIRouter:
                 )
             else:
                 raise OrganizationDecisionError("invalid_option")
+        except OrganizationUnavailableError as error:
+            return _error_response(error.code, error.safe_message, 409)
         except OrganizationDecisionError as error:
             return _decision_error(error)
         except WebSecurityError:
@@ -261,6 +274,8 @@ def create_organization_api_router() -> APIRouter:
                 scan_generation=_required(form.get("scan_generation")),
                 expected_revision=_revision(form.get("expected_revision")),
             )
+        except OrganizationUnavailableError as error:
+            return _error_response(error.code, error.safe_message, 409)
         except OrganizationDecisionError as error:
             return _decision_error(error)
         except WebSecurityError:
@@ -302,7 +317,11 @@ def create_organization_api_router() -> APIRouter:
                 coordinator=request.app.state.organization_execution,
                 operation_repository=request.app.state.organization_operations,
             )
-        except (OrganizationDecisionError, OrganizationMovementError) as error:
+        except (
+            OrganizationDecisionError,
+            OrganizationMovementError,
+            OrganizationUnavailableError,
+        ) as error:
             return _movement_error(error.code)
         except WebSecurityError:
             return _error_response(
@@ -352,7 +371,11 @@ def create_organization_api_router() -> APIRouter:
                 coordinator=request.app.state.organization_execution,
                 operation_repository=request.app.state.organization_operations,
             )
-        except (OrganizationDecisionError, OrganizationMovementError) as error:
+        except (
+            OrganizationDecisionError,
+            OrganizationMovementError,
+            OrganizationUnavailableError,
+        ) as error:
             return _movement_error(error.code)
         except WebSecurityError:
             return _error_response(

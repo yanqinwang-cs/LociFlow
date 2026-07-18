@@ -28,7 +28,12 @@ from organizer.models import (
     ProjectGroup,
     ReviewCandidate,
 )
-from organizer.organization_rules import OrganizationRulesLoadResult, load_organization_rules
+from organizer.organization_rules import (
+    DEFAULT_IGNORED_TERMS,
+    ORGANIZATION_RULES_STATUS_LOADED,
+    OrganizationRulesLoadResult,
+    load_organization_rules,
+)
 from organizer.pattern_inference import (
     InferredRuleCandidate,
     OrganizationPattern,
@@ -89,6 +94,7 @@ def build_scan_report(
     llm_client: object | None = None,
     *,
     metadata_items: list[FileMetadata] | tuple[FileMetadata, ...] | None = None,
+    organization_rules: OrganizationRulesLoadResult | None = None,
 ) -> dict[str, Any]:
     resolved_root = root.resolve()
     if metadata_items is None:
@@ -96,7 +102,7 @@ def build_scan_report(
     else:
         metadata_items = list(metadata_items)
     file_items = [item for item in metadata_items if not item.is_dir]
-    organization_rules = load_organization_rules(resolved_root)
+    organization_rules = organization_rules or load_organization_rules(resolved_root)
 
     duplicate_groups = find_exact_duplicates(metadata_items)
     duplicate_review_plan = build_duplicate_review_plan(
@@ -109,26 +115,37 @@ def build_scan_report(
         review_candidates,
         resolved_root,
     )
-    anchor_decisions = analyze_anchor_decisions(
-        metadata_items,
-        rules=organization_rules.rules,
-    )
-    pattern_inference = infer_organization_patterns(
-        metadata_items,
-        anchor_decisions,
-    )
+    if organization_rules.available:
+        active_rules = organization_rules.require_rules()
+        anchor_decisions = analyze_anchor_decisions(
+            metadata_items,
+            rules=active_rules,
+        )
+        pattern_inference = infer_organization_patterns(
+            metadata_items,
+            anchor_decisions,
+        )
+        project_groups = find_project_groups(
+            metadata_items,
+            rules=active_rules,
+        )
+        organization_suggestions = build_organization_suggestions(
+            project_groups,
+            resolved_root,
+        )
+    else:
+        anchor_decisions = []
+        pattern_inference = PatternInferenceResult(
+            patterns=[],
+            rule_candidates=[],
+            anchor_evidence={},
+        )
+        project_groups = []
+        organization_suggestions = []
     rule_audit = build_rule_audit(
         metadata_items,
         resolved_root,
         organization_rules,
-    )
-    project_groups = find_project_groups(
-        metadata_items,
-        rules=organization_rules.rules,
-    )
-    organization_suggestions = build_organization_suggestions(
-        project_groups,
-        resolved_root,
     )
 
     warnings: list[str] = []
@@ -146,7 +163,12 @@ def build_scan_report(
     refinement_status = "not_requested"
     refined_suggestions: list[OrganizationSuggestion] = []
 
-    if refine_groups:
+    if refine_groups and not organization_rules.available:
+        refinement_status = "failed"
+        warnings.append(
+            "Organization refinement was skipped because Standards are unavailable."
+        )
+    elif refine_groups:
         refinement_status = "completed"
         if llm_client is None:
             refinement_status = "failed"
@@ -429,17 +451,24 @@ def _organization_rules_to_report(
     source_path = None
     if load_result.source_path is not None:
         source_path = load_result.source_path.relative_to(root).as_posix()
+    rules = (
+        load_result.rules
+        if load_result.status == ORGANIZATION_RULES_STATUS_LOADED
+        else None
+    )
     return {
         "status": load_result.status,
         "path": source_path,
         "message": load_result.message,
         "locked_anchors": sorted(
-            load_result.rules.anchor_display_names.get(anchor, anchor)
-            for anchor in load_result.rules.locked_anchors
-        ),
-        "ignored_terms": sorted(load_result.rules.ignored_terms),
-        "anchor_aliases": dict(sorted(load_result.rules.anchor_aliases.items())),
-        "preferred_granularities": sorted(load_result.rules.preferred_granularities),
+            rules.anchor_display_names.get(anchor, anchor)
+            for anchor in rules.locked_anchors
+        ) if rules is not None else [],
+        "ignored_terms": sorted(rules.ignored_terms - DEFAULT_IGNORED_TERMS)
+        if rules is not None
+        else [],
+        "anchor_aliases": dict(sorted(rules.anchor_aliases.items())) if rules is not None else {},
+        "preferred_granularities": sorted(rules.preferred_granularities) if rules is not None else [],
     }
 
 

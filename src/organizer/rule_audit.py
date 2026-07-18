@@ -28,7 +28,7 @@ def build_rule_audit(
     organization_rules: OrganizationRulesLoadResult,
 ) -> RuleAudit:
     rules_path = _rules_path_for_report(organization_rules, root)
-    if organization_rules.status not in {"loaded", "loaded_with_warnings"}:
+    if organization_rules.status != "loaded":
         warnings = ["No organization rules file found. Rule-aware audit was skipped."]
         if organization_rules.source_path is not None:
             warnings = [
@@ -49,7 +49,7 @@ def build_rule_audit(
 
     explicit_rules = _explicit_rule_values(organization_rules)
     before_rules = default_organization_rules()
-    after_rules = organization_rules.rules
+    after_rules = organization_rules.require_rules()
     before_decisions = analyze_anchor_decisions(files, rules=before_rules)
     after_decisions = analyze_anchor_decisions(files, rules=after_rules)
     before_groups = find_project_groups(files, rules=before_rules)

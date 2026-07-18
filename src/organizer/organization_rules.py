@@ -2,12 +2,27 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+import os
 from pathlib import Path
 from typing import Any
 
 
 ORGANIZATION_RULES_VERSION = 1
 ORGANIZATION_RULES_RELATIVE_PATH = Path("AI_Review") / "config" / "organization_rules.json"
+ORGANIZATION_RULES_STATUS_MISSING = "missing"
+ORGANIZATION_RULES_STATUS_LOADED = "loaded"
+ORGANIZATION_RULES_STATUS_UNAVAILABLE = "unavailable"
+ORGANIZATION_RULES_UNAVAILABLE_CODE = "standards_unavailable"
+ORGANIZATION_RULES_UNAVAILABLE_MESSAGE = (
+    "Standards could not be loaded. Fix them before organizing."
+)
+ORGANIZATION_RULES_FIELDS = {
+    "version",
+    "locked_anchors",
+    "ignored_terms",
+    "anchor_aliases",
+    "preferred_granularities",
+}
 DEFAULT_IGNORED_TERMS = frozenset(
     {
         "appendix",
@@ -56,12 +71,30 @@ class OrganizationRules:
 
 @dataclass(frozen=True)
 class OrganizationRulesLoadResult:
-    rules: OrganizationRules
+    rules: OrganizationRules | None
     source_path: Path | None
     status: str
     message: str
     warnings: list[str]
+    error_code: str | None = None
     raw_data: dict[str, Any] | None = None
+
+    @property
+    def available(self) -> bool:
+        return self.status != ORGANIZATION_RULES_STATUS_UNAVAILABLE
+
+    def require_rules(self) -> OrganizationRules:
+        if self.rules is None:
+            raise OrganizationRulesUnavailableError(
+                self.error_code or ORGANIZATION_RULES_UNAVAILABLE_CODE
+            )
+        return self.rules
+
+
+class OrganizationRulesUnavailableError(ValueError):
+    def __init__(self, code: str = ORGANIZATION_RULES_UNAVAILABLE_CODE) -> None:
+        super().__init__(code)
+        self.code = code
 
 
 def default_organization_rules() -> OrganizationRules:
@@ -75,46 +108,71 @@ def default_organization_rules() -> OrganizationRules:
 
 
 def load_organization_rules(root: Path) -> OrganizationRulesLoadResult:
-    rules_path = root.resolve() / ORGANIZATION_RULES_RELATIVE_PATH
-    if not rules_path.exists():
+    resolved_root = root.resolve()
+    rules_path = resolved_root / ORGANIZATION_RULES_RELATIVE_PATH
+    if _rules_path_is_unsafe(resolved_root, rules_path):
+        return _unavailable_result(rules_path, "Saved Standards storage is unsafe.")
+    if not os.path.lexists(rules_path):
         return OrganizationRulesLoadResult(
             rules=default_organization_rules(),
             source_path=None,
-            status="defaults",
-            message="No organization rules file found. Using conservative built-in defaults.",
+            status=ORGANIZATION_RULES_STATUS_MISSING,
+            message="No saved Standards were found. Using conservative built-in defaults.",
             warnings=[],
         )
     if not rules_path.is_file():
-        return OrganizationRulesLoadResult(
-            rules=default_organization_rules(),
-            source_path=rules_path,
-            status="defaults_with_warnings",
-            message="Organization rules path is not a file. Using conservative built-in defaults.",
-            warnings=[f"Organization rules path is not a file: {ORGANIZATION_RULES_RELATIVE_PATH.as_posix()}"],
-        )
+        return _unavailable_result(rules_path, "Saved Standards storage is unsafe.")
 
     try:
         with rules_path.open("r", encoding="utf-8") as file:
             data = json.load(file)
-    except json.JSONDecodeError as error:
-        return OrganizationRulesLoadResult(
-            rules=default_organization_rules(),
-            source_path=rules_path,
-            status="defaults_with_warnings",
-            message="Organization rules JSON is invalid. Using conservative built-in defaults.",
-            warnings=[f"Organization rules JSON is invalid: {error}"],
-        )
+    except (json.JSONDecodeError, UnicodeError):
+        return _unavailable_result(rules_path, "Saved Standards JSON is invalid.")
+    except OSError:
+        return _unavailable_result(rules_path, "Saved Standards could not be read.")
+
+    if not isinstance(data, dict):
+        return _unavailable_result(rules_path, "Saved Standards must be a JSON object.")
+    if data.get("version") != ORGANIZATION_RULES_VERSION:
+        return _unavailable_result(rules_path, "Saved Standards version is unsupported.")
+    if set(data) - ORGANIZATION_RULES_FIELDS:
+        return _unavailable_result(rules_path, "Saved Standards contain unsupported fields.")
 
     rules, warnings = organization_rules_from_data(data)
-    status = "loaded_with_warnings" if warnings else "loaded"
+    if warnings:
+        return _unavailable_result(rules_path, "Saved Standards are malformed.")
     return OrganizationRulesLoadResult(
         rules=rules,
         source_path=rules_path,
-        status=status,
+        status=ORGANIZATION_RULES_STATUS_LOADED,
         message=f"Loaded organization rules from {ORGANIZATION_RULES_RELATIVE_PATH.as_posix()}.",
-        warnings=warnings,
+        warnings=[],
         raw_data=data,
     )
+
+
+def _unavailable_result(path: Path, warning: str) -> OrganizationRulesLoadResult:
+    return OrganizationRulesLoadResult(
+        rules=None,
+        source_path=path,
+        status=ORGANIZATION_RULES_STATUS_UNAVAILABLE,
+        message=ORGANIZATION_RULES_UNAVAILABLE_MESSAGE,
+        warnings=[warning],
+        error_code=ORGANIZATION_RULES_UNAVAILABLE_CODE,
+    )
+
+
+def _rules_path_is_unsafe(root: Path, rules_path: Path) -> bool:
+    current = root
+    for part in ORGANIZATION_RULES_RELATIVE_PATH.parts:
+        current = current / part
+        if os.path.lexists(current) and current.is_symlink():
+            return True
+    try:
+        rules_path.resolve(strict=False).relative_to(root)
+    except (OSError, ValueError):
+        return True
+    return False
 
 
 def organization_rules_from_data(data: object) -> tuple[OrganizationRules, list[str]]:

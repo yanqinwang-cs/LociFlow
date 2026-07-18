@@ -14,10 +14,77 @@ from organizer.application.review_service import (
     update_review_page_size,
     update_review_sort,
 )
+from organizer.application.standards_read_models import OrganizationUnavailableError
 from organizer.application.scan_service import scan_root
+from organizer.organization_rules import ORGANIZATION_RULES_RELATIVE_PATH
 
 
 class ReviewFromScanTests(unittest.TestCase):
+    def test_unavailable_scan_stays_unavailable_after_rules_are_repaired(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = root / ORGANIZATION_RULES_RELATIVE_PATH
+            config.parent.mkdir(parents=True)
+            config.write_text('{"version":', encoding="utf-8")
+            (root / "evosim_notes.txt").write_text("notes", encoding="utf-8")
+            (root / "evosim_slides.pdf").write_text("slides", encoding="utf-8")
+            unavailable_scan = scan_root(root)
+
+            config.write_text(
+                '{"version": 1, "locked_anchors": ["Evosim"]}',
+                encoding="utf-8",
+            )
+
+            with self.assertRaises(OrganizationUnavailableError):
+                create_review_session_from_scan_result(unavailable_scan)
+
+            recovered_scan = scan_root(root)
+            recovered_session = create_review_session_from_scan_result(recovered_scan)
+
+        self.assertTrue(
+            any(item.category == "organization" for item in recovered_session.items)
+        )
+
+    def test_review_uses_scan_bound_rules_after_durable_rules_change(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = root / ORGANIZATION_RULES_RELATIVE_PATH
+            config.parent.mkdir(parents=True)
+            for anchor in ("alpha", "beta"):
+                (root / f"{anchor}_notes.txt").write_text("notes", encoding="utf-8")
+                (root / f"{anchor}_slides.pdf").write_text("slides", encoding="utf-8")
+            config.write_text(
+                '{"version": 1, "locked_anchors": ["alpha"]}',
+                encoding="utf-8",
+            )
+            scan_with_rules_a = scan_root(root)
+            config.write_text(
+                '{"version": 1, "locked_anchors": ["beta"]}',
+                encoding="utf-8",
+            )
+
+            with mock.patch(
+                "organizer.application.review_service.load_organization_rules",
+                side_effect=AssertionError("review must not reload Standards"),
+            ):
+                session_a = create_review_session_from_scan_result(scan_with_rules_a)
+
+            scan_with_rules_b = scan_root(root)
+            session_b = create_review_session_from_scan_result(scan_with_rules_b)
+
+        sources_a = {
+            item.plan_item.source.name
+            for item in session_a.items
+            if item.category == "organization"
+        }
+        sources_b = {
+            item.plan_item.source.name
+            for item in session_b.items
+            if item.category == "organization"
+        }
+        self.assertEqual(sources_a, {"alpha_notes.txt", "alpha_slides.pdf"})
+        self.assertEqual(sources_b, {"beta_notes.txt", "beta_slides.pdf"})
+
     def test_rows_come_from_authoritative_report_without_rescanning(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

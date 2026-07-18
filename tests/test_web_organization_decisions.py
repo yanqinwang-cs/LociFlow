@@ -10,6 +10,7 @@ import unittest
 import httpx
 
 from organizer.application.scan_service import scan_root
+from organizer.organization_rules import ORGANIZATION_RULES_RELATIVE_PATH
 from organizer.web.app import create_app
 from organizer.web.config import WebAppConfig
 from organizer.web.scan_jobs import ScanJobSnapshot
@@ -223,6 +224,40 @@ class WebOrganizationDecisionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(mutation.json()["error"]["code"], "approval_already_completed")
         self.assertFalse((self.root / "AI_Review" / "operation_logs").exists())
         self.assertTrue((self.root / "EvoSim_project_slides.pptx").exists())
+
+    async def test_later_standards_failure_does_not_alter_existing_approval(self) -> None:
+        async with _client(self.app) as client:
+            csrf = await self._authenticate(client)
+            await self._bulk(client, csrf)
+            approved = await client.post(
+                "/api/organization/approval",
+                data={
+                    "csrf_token": csrf,
+                    "scan_generation": "scan-one",
+                    "expected_revision": "1",
+                },
+                headers=_origin(),
+            )
+            sessions_before = dict(self.app.state.organization_decisions._sessions)
+            config = self.root / ORGANIZATION_RULES_RELATIVE_PATH
+            config.parent.mkdir(parents=True, exist_ok=True)
+            config.write_text("{invalid", encoding="utf-8")
+            self.result = scan_root(self.root)
+            self._complete("scan-two")
+            unavailable = await client.get("/api/organization/current")
+            preview = await client.post(
+                "/api/organization/move/preview",
+                data={"csrf_token": csrf},
+                headers=_origin(),
+            )
+
+        self.assertEqual(approved.status_code, 200)
+        self.assertEqual(unavailable.json()["error"]["code"], "standards_unavailable")
+        self.assertEqual(preview.json()["error"]["code"], "standards_unavailable")
+        self.assertEqual(
+            self.app.state.organization_decisions._sessions,
+            sessions_before,
+        )
 
     async def test_approval_rejects_changed_source_and_existing_destination(
         self,

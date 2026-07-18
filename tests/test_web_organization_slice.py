@@ -3,12 +3,14 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import json
 from pathlib import Path
+import re
 import tempfile
 import unittest
 
 import httpx
 
 from organizer.application.scan_service import scan_root
+from organizer.organization_rules import ORGANIZATION_RULES_RELATIVE_PATH
 from organizer.web.app import create_app
 from organizer.web.config import WebAppConfig
 from organizer.web.scan_jobs import ScanJobSnapshot
@@ -120,6 +122,50 @@ class WebOrganizationSliceTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(response.json()["error"]["code"], "invalid_query")
             self.assertEqual(response.headers["cache-control"], "no-store")
         self.assertEqual(post.status_code, 405)
+
+    async def test_unavailable_standards_block_review_approval_and_movement_then_recover(self) -> None:
+        config = self.root / ORGANIZATION_RULES_RELATIVE_PATH
+        config.parent.mkdir(parents=True, exist_ok=True)
+        config.write_text("{invalid", encoding="utf-8")
+        self.result = scan_root(self.root)
+        self._complete_scan()
+
+        async with _client(self.app) as client:
+            await client.get(f"/launch/{self.token}", follow_redirects=False)
+            shell = await client.get("/loci-flow")
+            match = re.search(r'<meta name="csrf-token" content="([^"]+)">', shell.text)
+            assert match is not None
+            csrf = match.group(1)
+            current = await client.get("/api/organization/current")
+            approval = await client.post(
+                "/api/organization/approval",
+                data={
+                    "csrf_token": csrf,
+                    "scan_generation": "scan-current",
+                    "expected_revision": "0",
+                },
+                headers={"Origin": "http://127.0.0.1"},
+            )
+            preview = await client.post(
+                "/api/organization/move/preview",
+                data={"csrf_token": csrf},
+                headers={"Origin": "http://127.0.0.1"},
+            )
+
+            config.write_text('{"version": 1}', encoding="utf-8")
+            self.result = scan_root(self.root)
+            self._complete_scan()
+            recovered = await client.get("/api/organization/current")
+
+        for response in (current, approval, preview):
+            self.assertEqual(response.status_code, 409)
+            self.assertEqual(response.json()["error"]["code"], "standards_unavailable")
+            self.assertEqual(
+                response.json()["error"]["message"],
+                "Standards could not be loaded. Fix them before organizing.",
+            )
+        self.assertEqual(self.app.state.organization_decisions._sessions, {})
+        self.assertEqual(recovered.status_code, 200)
 
     def _complete_scan(self) -> None:
         self.app.state.scan_jobs._snapshot = ScanJobSnapshot(

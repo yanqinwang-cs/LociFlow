@@ -67,6 +67,7 @@ class ScanServiceTests(unittest.TestCase):
                 refine_groups=False,
                 llm_client=None,
                 metadata_items=result.metadata_items,
+                organization_rules=mock.ANY,
             )
 
     def test_application_scan_performs_one_scanner_pass(self) -> None:
@@ -98,6 +99,9 @@ class ScanServiceTests(unittest.TestCase):
             warning_result = scan_root(root)
             self.assertTrue(warning_result.warnings)
             self.assertEqual(warning_result.warnings, tuple(warning_result.report["warnings"]))
+            self.assertEqual(warning_result.standards.status, "unavailable")
+            self.assertGreaterEqual(warning_result.summary.file_count, 1)
+            self.assertEqual(warning_result.summary.organization_suggestion_count, 0)
 
     def test_invalid_root_errors_are_reused(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -140,6 +144,7 @@ class ScanServiceTests(unittest.TestCase):
                 refine_groups=True,
                 llm_client=client,
                 metadata_items=result.metadata_items,
+                organization_rules=mock.ANY,
             )
 
 

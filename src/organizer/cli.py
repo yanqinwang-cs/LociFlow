@@ -198,7 +198,8 @@ def main() -> int:
         return 0
 
     metadata_items = scan_directory(args.folder, max_depth=args.max_depth)
-    organization_rules = load_organization_rules(args.folder).rules
+    organization_rules_result = load_organization_rules(args.folder)
+    organization_rules = organization_rules_result.rules
     print(f"Metadata report for {args.folder.resolve()}")
     print(f"Items: {len(metadata_items)}")
 
@@ -268,10 +269,14 @@ def main() -> int:
     project_groups = None
 
     if args.project_groups:
+        if organization_rules is None:
+            parser.error(organization_rules_result.message)
         project_groups = find_project_groups(metadata_items, rules=organization_rules)
         _print_project_groups(project_groups)
 
     if args.plan_organization or args.apply_organization_plan:
+        if organization_rules is None:
+            parser.error(organization_rules_result.message)
         if project_groups is None:
             project_groups = find_project_groups(metadata_items, rules=organization_rules)
         suggestions = build_organization_suggestions(project_groups, args.folder)
@@ -299,6 +304,8 @@ def main() -> int:
         or args.plan_refined_organization
         or args.apply_refined_organization_plan
     ):
+        if organization_rules is None:
+            parser.error(organization_rules_result.message)
         _validate_llm_args(parser, args.llm_provider, args.llm_model)
         if project_groups is None:
             project_groups = find_project_groups(metadata_items, rules=organization_rules)
