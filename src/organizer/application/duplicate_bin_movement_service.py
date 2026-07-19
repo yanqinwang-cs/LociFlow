@@ -60,6 +60,10 @@ from organizer.application.duplicate_bin_repository import (
     DuplicateBinRepositoryError,
 )
 from organizer.application.execution_coordinator import OrganizationExecutionCoordinator
+from organizer.application.filesystem_operation_admission import (
+    FilesystemOperationAdmission,
+    FilesystemOperationInspector,
+)
 from organizer.application.runtime_lifecycle import RuntimeOperationKind
 from organizer.duplicates import hash_file
 from organizer.executor import MovementRecordingError, apply_move_plan
@@ -151,6 +155,7 @@ def execute_duplicate_bin_movement(
     authorization_repository: DuplicateBinAuthorizationRepository,
     operation_repository: DuplicateBinOperationRepository,
     coordinator: OrganizationExecutionCoordinator,
+    filesystem_operation_admission: FilesystemOperationAdmission | None = None,
     now: str | None = None,
 ) -> DuplicateBinOperationProjection:
     _server_uuid(confirmation_token, "invalid_confirmation_token")
@@ -162,9 +167,6 @@ def execute_duplicate_bin_movement(
         batch_repository,
         authorization_repository,
     )
-    existing = operation_repository.find_for_authorization(confirmation_token)
-    if existing is not None:
-        return _project(existing)
     if not coordinator.try_acquire(RuntimeOperationKind.DUPLICATE_BIN_MOVEMENT):
         raise DuplicateBinMovementError("movement_or_undo_in_progress")
     try:
@@ -174,19 +176,30 @@ def execute_duplicate_bin_movement(
             batch_repository,
             authorization_repository,
         )
+        batch = None
+        if authorization.status == AUTH_AVAILABLE:
+            current_time = _timestamp(now or datetime.now(timezone.utc).isoformat())
+            if current_time >= _timestamp(authorization.expires_at):
+                raise DuplicateBinMovementError("confirmation_expired")
+            try:
+                batch = batch_repository.load(authorization.batch_id)
+            except DuplicateBinRepositoryError as error:
+                raise DuplicateBinMovementError("duplicate_batch_not_found") from error
+            _validate_authorization(authorization, batch)
+
+        admission = filesystem_operation_admission or FilesystemOperationAdmission(
+            FilesystemOperationInspector(batch_repository.root)
+        )
+        if admission.root != batch_repository.root:
+            raise DuplicateBinMovementError("duplicate_batch_stale")
+        admission.inspect_and_require_clear()
+
         existing = operation_repository.find_for_authorization(confirmation_token)
         if existing is not None:
             return _project(existing)
         if authorization.status != AUTH_AVAILABLE:
             raise DuplicateBinMovementError("invalid_confirmation_token")
-        current_time = _timestamp(now or datetime.now(timezone.utc).isoformat())
-        if current_time >= _timestamp(authorization.expires_at):
-            raise DuplicateBinMovementError("confirmation_expired")
-        try:
-            batch = batch_repository.load(authorization.batch_id)
-        except DuplicateBinRepositoryError as error:
-            raise DuplicateBinMovementError("duplicate_batch_not_found") from error
-        _validate_authorization(authorization, batch)
+        assert batch is not None
 
         plan, expected_moves, preflight_digest = _preflight(
             batch, batch_repository.root

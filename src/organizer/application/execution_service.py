@@ -10,6 +10,10 @@ from organizer.application.execution_coordinator import (
     OrganizationExecutionCoordinator,
     approved_plan_identity,
 )
+from organizer.application.filesystem_operation_admission import (
+    FilesystemOperationAdmission,
+    FilesystemOperationInspector,
+)
 from organizer.application.runtime_lifecycle import RuntimeOperationKind
 from organizer.application.organization_decision_models import (
     STATUS_READY_TO_MOVE,
@@ -115,6 +119,7 @@ def move_approved_organization(
     coordinator: OrganizationExecutionCoordinator,
     operation_repository: OrganizationOperationRepository,
     confirmation: str,
+    filesystem_operation_admission: FilesystemOperationAdmission | None = None,
 ) -> OrganizationOperationOutcome:
     if not coordinator.try_acquire(RuntimeOperationKind.ORGANIZATION_MOVEMENT):
         raise OrganizationExecutionError("movement_already_started")
@@ -130,7 +135,15 @@ def move_approved_organization(
             current_scan_generation,
             authorization,
             coordinator,
+            require_available=False,
         )
+
+        admission = filesystem_operation_admission or FilesystemOperationAdmission(
+            FilesystemOperationInspector(resolved_root)
+        )
+        if admission.root != resolved_root:
+            raise OrganizationExecutionError("approved_plan_stale")
+        admission.inspect_and_require_clear()
 
         try:
             existing = operation_repository.find_for_plan(
@@ -141,6 +154,8 @@ def move_approved_organization(
         except ValueError as error:
             raise OrganizationExecutionError("movement_recovery_required") from error
         if existing is not None:
+            if existing.authorization_id != authorization.authorization_id:
+                raise OrganizationExecutionError("movement_already_started")
             if existing.status in REPLAYABLE_TERMINAL_STATUSES:
                 return _safe_outcome(existing)
             if existing.status == STATUS_INTERRUPTED:
@@ -154,6 +169,8 @@ def move_approved_organization(
                 else "movement_already_started"
             )
             raise OrganizationExecutionError(code)
+
+        _require_available_authorization(authorization, coordinator)
 
         plan_items, expected_moves = _preflight(approved_plan, resolved_root)
         now = _utc_timestamp()
@@ -402,6 +419,8 @@ def _validate_approved_plan(
     current_scan_generation: str,
     authorization: MovementAuthorization,
     coordinator: OrganizationExecutionCoordinator,
+    *,
+    require_available: bool = True,
 ) -> None:
     if approved_plan.status != STATUS_READY_TO_MOVE:
         raise OrganizationExecutionError("approved_plan_not_found")
@@ -412,12 +431,20 @@ def _validate_approved_plan(
     )
     if current_authorization is None:
         raise OrganizationExecutionError("approved_plan_not_found")
-    if current_authorization != authorization:
-        if current_authorization.status != AUTHORIZATION_AVAILABLE:
-            raise OrganizationExecutionError("movement_already_started")
+    if (
+        current_authorization.authorization_id != authorization.authorization_id
+        or current_authorization.scan_generation != authorization.scan_generation
+        or current_authorization.decision_revision != authorization.decision_revision
+        or current_authorization.approved_at != authorization.approved_at
+        or current_authorization.approved_plan_identity
+        != authorization.approved_plan_identity
+        or current_authorization.browser_session_id
+        != authorization.browser_session_id
+        or current_authorization.configured_root_identity
+        != authorization.configured_root_identity
+        or current_authorization.issued_at != authorization.issued_at
+    ):
         raise OrganizationExecutionError("approved_plan_stale")
-    if authorization.status != AUTHORIZATION_AVAILABLE:
-        raise OrganizationExecutionError("movement_already_started")
     if (
         authorization.scan_generation != approved_plan.scan_generation
         or authorization.decision_revision != approved_plan.decision_revision
@@ -425,6 +452,21 @@ def _validate_approved_plan(
         or authorization.approved_plan_identity != approved_plan_identity(approved_plan)
     ):
         raise OrganizationExecutionError("approved_plan_stale")
+    if require_available:
+        _require_available_authorization(authorization, coordinator)
+
+
+def _require_available_authorization(
+    authorization: MovementAuthorization,
+    coordinator: OrganizationExecutionCoordinator,
+) -> None:
+    current = coordinator.authorization_snapshot(authorization.authorization_id)
+    if (
+        current is None
+        or current != authorization
+        or current.status != AUTHORIZATION_AVAILABLE
+    ):
+        raise OrganizationExecutionError("movement_already_started")
 
 
 def _preflight(

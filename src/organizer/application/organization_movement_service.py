@@ -13,6 +13,9 @@ from organizer.application.execution_service import (
     _issue_movement_authorization,
     move_approved_organization,
 )
+from organizer.application.filesystem_operation_admission import (
+    FilesystemOperationAdmission,
+)
 from organizer.application.organization_decision_models import (
     STATUS_READY_TO_MOVE,
     ApprovedOrganizationPlan,
@@ -22,7 +25,6 @@ from organizer.application.organization_movement_models import (
     OrganizationMovementPreview,
 )
 from organizer.application.organization_operation_models import (
-    AUTHORIZATION_AVAILABLE,
     MOVE_FAILED,
     MOVE_MOVED,
     MOVE_PENDING,
@@ -168,6 +170,7 @@ def execute_organization_movement(
     confirmation: str,
     coordinator: OrganizationExecutionCoordinator,
     operation_repository: OrganizationOperationRepository,
+    filesystem_operation_admission: FilesystemOperationAdmission | None = None,
 ) -> OrganizationExecutionState:
     """Revalidate server state and delegate movement to the durable D1 owner."""
 
@@ -194,20 +197,6 @@ def execute_organization_movement(
     ):
         raise OrganizationMovementError("invalid_confirmation_token")
     try:
-        replay = operation_repository.find_for_authorization(confirmation_token)
-        existing_plan = operation_repository.find_for_plan(
-            approved_plan.scan_generation,
-            approved_plan.decision_revision,
-        )
-    except ValueError as error:
-        raise OrganizationMovementError("movement_recovery_required") from error
-    if replay is not None:
-        return _record_state(replay)
-    if existing_plan is not None:
-        raise OrganizationMovementError("movement_already_started")
-    if authorization.status != AUTHORIZATION_AVAILABLE:
-        raise OrganizationMovementError("movement_already_started")
-    try:
         outcome = move_approved_organization(
             approved_plan=approved_plan,
             current_scan_generation=current_scan_generation,
@@ -216,14 +205,21 @@ def execute_organization_movement(
             coordinator=coordinator,
             operation_repository=operation_repository,
             confirmation=confirmation,
+            filesystem_operation_admission=filesystem_operation_admission,
         )
     except OrganizationExecutionError as error:
         if error.code == "movement_already_started":
-            current = coordinator.authorization_snapshot(confirmation_token)
+            try:
+                existing = operation_repository.find_for_plan(
+                    approved_plan.scan_generation,
+                    approved_plan.decision_revision,
+                )
+            except ValueError:
+                existing = None
             code = (
-                "movement_or_undo_in_progress"
-                if current is not None and current.status == AUTHORIZATION_AVAILABLE
-                else "movement_already_started"
+                "movement_already_started"
+                if existing is not None
+                else "movement_or_undo_in_progress"
             )
             raise OrganizationMovementError(code) from error
         mapping = {

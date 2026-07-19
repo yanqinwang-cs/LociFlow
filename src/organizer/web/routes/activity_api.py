@@ -5,6 +5,9 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
 from organizer.application.activity_service import list_activity_entries
+from organizer.application.filesystem_operation_admission import (
+    FilesystemOperationBlockedError,
+)
 from organizer.application.duplicate_bin_restore_service import (
     DuplicateBinRestoreError,
     authorization_matches_movement,
@@ -155,6 +158,9 @@ def create_activity_api_router() -> APIRouter:
                     restore_repository=request.app.state.duplicate_bin_restores,
                     coordinator=request.app.state.organization_execution,
                     runtime_operation_kind=RuntimeOperationKind.ACTIVITY_UNDO,
+                    filesystem_operation_admission=(
+                        request.app.state.filesystem_operation_admission
+                    ),
                 )
                 outcome_id = outcome.id
             else:
@@ -166,6 +172,9 @@ def create_activity_api_router() -> APIRouter:
                     coordinator=request.app.state.organization_execution,
                     operation_repository=request.app.state.organization_operations,
                     undo_repository=request.app.state.organization_undos,
+                    filesystem_operation_admission=(
+                        request.app.state.filesystem_operation_admission
+                    ),
                 )
                 outcome_id = outcome.undo_id
             activity_list = list_activity_entries(
@@ -180,6 +189,8 @@ def create_activity_api_router() -> APIRouter:
             entry = next(
                 item for item in activity_list.activity if item.id == outcome_id
             )
+        except FilesystemOperationBlockedError as error:
+            return _error_response(error.code, str(error), 409)
         except DuplicateBinRestoreError as error:
             return _duplicate_restore_error(error)
         except OrganizationUndoError as error:

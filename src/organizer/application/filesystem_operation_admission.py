@@ -80,6 +80,38 @@ class RecoveryInspectionError(RuntimeError):
         self.state = state
 
 
+class FilesystemOperationBlockedError(RuntimeError):
+    """Public-safe rejection retaining only typed internal diagnostic state."""
+
+    code = "filesystem_operation_blocked"
+
+    def __init__(self, state: RecoveryAdmissionState) -> None:
+        super().__init__(SAFE_RECOVERY_MESSAGE)
+        self.state = state
+
+
+class FilesystemOperationAdmission:
+    """Require a fresh clear cross-family inspection for each filesystem action."""
+
+    def __init__(self, inspector: FilesystemOperationInspector) -> None:
+        self.inspector = inspector
+
+    @property
+    def root(self) -> Path:
+        return self.inspector.root
+
+    def inspect_and_require_clear(self) -> RecoveryAdmissionSnapshot:
+        try:
+            snapshot = self.inspector.inspect()
+        except Exception as error:
+            raise FilesystemOperationBlockedError(
+                RecoveryAdmissionState.BLOCKED_MALFORMED_OPERATION_STATE
+            ) from error
+        if snapshot.state is not RecoveryAdmissionState.CLEAR:
+            raise FilesystemOperationBlockedError(snapshot.state)
+        return snapshot
+
+
 class _InconsistentOperationState(ValueError):
     pass
 

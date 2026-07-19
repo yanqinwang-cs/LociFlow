@@ -12,6 +12,11 @@ from unittest import mock
 
 import httpx
 
+from organizer.application.filesystem_operation_admission import (
+    FilesystemOperationBlockedError,
+    RecoveryAdmissionState,
+    SAFE_RECOVERY_MESSAGE,
+)
 from organizer.application.scan_service import scan_root
 from organizer.web.app import create_app
 from organizer.web.config import WebAppConfig
@@ -50,6 +55,44 @@ class WebOrganizationMovementTests(unittest.IsolatedAsyncioTestCase):
 
     async def asyncTearDown(self) -> None:
         self.directory.cleanup()
+
+    async def test_recovery_block_returns_safe_conflict_after_security_and_token_validation(self) -> None:
+        async with _client(self.app) as client:
+            csrf = await _authenticate(client, self.token)
+            await _approve(client, csrf)
+            preview = await client.post(
+                "/api/organization/move/preview",
+                data={"csrf_token": csrf},
+                headers=_origin(),
+            )
+            token = preview.json()["confirmation_token"]
+            self.app.state.filesystem_operation_admission.inspect_and_require_clear = mock.Mock(
+                side_effect=FilesystemOperationBlockedError(
+                    RecoveryAdmissionState.BLOCKED_UNFINISHED_OPERATION
+                )
+            )
+            wrong_origin = await client.post(
+                "/api/organization/move",
+                data={"csrf_token": csrf, "confirmation_token": token, "confirmation": "MOVE APPROVED FILES"},
+            )
+            invalid_token = await client.post(
+                "/api/organization/move",
+                data={"csrf_token": csrf, "confirmation_token": str(uuid.uuid4()), "confirmation": "MOVE APPROVED FILES"},
+                headers=_origin(),
+            )
+            blocked = await client.post(
+                "/api/organization/move",
+                data={"csrf_token": csrf, "confirmation_token": token, "confirmation": "MOVE APPROVED FILES"},
+                headers=_origin(),
+            )
+
+        self.assertEqual(wrong_origin.status_code, 403)
+        self.assertEqual(invalid_token.json()["error"]["code"], "invalid_confirmation_token")
+        self.assertEqual(blocked.status_code, 409)
+        self.assertEqual(blocked.headers["cache-control"], "no-store")
+        self.assertEqual(blocked.json(), {"error": {"code": "filesystem_operation_blocked", "message": SAFE_RECOVERY_MESSAGE}})
+        self.assertEqual(self.app.state.organization_execution.authorization_snapshot(token).status, "available")
+        self.assertEqual(self.app.state.organization_operations.list_records(), ())
 
     async def test_preview_execute_lost_response_replay_activity_and_undo_are_durable(self) -> None:
         real_move = shutil.move

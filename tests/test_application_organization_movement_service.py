@@ -15,6 +15,11 @@ from organizer.application.execution_coordinator import (
     approved_plan_identity,
 )
 from organizer.application.execution_service import move_approved_organization
+from organizer.application.filesystem_operation_admission import (
+    SAFE_RECOVERY_MESSAGE,
+    FilesystemOperationBlockedError,
+    RecoveryAdmissionState,
+)
 from organizer.application.organization_movement_service import (
     OrganizationMovementError,
     execute_organization_movement,
@@ -32,6 +37,44 @@ from tests.test_application_execution_service import _approved_plan
 
 
 class OrganizationMovementServiceTests(unittest.TestCase):
+    def test_blocked_confirmation_keeps_token_and_files_unchanged(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            plan = _approved_plan(root, ("a.txt",))
+            coordinator = OrganizationExecutionCoordinator()
+            repository = OrganizationOperationRepository(root)
+            token = _preview(plan, coordinator, repository).confirmation_token
+            admission = mock.Mock()
+            admission.root = root
+
+            def blocked():
+                self.assertFalse(coordinator.try_acquire())
+                raise FilesystemOperationBlockedError(
+                    RecoveryAdmissionState.BLOCKED_UNFINISHED_OPERATION
+                )
+
+            admission.inspect_and_require_clear.side_effect = blocked
+            with self.assertRaisesRegex(
+                FilesystemOperationBlockedError, SAFE_RECOVERY_MESSAGE
+            ):
+                _execute(
+                    plan,
+                    coordinator,
+                    repository,
+                    token,
+                    filesystem_operation_admission=admission,
+                )
+
+            self.assertEqual(
+                coordinator.authorization_snapshot(token).status, "available"
+            )
+            self.assertEqual(repository.list_records(), ())
+            self.assertTrue((root / "a.txt").is_file())
+            self.assertFalse((root / "Organized/a.txt").exists())
+            self.assertEqual(coordinator.runtime_lifecycle.snapshot().active_count, 0)
+            self.assertTrue(coordinator.try_acquire())
+            coordinator.release()
+
     def test_admitted_preview_finishes_after_shutdown_begins(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
@@ -322,7 +365,7 @@ class OrganizationMovementServiceTests(unittest.TestCase):
                     token,
                 )
 
-            self.assertEqual(owner.call_count, 1)
+            self.assertEqual(owner.call_count, 2)
             self.assertEqual(result.status, "verified")
             self.assertEqual(replay, result)
             self.assertEqual(len(repository.list_records()), 1)
@@ -453,6 +496,7 @@ def _execute(
     *,
     browser_session_id="browser-one",
     confirmation="MOVE APPROVED FILES",
+    filesystem_operation_admission=None,
 ):
     return execute_organization_movement(
         approved_plan=plan,
@@ -463,6 +507,7 @@ def _execute(
         confirmation=confirmation,
         coordinator=coordinator,
         operation_repository=repository,
+        filesystem_operation_admission=filesystem_operation_admission,
     )
 
 

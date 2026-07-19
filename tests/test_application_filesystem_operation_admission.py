@@ -35,6 +35,9 @@ from organizer.application.duplicate_bin_restore_repository import (
     DuplicateBinRestoreRepository,
 )
 from organizer.application.filesystem_operation_admission import (
+    SAFE_RECOVERY_MESSAGE,
+    FilesystemOperationAdmission,
+    FilesystemOperationBlockedError,
     FilesystemOperationInspector,
     RecoveryAdmissionSnapshot,
     RecoveryAdmissionState,
@@ -330,12 +333,12 @@ class FilesystemOperationInspectorTests(unittest.TestCase):
     def test_multiple_unfinished_families_publish_one_safe_snapshot(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
-            _ordinary_operation(root, status=STATUS_INTERRUPTED)
             owners = _moved(root)
             operation = owners.operations.list_records()[0]
             owners.operations.save(
                 _unfinished_duplicate_move(operation, OP_INTERRUPTED)
             )
+            _ordinary_operation(root, status=STATUS_INTERRUPTED)
 
             snapshot = FilesystemOperationInspector(root).inspect()
 
@@ -497,6 +500,87 @@ class FilesystemOperationInspectorTests(unittest.TestCase):
                 app.state.duplicate_bin_batches,
             )
             self.assertEqual(malformed.read_bytes(), before)
+
+
+class FilesystemOperationAdmissionTests(unittest.TestCase):
+    def test_clear_state_is_freshly_inspected_on_every_attempt(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            inspector = mock.Mock(spec=FilesystemOperationInspector)
+            inspector.root = Path(directory).resolve()
+            inspector.inspect.return_value = _snapshot(RecoveryAdmissionState.CLEAR)
+            admission = FilesystemOperationAdmission(inspector)
+
+            self.assertEqual(admission.inspect_and_require_clear().state, RecoveryAdmissionState.CLEAR)
+            self.assertEqual(admission.inspect_and_require_clear().state, RecoveryAdmissionState.CLEAR)
+
+            self.assertEqual(inspector.inspect.call_count, 2)
+
+    def test_every_non_clear_state_raises_one_safe_typed_error(self) -> None:
+        for state in RecoveryAdmissionState:
+            if state is RecoveryAdmissionState.CLEAR:
+                continue
+            with self.subTest(state=state), tempfile.TemporaryDirectory() as directory:
+                inspector = mock.Mock(spec=FilesystemOperationInspector)
+                inspector.root = Path(directory).resolve()
+                inspector.inspect.return_value = _snapshot(state)
+                admission = FilesystemOperationAdmission(inspector)
+
+                with self.assertRaises(FilesystemOperationBlockedError) as raised:
+                    admission.inspect_and_require_clear()
+
+                self.assertEqual(raised.exception.code, "filesystem_operation_blocked")
+                self.assertEqual(str(raised.exception), SAFE_RECOVERY_MESSAGE)
+                self.assertEqual(raised.exception.state, state)
+                self.assertNotIn(str(inspector.root), str(raised.exception))
+
+    def test_unexpected_inspection_failure_fails_closed_without_detail(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            inspector = mock.Mock(spec=FilesystemOperationInspector)
+            inspector.root = Path(directory).resolve()
+            inspector.inspect.side_effect = OSError(f"cannot read {inspector.root}")
+            admission = FilesystemOperationAdmission(inspector)
+
+            with self.assertRaises(FilesystemOperationBlockedError) as raised:
+                admission.inspect_and_require_clear()
+
+            self.assertEqual(str(raised.exception), SAFE_RECOVERY_MESSAGE)
+            self.assertEqual(
+                raised.exception.state,
+                RecoveryAdmissionState.BLOCKED_MALFORMED_OPERATION_STATE,
+            )
+            self.assertIsInstance(raised.exception.__cause__, OSError)
+
+    def test_app_owns_one_admission_bound_to_its_inspector_and_root(self) -> None:
+        with tempfile.TemporaryDirectory() as first, tempfile.TemporaryDirectory() as second:
+            first_app = create_app(
+                WebAppConfig(
+                    Path(first),
+                    session_secret="s" * 32,
+                    launch_token="t" * 32,
+                    testing=True,
+                )
+            )
+            second_app = create_app(
+                WebAppConfig(
+                    Path(second),
+                    session_secret="u" * 32,
+                    launch_token="v" * 32,
+                    testing=True,
+                )
+            )
+
+            self.assertIs(
+                first_app.state.filesystem_operation_admission.inspector,
+                first_app.state.filesystem_operation_inspector,
+            )
+            self.assertEqual(
+                first_app.state.filesystem_operation_admission.root,
+                Path(first).resolve(),
+            )
+            self.assertIsNot(
+                first_app.state.filesystem_operation_admission,
+                second_app.state.filesystem_operation_admission,
+            )
 
 
 def _snapshot(state: RecoveryAdmissionState) -> RecoveryAdmissionSnapshot:

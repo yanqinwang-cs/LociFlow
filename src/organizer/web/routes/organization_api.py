@@ -11,6 +11,9 @@ from organizer.application.organization_decision_service import (
     OrganizationDecisionError,
     organization_review_to_dict,
 )
+from organizer.application.filesystem_operation_admission import (
+    FilesystemOperationBlockedError,
+)
 from organizer.application.organization_movement_service import (
     OrganizationMovementError,
     execute_organization_movement,
@@ -347,9 +350,6 @@ def create_organization_api_router() -> APIRouter:
         common = _validate_common_request(request)
         if common is not None:
             return common
-        scan_or_response = _completed_scan(request)
-        if isinstance(scan_or_response, Response):
-            return scan_or_response
         try:
             expected_fields = {
                 "csrf_token",
@@ -358,6 +358,9 @@ def create_organization_api_router() -> APIRouter:
             }
             form = await _validated_mutation_form(request, expected_fields)
             _require_movement_fields(form, expected_fields)
+            scan_or_response = _completed_scan(request)
+            if isinstance(scan_or_response, Response):
+                return scan_or_response
             projection = _projection(scan_or_response)
             browser_session_id = session_id_for_session(request.session)
             current = request.app.state.organization_decisions.approved_for_movement(
@@ -377,7 +380,12 @@ def create_organization_api_router() -> APIRouter:
                 confirmation=_required(form.get("confirmation")),
                 coordinator=request.app.state.organization_execution,
                 operation_repository=request.app.state.organization_operations,
+                filesystem_operation_admission=(
+                    request.app.state.filesystem_operation_admission
+                ),
             )
+        except FilesystemOperationBlockedError as error:
+            return _error_response(error.code, str(error), 409)
         except (
             OrganizationDecisionError,
             OrganizationMovementError,

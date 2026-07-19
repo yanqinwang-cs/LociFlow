@@ -4,15 +4,51 @@ from pathlib import Path
 import re
 import tempfile
 import unittest
+from unittest import mock
 
 import httpx
 
+from organizer.application.filesystem_operation_admission import (
+    FilesystemOperationBlockedError,
+    RecoveryAdmissionState,
+    SAFE_RECOVERY_MESSAGE,
+)
 from organizer.web.app import create_app
 from organizer.web.config import WebAppConfig
 from tests.test_application_undo_service import _verified_operation
 
 
 class WebActivityApiTests(unittest.IsolatedAsyncioTestCase):
+    async def test_recovery_block_returns_safe_conflict_without_consuming_undo(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            _, _, _, record = _verified_operation(root, 1)
+            app = _app(root)
+            async with _client(app) as client:
+                csrf = await _authenticate(client)
+                preview = await client.post(
+                    f"/api/activity/{record.operation_id}/undo/preview",
+                    data={"csrf_token": csrf},
+                    headers={"Origin": "http://127.0.0.1"},
+                )
+                token = preview.json()["confirmation_token"]
+                app.state.filesystem_operation_admission.inspect_and_require_clear = mock.Mock(
+                    side_effect=FilesystemOperationBlockedError(
+                        RecoveryAdmissionState.BLOCKED_UNFINISHED_OPERATION
+                    )
+                )
+                response = await client.post(
+                    f"/api/activity/{record.operation_id}/undo",
+                    data={"csrf_token": csrf, "confirmation_token": token, "confirmation": "UNDO FILE MOVE"},
+                    headers={"Origin": "http://127.0.0.1"},
+                )
+
+            self.assertEqual(response.status_code, 409)
+            self.assertEqual(response.headers["cache-control"], "no-store")
+            self.assertEqual(response.json(), {"error": {"code": "filesystem_operation_blocked", "message": SAFE_RECOVERY_MESSAGE}})
+            self.assertEqual(app.state.organization_execution.undo_authorization_snapshot(token).status, "available")
+            self.assertEqual(app.state.organization_undos.list_records(), ())
+
     async def test_activity_requires_auth_rejects_queries_and_returns_empty_no_store_json(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()

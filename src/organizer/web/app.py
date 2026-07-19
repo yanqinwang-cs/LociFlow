@@ -25,6 +25,7 @@ from organizer.web.organization_decision_store import OrganizationDecisionStore
 from organizer.web.scan_jobs import ScanJobController
 from organizer.application.execution_coordinator import OrganizationExecutionCoordinator
 from organizer.application.filesystem_operation_admission import (
+    FilesystemOperationAdmission,
     FilesystemOperationInspector,
 )
 from organizer.application.duplicate_bin_repository import DuplicateBinRepository
@@ -126,6 +127,9 @@ def create_app(config: WebAppConfig) -> FastAPI:
     )
     app.state.recovery_admission_snapshot = (
         app.state.filesystem_operation_inspector.inspect()
+    )
+    app.state.filesystem_operation_admission = FilesystemOperationAdmission(
+        app.state.filesystem_operation_inspector
     )
     app.state.standards = StandardsService(
         StandardsRepository(config.root),

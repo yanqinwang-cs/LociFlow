@@ -8,6 +8,10 @@ import uuid
 
 from organizer.application.activity_service import calculate_undo_eligibility
 from organizer.application.execution_coordinator import OrganizationExecutionCoordinator
+from organizer.application.filesystem_operation_admission import (
+    FilesystemOperationAdmission,
+    FilesystemOperationInspector,
+)
 from organizer.application.runtime_lifecycle import RuntimeOperationKind
 from organizer.application.organization_operation_models import OrganizationOperationRecord
 from organizer.application.organization_operation_repository import OrganizationOperationRepository
@@ -95,6 +99,7 @@ def undo_organization_operation(
     coordinator: OrganizationExecutionCoordinator,
     operation_repository: OrganizationOperationRepository,
     undo_repository: OrganizationUndoRepository,
+    filesystem_operation_admission: FilesystemOperationAdmission | None = None,
 ) -> OrganizationUndoOutcome:
     if not coordinator.try_acquire(RuntimeOperationKind.ACTIVITY_UNDO):
         raise OrganizationUndoError("movement_or_undo_in_progress")
@@ -124,6 +129,13 @@ def undo_organization_operation(
             raise OrganizationUndoError(
                 eligibility.error_code or "operation_not_undoable"
             )
+
+        admission = filesystem_operation_admission or FilesystemOperationAdmission(
+            FilesystemOperationInspector(operation_repository.root)
+        )
+        if admission.root != operation_repository.root:
+            raise OrganizationUndoError("operation_not_undoable")
+        admission.inspect_and_require_clear()
 
         now = _utc_timestamp()
         undo_record = OrganizationUndoRecord(

@@ -5,9 +5,15 @@ from pathlib import Path
 import re
 import tempfile
 import unittest
+from unittest import mock
 
 import httpx
 
+from organizer.application.filesystem_operation_admission import (
+    FilesystemOperationBlockedError,
+    RecoveryAdmissionState,
+    SAFE_RECOVERY_MESSAGE,
+)
 from organizer.web.app import create_app
 from organizer.web.config import WebAppConfig
 from tests.test_application_duplicate_bin_movement_service import _approved_batch
@@ -35,6 +41,35 @@ class WebDuplicateBinRestoreTests(unittest.IsolatedAsyncioTestCase):
 
     async def asyncTearDown(self) -> None:
         self.directory.cleanup()
+
+    async def test_recovery_block_is_safe_and_does_not_consume_restore_token(self) -> None:
+        async with _client(self.app) as client:
+            csrf = await _authenticate(client, self.token)
+            await _move(client, csrf, self.batch.batch_id)
+            item = (await client.get("/api/duplicate-bin")).json()["items"][0]
+            preview = await client.post(
+                "/api/duplicate-bin/restore/preview",
+                data={"csrf_token": csrf, "item_ids": json.dumps([item["id"]])},
+                headers=_origin(),
+            )
+            payload = preview.json()
+            before = self.app.state.duplicate_bin_restores.authorization_path.read_bytes()
+            self.app.state.filesystem_operation_admission.inspect_and_require_clear = mock.Mock(
+                side_effect=FilesystemOperationBlockedError(
+                    RecoveryAdmissionState.BLOCKED_INCONSISTENT_OPERATION_STATE
+                )
+            )
+            response = await client.post(
+                "/api/duplicate-bin/restore",
+                data={"csrf_token": csrf, "confirmation_token": payload["confirmation_token"], "confirmation": payload["confirmation"]},
+                headers=_origin(),
+            )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.headers["cache-control"], "no-store")
+        self.assertEqual(response.json(), {"error": {"code": "filesystem_operation_blocked", "message": SAFE_RECOVERY_MESSAGE}})
+        self.assertEqual(self.app.state.duplicate_bin_restores.authorization_path.read_bytes(), before)
+        self.assertEqual(self.app.state.duplicate_bin_restores.list_operations(), ())
 
     async def test_projection_restore_and_replay_are_safe(self) -> None:
         async with _client(self.app) as client:

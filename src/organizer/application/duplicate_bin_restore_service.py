@@ -61,6 +61,10 @@ from organizer.application.duplicate_bin_restore_repository import (
     DuplicateBinRestoreRepositoryError,
 )
 from organizer.application.execution_coordinator import OrganizationExecutionCoordinator
+from organizer.application.filesystem_operation_admission import (
+    FilesystemOperationAdmission,
+    FilesystemOperationInspector,
+)
 from organizer.application.runtime_lifecycle import RuntimeOperationKind
 from organizer.duplicates import hash_file
 from organizer.executor import MovementRecordingError, apply_move_plan
@@ -219,6 +223,7 @@ def execute_duplicate_bin_restore(
     movement_repository: DuplicateBinOperationRepository,
     restore_repository: DuplicateBinRestoreRepository,
     coordinator: OrganizationExecutionCoordinator,
+    filesystem_operation_admission: FilesystemOperationAdmission | None = None,
     now: str | None = None,
     runtime_operation_kind: RuntimeOperationKind = (
         RuntimeOperationKind.DUPLICATE_BIN_RESTORE
@@ -233,9 +238,6 @@ def execute_duplicate_bin_restore(
         restore_repository,
         batch_repository,
     )
-    existing = restore_repository.find_for_authorization(confirmation_token)
-    if existing is not None:
-        return _reconcile_existing(existing, batch_repository)
     if not coordinator.try_acquire(runtime_operation_kind):
         raise DuplicateBinRestoreError("movement_or_undo_in_progress")
     try:
@@ -245,24 +247,37 @@ def execute_duplicate_bin_restore(
             restore_repository,
             batch_repository,
         )
+        resolved = None
+        current = None
+        if authorization.status == AUTH_AVAILABLE:
+            current = _time(now or _utc())
+            if current >= _time(authorization.expires_at):
+                raise DuplicateBinRestoreError("confirmation_expired")
+            resolved = tuple(
+                _resolve_restorable(
+                    item.bin_item_id,
+                    batch_repository,
+                    movement_repository,
+                    restore_repository,
+                )
+                for item in authorization.items
+            )
+            _validate_authorization_items(authorization, resolved)
+
+        admission = filesystem_operation_admission or FilesystemOperationAdmission(
+            FilesystemOperationInspector(batch_repository.root)
+        )
+        if admission.root != batch_repository.root:
+            raise DuplicateBinRestoreError("restore_authorization_stale")
+        admission.inspect_and_require_clear()
+
         existing = restore_repository.find_for_authorization(confirmation_token)
         if existing is not None:
             return _reconcile_existing(existing, batch_repository)
         if authorization.status != AUTH_AVAILABLE:
             raise DuplicateBinRestoreError("invalid_confirmation_token")
-        current = _time(now or _utc())
-        if current >= _time(authorization.expires_at):
-            raise DuplicateBinRestoreError("confirmation_expired")
-        resolved = tuple(
-            _resolve_restorable(
-                item.bin_item_id,
-                batch_repository,
-                movement_repository,
-                restore_repository,
-            )
-            for item in authorization.items
-        )
-        _validate_authorization_items(authorization, resolved)
+        assert current is not None
+        assert resolved is not None
         plan, restore_items, digest = _preflight(resolved, batch_repository.root)
         created_at = current.isoformat()
         operation = DuplicateBinRestoreOperation(

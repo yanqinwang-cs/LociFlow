@@ -39,6 +39,11 @@ from organizer.application.duplicate_bin_restore_service import (
     preview_duplicate_bin_activity_undo,
     preview_duplicate_bin_restore,
 )
+from organizer.application.filesystem_operation_admission import (
+    SAFE_RECOVERY_MESSAGE,
+    FilesystemOperationBlockedError,
+    RecoveryAdmissionState,
+)
 from organizer.application.organization_decision_models import RECOMMENDATION_KEEP
 from organizer.application.organization_decision_service import (
     approve_organization_plan,
@@ -64,6 +69,75 @@ from tests.test_application_duplicate_bin_movement_service import (
 
 
 class DuplicateBinRestoreServiceTests(unittest.TestCase):
+    def test_blocked_confirmation_does_not_reconcile_consume_or_restore(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            owners = _moved(Path(directory).resolve(), selected=1)
+            restores = DuplicateBinRestoreRepository(owners.root)
+            item = owners.batch.items[0]
+            preview = _restore_preview(owners, restores, (item.bin_item_id,))
+            authorization_before = restores.authorization_path.read_bytes()
+            catalog_before = owners.batches.catalog_path.read_bytes()
+            admission = mock.Mock()
+            admission.root = owners.root
+            admission.inspect_and_require_clear.side_effect = (
+                FilesystemOperationBlockedError(
+                    RecoveryAdmissionState.BLOCKED_INCONSISTENT_OPERATION_STATE
+                )
+            )
+
+            with self.assertRaisesRegex(
+                FilesystemOperationBlockedError, SAFE_RECOVERY_MESSAGE
+            ):
+                _restore(
+                    owners,
+                    restores,
+                    preview,
+                    filesystem_operation_admission=admission,
+                )
+
+            self.assertEqual(restores.authorization_path.read_bytes(), authorization_before)
+            self.assertEqual(owners.batches.catalog_path.read_bytes(), catalog_before)
+            self.assertEqual(restores.list_operations(), ())
+            self.assertTrue((owners.root / item.future_relative_path).is_file())
+            self.assertFalse((owners.root / item.previous_relative_path).exists())
+            self.assertEqual(
+                owners.coordinator.runtime_lifecycle.snapshot().active_count, 0
+            )
+            self.assertTrue(owners.coordinator.try_acquire())
+            owners.coordinator.release()
+
+    def test_blocked_activity_undo_reuses_restore_owner_and_activity_kind(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            owners = _moved(Path(directory).resolve(), selected=1)
+            restores = DuplicateBinRestoreRepository(owners.root)
+            item = owners.batch.items[0]
+            preview = _restore_preview(owners, restores, (item.bin_item_id,))
+            admission = mock.Mock()
+            admission.root = owners.root
+            admission.inspect_and_require_clear.side_effect = (
+                FilesystemOperationBlockedError(
+                    RecoveryAdmissionState.BLOCKED_UNFINISHED_OPERATION
+                )
+            )
+
+            with self.assertRaises(FilesystemOperationBlockedError):
+                _restore(
+                    owners,
+                    restores,
+                    preview,
+                    runtime_operation_kind=RuntimeOperationKind.ACTIVITY_UNDO,
+                    filesystem_operation_admission=admission,
+                )
+
+            self.assertEqual(
+                owners.coordinator.runtime_lifecycle.snapshot().active_count, 0
+            )
+            self.assertEqual(
+                restores.load_authorization(preview.confirmation_token).status,
+                "available",
+            )
+            self.assertEqual(restores.list_operations(), ())
+
     def test_stopping_rejects_restore_previews_without_superseding_authorization(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             owners = _moved(Path(directory).resolve(), selected=1)
@@ -766,10 +840,13 @@ class DuplicateBinRestoreServiceTests(unittest.TestCase):
             self.assertFalse((owners.root / item.previous_relative_path).exists())
 
             restarted = DuplicateBinRestoreRepository(owners.root)
-            with mock.patch(
-                "organizer.application.duplicate_bin_restore_service.apply_move_plan"
-            ) as retry:
-                replay = execute_duplicate_bin_restore(
+            with (
+                mock.patch(
+                    "organizer.application.duplicate_bin_restore_service.apply_move_plan"
+                ) as retry,
+                self.assertRaises(FilesystemOperationBlockedError),
+            ):
+                execute_duplicate_bin_restore(
                     browser_session_id="browser-one",
                     confirmation_token=preview.confirmation_token,
                     confirmation=CONFIRM_RESTORE_COPIES,
@@ -779,10 +856,9 @@ class DuplicateBinRestoreServiceTests(unittest.TestCase):
                     coordinator=owners.coordinator,
                     now=(ISSUED + timedelta(minutes=2)).isoformat(),
                 )
-            self.assertEqual(replay.id, result.id)
             retry.assert_not_called()
 
-    def test_replay_reconciles_lost_terminal_batch_projection_once(self) -> None:
+    def test_inconsistent_terminal_replay_is_blocked_without_catalog_repair(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             owners = _moved(Path(directory).resolve(), selected=1)
             restores = DuplicateBinRestoreRepository(owners.root)
@@ -803,10 +879,14 @@ class DuplicateBinRestoreServiceTests(unittest.TestCase):
                 "available",
             )
             restarted = DuplicateBinRestoreRepository(owners.root)
-            with mock.patch(
-                "organizer.application.duplicate_bin_restore_service.apply_move_plan"
-            ) as retry:
-                replay = execute_duplicate_bin_restore(
+            before = owners.batches.catalog_path.read_bytes()
+            with (
+                mock.patch(
+                    "organizer.application.duplicate_bin_restore_service.apply_move_plan"
+                ) as retry,
+                self.assertRaises(FilesystemOperationBlockedError),
+            ):
+                execute_duplicate_bin_restore(
                     browser_session_id="browser-one",
                     confirmation_token=preview.confirmation_token,
                     confirmation=CONFIRM_RESTORE_COPIES,
@@ -817,40 +897,7 @@ class DuplicateBinRestoreServiceTests(unittest.TestCase):
                     now=(ISSUED + timedelta(minutes=2)).isoformat(),
                 )
             retry.assert_not_called()
-            self.assertEqual(replay.id, operation.restore_operation_id)
-            reconciled = owners.batches.load(owners.batch.batch_id)
-            self.assertEqual(reconciled.items[0].state, "restored")
-            self.assertEqual(reconciled.status, BATCH_COMPLETED)
-            catalog = json.loads(
-                owners.batches.catalog_path.read_text(encoding="utf-8")
-            )
-            self.assertEqual(catalog["active_claims"], [])
-            restarted_batches = DuplicateBinRepository(owners.root)
-            self.assertEqual(
-                restarted_batches.load(owners.batch.batch_id).status,
-                BATCH_COMPLETED,
-            )
-            version = reconciled.batch_version
-            execute_duplicate_bin_restore(
-                browser_session_id="browser-one",
-                confirmation_token=preview.confirmation_token,
-                confirmation=CONFIRM_RESTORE_COPIES,
-                batch_repository=owners.batches,
-                movement_repository=owners.operations,
-                restore_repository=restarted,
-                coordinator=owners.coordinator,
-                now=(ISSUED + timedelta(minutes=3)).isoformat(),
-            )
-            self.assertEqual(
-                owners.batches.load(owners.batch.batch_id).batch_version,
-                version,
-            )
-            self.assertEqual(
-                json.loads(
-                    owners.batches.catalog_path.read_text(encoding="utf-8")
-                )["active_claims"],
-                [],
-            )
+            self.assertEqual(owners.batches.catalog_path.read_bytes(), before)
 
     def test_shared_coordinator_blocks_preview_and_execution(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -1114,6 +1161,7 @@ def _restore(
     *,
     now=ISSUED + timedelta(minutes=1),
     runtime_operation_kind=RuntimeOperationKind.DUPLICATE_BIN_RESTORE,
+    filesystem_operation_admission=None,
 ):
     return execute_duplicate_bin_restore(
         browser_session_id="browser-one",
@@ -1125,6 +1173,7 @@ def _restore(
         coordinator=owners.coordinator,
         now=now.isoformat(),
         runtime_operation_kind=runtime_operation_kind,
+        filesystem_operation_admission=filesystem_operation_admission,
     )
 
 

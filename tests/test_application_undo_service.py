@@ -10,6 +10,11 @@ import uuid
 
 import organizer.application.undo_service as undo_service
 from organizer.application.execution_coordinator import OrganizationExecutionCoordinator
+from organizer.application.filesystem_operation_admission import (
+    SAFE_RECOVERY_MESSAGE,
+    FilesystemOperationBlockedError,
+    RecoveryAdmissionState,
+)
 from organizer.application.organization_operation_models import (
     MOVE_MOVED,
     STATUS_VERIFIED,
@@ -42,6 +47,53 @@ from organizer.models import MovePlanItem
 
 
 class OrganizationUndoServiceTests(unittest.TestCase):
+    def test_blocked_confirmation_keeps_undo_token_and_files_unchanged(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            operations, undos, coordinator, record = _verified_operation(root, 1)
+            preview = preview_organization_undo(
+                operation_id=record.operation_id,
+                browser_session_id="browser",
+                coordinator=coordinator,
+                operation_repository=operations,
+                undo_repository=undos,
+            )
+            admission = mock.Mock()
+            admission.root = root
+            admission.inspect_and_require_clear.side_effect = (
+                FilesystemOperationBlockedError(
+                    RecoveryAdmissionState.BLOCKED_MALFORMED_OPERATION_STATE
+                )
+            )
+
+            with self.assertRaisesRegex(
+                FilesystemOperationBlockedError, SAFE_RECOVERY_MESSAGE
+            ):
+                undo_organization_operation(
+                    operation_id=record.operation_id,
+                    browser_session_id="browser",
+                    confirmation_token=preview.confirmation_token,
+                    confirmation=CONFIRM_UNDO_FILE_MOVE,
+                    coordinator=coordinator,
+                    operation_repository=operations,
+                    undo_repository=undos,
+                    filesystem_operation_admission=admission,
+                )
+
+            self.assertEqual(
+                coordinator.undo_authorization_snapshot(
+                    preview.confirmation_token
+                ).status,
+                "available",
+            )
+            self.assertEqual(undos.list_records(), ())
+            item = record.expected_moves[0]
+            self.assertFalse((root / item.source).exists())
+            self.assertTrue((root / item.destination).is_file())
+            self.assertEqual(coordinator.runtime_lifecycle.snapshot().active_count, 0)
+            self.assertTrue(coordinator.try_acquire())
+            coordinator.release()
+
     def test_stopping_rejects_preview_without_replacing_authorization(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()

@@ -36,6 +36,11 @@ from organizer.application.duplicate_bin_operation_repository import (
 )
 from organizer.application.duplicate_bin_repository import DuplicateBinRepository
 from organizer.application.execution_coordinator import OrganizationExecutionCoordinator
+from organizer.application.filesystem_operation_admission import (
+    SAFE_RECOVERY_MESSAGE,
+    FilesystemOperationBlockedError,
+    RecoveryAdmissionState,
+)
 from organizer.application.runtime_lifecycle import (
     ApplicationStoppingError,
     RuntimeOperationKind,
@@ -47,6 +52,41 @@ ISSUED = datetime(2026, 7, 16, 10, tzinfo=timezone.utc)
 
 
 class DuplicateBinMovementServiceTests(unittest.TestCase):
+    def test_blocked_confirmation_preserves_authorization_batch_and_files(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            owners = _owners(Path(directory).resolve(), selected=1)
+            preview = _preview(owners, issued=ISSUED)
+            authorization_before = owners.authorizations.path.read_bytes()
+            catalog_before = owners.batches.catalog_path.read_bytes()
+            admission = mock.Mock()
+            admission.root = owners.root
+            admission.inspect_and_require_clear.side_effect = (
+                FilesystemOperationBlockedError(
+                    RecoveryAdmissionState.BLOCKED_UNFINISHED_OPERATION
+                )
+            )
+
+            with self.assertRaisesRegex(
+                FilesystemOperationBlockedError, SAFE_RECOVERY_MESSAGE
+            ):
+                _execute(
+                    owners,
+                    preview,
+                    now=ISSUED + timedelta(minutes=1),
+                    filesystem_operation_admission=admission,
+                )
+
+            self.assertEqual(owners.authorizations.path.read_bytes(), authorization_before)
+            self.assertEqual(owners.batches.catalog_path.read_bytes(), catalog_before)
+            self.assertEqual(owners.operations.list_records(), ())
+            self.assertTrue(
+                all((owners.root / item.previous_relative_path).is_file() for item in owners.batch.items)
+            )
+            self.assertEqual(
+                owners.coordinator.runtime_lifecycle.snapshot().active_count, 0
+            )
+            self.assertTrue(owners.coordinator.try_acquire())
+            owners.coordinator.release()
     def test_stopping_rejects_preview_without_superseding_authorization(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             owners = _owners(Path(directory).resolve(), selected=1)
@@ -260,15 +300,15 @@ class DuplicateBinMovementServiceTests(unittest.TestCase):
 
             self.assertTrue(owners.coordinator.try_acquire())
             try:
-                with mock.patch(
-                    "organizer.application.duplicate_bin_movement_service.apply_move_plan"
-                ) as apply_while_busy:
-                    busy_replay = _execute(
-                        owners,
-                        preview,
-                        now=ISSUED + timedelta(minutes=3),
-                    )
-                self.assertEqual(busy_replay.id, result.id)
+                with (
+                    mock.patch(
+                        "organizer.application.duplicate_bin_movement_service.apply_move_plan"
+                    ) as apply_while_busy,
+                    self.assertRaisesRegex(
+                        DuplicateBinMovementError, "movement_or_undo_in_progress"
+                    ),
+                ):
+                    _execute(owners, preview, now=ISSUED + timedelta(minutes=3))
                 apply_while_busy.assert_not_called()
             finally:
                 owners.coordinator.release()
@@ -605,25 +645,22 @@ class DuplicateBinMovementServiceTests(unittest.TestCase):
             restarted_authorizations = DuplicateBinAuthorizationRepository(owners.root)
             restarted_operations = DuplicateBinOperationRepository(owners.root)
             busy_coordinator = OrganizationExecutionCoordinator()
-            self.assertTrue(busy_coordinator.try_acquire())
-            try:
-                with mock.patch(
+            with (
+                mock.patch(
                     "organizer.application.duplicate_bin_movement_service.apply_move_plan"
-                ) as apply_again:
-                    replay = execute_duplicate_bin_movement(
-                        browser_session_id="browser-one",
-                        confirmation_token=preview.confirmation_token,
-                        confirmation=CONFIRM_MOVE_COPIES_TO_DUPLICATE_BIN,
-                        batch_repository=restarted_batches,
-                        authorization_repository=restarted_authorizations,
-                        operation_repository=restarted_operations,
-                        coordinator=busy_coordinator,
-                        now=(ISSUED + timedelta(minutes=2)).isoformat(),
-                    )
-            finally:
-                busy_coordinator.release()
-            self.assertEqual(replay.status, "moving")
-            self.assertTrue(replay.recovery_required)
+                ) as apply_again,
+                self.assertRaises(FilesystemOperationBlockedError),
+            ):
+                execute_duplicate_bin_movement(
+                    browser_session_id="browser-one",
+                    confirmation_token=preview.confirmation_token,
+                    confirmation=CONFIRM_MOVE_COPIES_TO_DUPLICATE_BIN,
+                    batch_repository=restarted_batches,
+                    authorization_repository=restarted_authorizations,
+                    operation_repository=restarted_operations,
+                    coordinator=busy_coordinator,
+                    now=(ISSUED + timedelta(minutes=2)).isoformat(),
+                )
             apply_again.assert_not_called()
             self.assertTrue(
                 all(
@@ -809,6 +846,7 @@ def _execute(
     *,
     session: str = "browser-one",
     now: datetime,
+    filesystem_operation_admission=None,
 ):
     return execute_duplicate_bin_movement(
         browser_session_id=session,
@@ -818,6 +856,7 @@ def _execute(
         authorization_repository=owners.authorizations,
         operation_repository=owners.operations,
         coordinator=owners.coordinator,
+        filesystem_operation_admission=filesystem_operation_admission,
         now=now.isoformat(),
     )
 

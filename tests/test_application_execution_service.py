@@ -11,6 +11,9 @@ import unittest
 from unittest import mock
 
 from organizer.application.execution_coordinator import OrganizationExecutionCoordinator
+from organizer.application.filesystem_operation_admission import (
+    FilesystemOperationBlockedError,
+)
 from organizer.application.execution_service import (
     CONFIRM_MOVE_APPROVED_FILES,
     OrganizationExecutionError,
@@ -227,18 +230,20 @@ class ApplicationExecutionServiceTests(unittest.TestCase):
             first = _move(plan, root, authorization, coordinator, repository)
             self.assertEqual(first.status, STATUS_VERIFIED)
 
-            with self.assertRaisesRegex(OrganizationExecutionError, "movement_already_started"):
-                _move(plan, root, authorization, coordinator, repository)
+            repeated = _move(plan, root, authorization, coordinator, repository)
+            self.assertEqual(repeated.operation_id, first.operation_id)
             self.assertEqual(len(repository.list_records()), 1)
             replay_authorization = issue_movement_authorization(plan, coordinator)
-            replay = _move(
-                plan,
-                root,
-                replay_authorization,
-                coordinator,
-                repository,
-            )
-            self.assertEqual(replay.operation_id, first.operation_id)
+            with self.assertRaisesRegex(
+                OrganizationExecutionError, "movement_already_started"
+            ):
+                _move(
+                    plan,
+                    root,
+                    replay_authorization,
+                    coordinator,
+                    repository,
+                )
             self.assertEqual(len(repository.list_records()), 1)
 
         with tempfile.TemporaryDirectory() as directory:
@@ -534,7 +539,7 @@ class ApplicationExecutionServiceTests(unittest.TestCase):
             )
             self.assertEqual(inspection.likely_moved, 1)
             self.assertEqual(inspection.status, STATUS_INTERRUPTED)
-            with self.assertRaisesRegex(OrganizationExecutionError, "movement_recovery_required"):
+            with self.assertRaises(FilesystemOperationBlockedError):
                 new_authorization = issue_movement_authorization(plan, coordinator)
                 _move(plan, root, new_authorization, coordinator, restarted_repository)
             self.assertTrue((root / "b.txt").exists())
