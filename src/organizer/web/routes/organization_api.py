@@ -88,6 +88,7 @@ _ERRORS = {
         409,
         "The duplicate choices could not be saved safely.",
     ),
+    "movement_or_undo_in_progress": (409, "Another file action is in progress."),
 }
 
 _MOVEMENT_ERRORS = {
@@ -260,9 +261,6 @@ def create_organization_api_router() -> APIRouter:
         common = _validate_common_request(request)
         if common is not None:
             return common
-        scan_or_response = _completed_scan(request)
-        if isinstance(scan_or_response, Response):
-            return scan_or_response
         try:
             form = await _validated_mutation_form(
                 request,
@@ -272,14 +270,21 @@ def create_organization_api_router() -> APIRouter:
                 form,
                 {"csrf_token", "scan_generation", "expected_revision"},
             )
+            generation = _required(form.get("scan_generation"))
+            revision = _revision(form.get("expected_revision"))
+            scan_or_response = _completed_scan(request)
+            if isinstance(scan_or_response, Response):
+                return scan_or_response
             projection = _projection(scan_or_response)
             current = request.app.state.organization_decisions.approve(
                 session_id_for_session(request.session),
                 scan_or_response,
                 projection,
-                scan_generation=_required(form.get("scan_generation")),
-                expected_revision=_revision(form.get("expected_revision")),
+                scan_generation=generation,
+                expected_revision=revision,
             )
+        except FilesystemOperationBlockedError as error:
+            return _error_response(error.code, str(error), 409)
         except OrganizationUnavailableError as error:
             return _error_response(error.code, error.safe_message, 409)
         except OrganizationDecisionError as error:
@@ -301,12 +306,12 @@ def create_organization_api_router() -> APIRouter:
         common = _validate_common_request(request)
         if common is not None:
             return common
-        scan_or_response = _completed_scan(request)
-        if isinstance(scan_or_response, Response):
-            return scan_or_response
         try:
             form = await _validated_mutation_form(request, {"csrf_token"})
             _require_movement_fields(form, {"csrf_token"})
+            scan_or_response = _completed_scan(request)
+            if isinstance(scan_or_response, Response):
+                return scan_or_response
             projection = _projection(scan_or_response)
             browser_session_id = session_id_for_session(request.session)
             current = request.app.state.organization_decisions.approved_for_movement(
@@ -324,7 +329,12 @@ def create_organization_api_router() -> APIRouter:
                 current_decision_revision=current.session.decision_revision,
                 coordinator=request.app.state.organization_execution,
                 operation_repository=request.app.state.organization_operations,
+                filesystem_operation_admission=(
+                    request.app.state.filesystem_operation_admission
+                ),
             )
+        except FilesystemOperationBlockedError as error:
+            return _error_response(error.code, str(error), 409)
         except (
             OrganizationDecisionError,
             OrganizationMovementError,

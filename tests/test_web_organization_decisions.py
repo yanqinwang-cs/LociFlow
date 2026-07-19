@@ -6,9 +6,15 @@ from pathlib import Path
 import re
 import tempfile
 import unittest
+from unittest import mock
 
 import httpx
 
+from organizer.application.filesystem_operation_admission import (
+    FilesystemOperationBlockedError,
+    RecoveryAdmissionState,
+    SAFE_RECOVERY_MESSAGE,
+)
 from organizer.application.scan_service import scan_root
 from organizer.application.standards_models import StandardsApplicationError
 from organizer.application.standards_repository import StandardsRepository
@@ -46,6 +52,44 @@ class WebOrganizationDecisionTests(unittest.IsolatedAsyncioTestCase):
 
     async def asyncTearDown(self) -> None:
         self.directory.cleanup()
+
+    async def test_approval_recovery_block_is_no_store_and_follows_request_security(self):
+        async with _client(self.app) as client:
+            csrf = await self._authenticate(client)
+            selected = await self._bulk(client, csrf)
+            revision = selected.json()["review"]["decision_revision"]
+            self.app.state.filesystem_operation_admission.inspect_and_require_clear = mock.Mock(
+                side_effect=FilesystemOperationBlockedError(
+                    RecoveryAdmissionState.BLOCKED_UNFINISHED_OPERATION
+                )
+            )
+            data = {
+                "csrf_token": csrf,
+                "scan_generation": "scan-one",
+                "expected_revision": str(revision),
+            }
+            wrong_origin = await client.post(
+                "/api/organization/approval", data=data
+            )
+            blocked = await client.post(
+                "/api/organization/approval", data=data, headers=_origin()
+            )
+            current = await client.get("/api/organization/current")
+
+        self.assertEqual(wrong_origin.status_code, 403)
+        self.assertEqual(blocked.status_code, 409)
+        self.assertEqual(blocked.headers["cache-control"], "no-store")
+        self.assertEqual(
+            blocked.json(),
+            {
+                "error": {
+                    "code": "filesystem_operation_blocked",
+                    "message": SAFE_RECOVERY_MESSAGE,
+                }
+            },
+        )
+        self.assertEqual(current.json()["review"]["status"], "ready_for_approval")
+        self.assertEqual(current.json()["review"]["decision_revision"], revision)
 
     async def test_get_has_implicit_revision_zero_and_post_survives_reload(
         self,

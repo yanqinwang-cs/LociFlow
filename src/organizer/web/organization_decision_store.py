@@ -10,6 +10,13 @@ from organizer.application.duplicate_bin_approval_service import (
 )
 from organizer.application.duplicate_bin_models import SafeDuplicateBatchProjection
 from organizer.application.duplicate_bin_repository import DuplicateBinRepository
+from organizer.application.execution_coordinator import OrganizationExecutionCoordinator
+from organizer.application.filesystem_operation_admission import (
+    FilesystemOperationAdmission,
+    FilesystemOperationBlockedError,
+    FilesystemOperationInspector,
+    RecoveryAdmissionState,
+)
 from organizer.application.organization_decision_models import (
     OrganizationDecisionSession,
     STATUS_READY_TO_MOVE,
@@ -46,8 +53,16 @@ class OrganizationDecisionStore:
         duplicate_bin_repository: DuplicateBinRepository | None = None,
         *,
         runtime_lifecycle: RuntimeLifecycle | None = None,
+        execution_coordinator: OrganizationExecutionCoordinator | None = None,
+        filesystem_operation_admission: FilesystemOperationAdmission | None = None,
     ) -> None:
         self._runtime_lifecycle = runtime_lifecycle or RuntimeLifecycle()
+        self._execution_coordinator = execution_coordinator or (
+            OrganizationExecutionCoordinator(self._runtime_lifecycle)
+        )
+        if self._execution_coordinator.runtime_lifecycle is not self._runtime_lifecycle:
+            raise ValueError("decision store lifecycle ownership is inconsistent")
+        self._filesystem_operation_admission = filesystem_operation_admission
         self._lock = Lock()
         self._sessions: dict[str, OrganizationDecisionSnapshot] = {}
         self._invalidated_generations: set[tuple[Path, str]] = set()
@@ -183,53 +198,78 @@ class OrganizationDecisionStore:
         with self._runtime_lifecycle.begin_operation(
             RuntimeOperationKind.STATE_MUTATION
         ):
-            with self._lock:
-                self._validate_generation(scan, projection, scan_generation)
-                stored = self._sessions.get(browser_session_id)
-                if stored is not None and stored.session.scan_generation != scan.job_id:
-                    self._sessions.pop(browser_session_id, None)
-                    stored = None
-                current = stored or OrganizationDecisionSnapshot(
-                    projection,
-                    create_organization_decision_session(projection),
-                )
-                if current.session.status == STATUS_READY_TO_MOVE:
-                    approved = current.session.approved_plan
+            if not self._execution_coordinator.try_acquire():
+                raise OrganizationDecisionError("movement_or_undo_in_progress")
+            try:
+                with self._lock:
+                    self._validate_generation(scan, projection, scan_generation)
+                    stored = self._sessions.get(browser_session_id)
                     if (
-                        approved is not None
-                        and approved.decision_revision == expected_revision
+                        stored is not None
+                        and stored.session.scan_generation != scan.job_id
                     ):
-                        return current
-                    raise OrganizationDecisionError("approval_already_completed")
-                self._validate_revision(current.session, expected_revision)
-                updated = approve_organization_plan(
-                    current.session,
-                    current.projection,
-                )
-                assert updated.approved_plan is not None
-                repository = self._duplicate_bin_repository
-                if repository is None and updated.approved_plan.duplicate_decisions:
-                    repository = DuplicateBinRepository(current.projection.root)
-                try:
-                    batch = (
-                        create_or_recover_duplicate_batch(
-                            approved_plan=updated.approved_plan,
-                            projection=current.projection,
-                            browser_session_id=browser_session_id,
-                            repository=repository,
-                        )
-                        if repository is not None
-                        else None
+                        self._sessions.pop(browser_session_id, None)
+                        stored = None
+                    current = stored or OrganizationDecisionSnapshot(
+                        projection,
+                        create_organization_decision_session(projection),
                     )
-                except DuplicateBinApprovalError as error:
-                    raise OrganizationDecisionError(error.code) from error
-                snapshot = OrganizationDecisionSnapshot(
-                    current.projection,
-                    updated,
-                    batch.safe_projection() if batch is not None else None,
-                )
-                self._sessions[browser_session_id] = snapshot
-                return snapshot
+                    if current.session.status == STATUS_READY_TO_MOVE:
+                        approved = current.session.approved_plan
+                        if (
+                            approved is None
+                            or approved.decision_revision != expected_revision
+                        ):
+                            raise OrganizationDecisionError(
+                                "approval_already_completed"
+                            )
+                    else:
+                        self._validate_revision(current.session, expected_revision)
+
+                    self._admission_for(current.projection.root).inspect_and_require_clear()
+
+                    if current.session.status == STATUS_READY_TO_MOVE:
+                        return current
+                    updated = approve_organization_plan(
+                        current.session,
+                        current.projection,
+                    )
+                    assert updated.approved_plan is not None
+                    repository = self._duplicate_bin_repository
+                    if repository is None and updated.approved_plan.duplicate_decisions:
+                        repository = DuplicateBinRepository(current.projection.root)
+                    try:
+                        batch = (
+                            create_or_recover_duplicate_batch(
+                                approved_plan=updated.approved_plan,
+                                projection=current.projection,
+                                browser_session_id=browser_session_id,
+                                repository=repository,
+                            )
+                            if repository is not None
+                            else None
+                        )
+                    except DuplicateBinApprovalError as error:
+                        raise OrganizationDecisionError(error.code) from error
+                    snapshot = OrganizationDecisionSnapshot(
+                        current.projection,
+                        updated,
+                        batch.safe_projection() if batch is not None else None,
+                    )
+                    self._sessions[browser_session_id] = snapshot
+                    return snapshot
+            finally:
+                self._execution_coordinator.release()
+
+    def _admission_for(self, root: Path) -> FilesystemOperationAdmission:
+        admission = self._filesystem_operation_admission
+        if admission is None:
+            return FilesystemOperationAdmission(FilesystemOperationInspector(root))
+        if admission.root != root.resolve(strict=True):
+            raise FilesystemOperationBlockedError(
+                RecoveryAdmissionState.BLOCKED_INCONSISTENT_OPERATION_STATE
+            )
+        return admission
 
     def approved_for_movement(
         self,

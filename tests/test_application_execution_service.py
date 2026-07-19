@@ -12,13 +12,15 @@ from unittest import mock
 
 from organizer.application.execution_coordinator import OrganizationExecutionCoordinator
 from organizer.application.filesystem_operation_admission import (
+    FilesystemOperationAdmission,
     FilesystemOperationBlockedError,
+    FilesystemOperationInspector,
 )
 from organizer.application.execution_service import (
     CONFIRM_MOVE_APPROVED_FILES,
     OrganizationExecutionError,
     inspect_incomplete_organization_operation,
-    issue_movement_authorization,
+    issue_movement_authorization as _issue_movement_authorization,
     move_approved_organization,
 )
 from organizer.application.organization_decision_models import (
@@ -45,6 +47,24 @@ from organizer.application.runtime_lifecycle import (
     RuntimeOperationKind,
 )
 from organizer.models import MovePlanItem, ReviewedPlanItem
+
+
+def issue_movement_authorization(plan, coordinator):
+    paths = [
+        path
+        for item in plan.reviewed_move_items
+        for path in (item.plan_item.source, item.plan_item.destination)
+    ]
+    root = Path(os.path.commonpath([str(path) for path in paths])).resolve()
+    if root.is_file() or root.suffix:
+        root = root.parent
+    return _issue_movement_authorization(
+        plan,
+        coordinator,
+        filesystem_operation_admission=FilesystemOperationAdmission(
+            FilesystemOperationInspector(root)
+        ),
+    )
 
 
 class ApplicationExecutionServiceTests(unittest.TestCase):

@@ -19,6 +19,38 @@ from tests.test_application_undo_service import _verified_operation
 
 
 class WebActivityApiTests(unittest.IsolatedAsyncioTestCase):
+    async def test_preview_recovery_block_creates_no_undo_capability(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            _, _, _, record = _verified_operation(root, 1)
+            app = _app(root)
+            async with _client(app) as client:
+                csrf = await _authenticate(client)
+                app.state.filesystem_operation_admission.inspect_and_require_clear = mock.Mock(
+                    side_effect=FilesystemOperationBlockedError(
+                        RecoveryAdmissionState.BLOCKED_UNFINISHED_OPERATION
+                    )
+                )
+                blocked = await client.post(
+                    f"/api/activity/{record.operation_id}/undo/preview",
+                    data={"csrf_token": csrf},
+                    headers={"Origin": "http://127.0.0.1"},
+                )
+
+            self.assertEqual(blocked.status_code, 409)
+            self.assertEqual(blocked.headers["cache-control"], "no-store")
+            self.assertEqual(
+                blocked.json(),
+                {
+                    "error": {
+                        "code": "filesystem_operation_blocked",
+                        "message": SAFE_RECOVERY_MESSAGE,
+                    }
+                },
+            )
+            self.assertEqual(app.state.organization_execution._undo_authorizations, {})
+            self.assertEqual(app.state.organization_undos.list_records(), ())
+
     async def test_recovery_block_returns_safe_conflict_without_consuming_undo(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()

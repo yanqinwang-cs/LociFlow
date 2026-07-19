@@ -104,6 +104,9 @@ def create_activity_api_router() -> APIRouter:
                     movement_repository=request.app.state.duplicate_bin_operations,
                     restore_repository=request.app.state.duplicate_bin_restores,
                     coordinator=request.app.state.organization_execution,
+                    filesystem_operation_admission=(
+                        request.app.state.filesystem_operation_admission
+                    ),
                 )
             else:
                 preview = preview_organization_undo(
@@ -112,7 +115,12 @@ def create_activity_api_router() -> APIRouter:
                     coordinator=request.app.state.organization_execution,
                     operation_repository=request.app.state.organization_operations,
                     undo_repository=request.app.state.organization_undos,
+                    filesystem_operation_admission=(
+                        request.app.state.filesystem_operation_admission
+                    ),
                 )
+        except FilesystemOperationBlockedError as error:
+            return _error_response(error.code, str(error), 409)
         except DuplicateBinRestoreError as error:
             return _duplicate_restore_error(error)
         except OrganizationUndoError as error:

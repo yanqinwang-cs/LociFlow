@@ -42,6 +42,35 @@ class WebDuplicateBinRestoreTests(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self) -> None:
         self.directory.cleanup()
 
+    async def test_preview_recovery_block_does_not_supersede_existing_restore_token(self) -> None:
+        async with _client(self.app) as client:
+            csrf = await _authenticate(client, self.token)
+            await _move(client, csrf, self.batch.batch_id)
+            item = (await client.get("/api/duplicate-bin")).json()["items"][0]
+            data = {"csrf_token": csrf, "item_ids": json.dumps([item["id"]])}
+            existing = await client.post(
+                "/api/duplicate-bin/restore/preview", data=data, headers=_origin()
+            )
+            before = self.app.state.duplicate_bin_restores.authorization_path.read_bytes()
+            self.app.state.filesystem_operation_admission.inspect_and_require_clear = mock.Mock(
+                side_effect=FilesystemOperationBlockedError(
+                    RecoveryAdmissionState.BLOCKED_MALFORMED_OPERATION_STATE
+                )
+            )
+            blocked = await client.post(
+                "/api/duplicate-bin/restore/preview", data=data, headers=_origin()
+            )
+
+        self.assertEqual(existing.status_code, 200)
+        self.assertEqual(blocked.status_code, 409)
+        self.assertEqual(blocked.headers["cache-control"], "no-store")
+        self.assertEqual(blocked.json()["error"]["code"], "filesystem_operation_blocked")
+        self.assertEqual(blocked.json()["error"]["message"], SAFE_RECOVERY_MESSAGE)
+        self.assertEqual(
+            self.app.state.duplicate_bin_restores.authorization_path.read_bytes(),
+            before,
+        )
+
     async def test_recovery_block_is_safe_and_does_not_consume_restore_token(self) -> None:
         async with _client(self.app) as client:
             csrf = await _authenticate(client, self.token)

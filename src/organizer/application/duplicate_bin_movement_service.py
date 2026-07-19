@@ -92,6 +92,7 @@ def preview_duplicate_bin_movement(
     authorization_repository: DuplicateBinAuthorizationRepository,
     operation_repository: DuplicateBinOperationRepository,
     coordinator: OrganizationExecutionCoordinator,
+    filesystem_operation_admission: FilesystemOperationAdmission | None = None,
     issued_at: str | None = None,
 ) -> DuplicateBinMovementPreview:
     _server_uuid(batch_id, "duplicate_batch_not_found")
@@ -105,6 +106,7 @@ def preview_duplicate_bin_movement(
             authorization_repository=authorization_repository,
             operation_repository=operation_repository,
             coordinator=coordinator,
+            filesystem_operation_admission=filesystem_operation_admission,
             issued_at=issued_at,
         )
 
@@ -117,20 +119,28 @@ def _preview_duplicate_bin_movement(
     authorization_repository: DuplicateBinAuthorizationRepository,
     operation_repository: DuplicateBinOperationRepository,
     coordinator: OrganizationExecutionCoordinator,
+    filesystem_operation_admission: FilesystemOperationAdmission | None = None,
     issued_at: str | None = None,
 ) -> DuplicateBinMovementPreview:
-    try:
-        batch = batch_repository.load(batch_id)
-    except DuplicateBinRepositoryError as error:
-        raise DuplicateBinMovementError("duplicate_batch_not_found") from error
-    if not batch.can_receive_authorization:
-        raise DuplicateBinMovementError("duplicate_batch_not_approved")
-    if operation_repository.find_for_batch(batch_id) is not None:
-        raise DuplicateBinMovementError("duplicate_bin_movement_already_started")
     if not coordinator.try_acquire():
         raise DuplicateBinMovementError("movement_or_undo_in_progress")
-    coordinator.release()
     try:
+        try:
+            batch = batch_repository.load(batch_id)
+        except DuplicateBinRepositoryError as error:
+            raise DuplicateBinMovementError("duplicate_batch_not_found") from error
+        if not batch.can_receive_authorization:
+            raise DuplicateBinMovementError("duplicate_batch_not_approved")
+        if operation_repository.find_for_batch(batch_id) is not None:
+            raise DuplicateBinMovementError(
+                "duplicate_bin_movement_already_started"
+            )
+        admission = filesystem_operation_admission or FilesystemOperationAdmission(
+            FilesystemOperationInspector(batch_repository.root)
+        )
+        if admission.root != batch_repository.root:
+            raise DuplicateBinMovementError("duplicate_batch_stale")
+        admission.inspect_and_require_clear()
         authorization = authorization_repository.issue(
             batch,
             browser_session_id=browser_session_id,
@@ -138,6 +148,8 @@ def _preview_duplicate_bin_movement(
         )
     except DuplicateBinAuthorizationError as error:
         raise DuplicateBinMovementError(error.code) from error
+    finally:
+        coordinator.release()
     return DuplicateBinMovementPreview(
         copies_to_move=len(batch.items),
         confirmation=CONFIRM_MOVE_COPIES_TO_DUPLICATE_BIN,

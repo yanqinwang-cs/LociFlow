@@ -114,7 +114,12 @@ def create_duplicate_bin_api_router() -> APIRouter:
                 authorization_repository=request.app.state.duplicate_bin_authorizations,
                 operation_repository=request.app.state.duplicate_bin_operations,
                 coordinator=request.app.state.organization_execution,
+                filesystem_operation_admission=(
+                    request.app.state.filesystem_operation_admission
+                ),
             )
+        except FilesystemOperationBlockedError as error:
+            return _error(error.code, str(error), 409)
         except DuplicateBinMovementError as error:
             return _movement_error(error)
         except ApplicationStoppingError as error:
@@ -187,7 +192,12 @@ def create_duplicate_bin_api_router() -> APIRouter:
                 movement_repository=request.app.state.duplicate_bin_operations,
                 restore_repository=request.app.state.duplicate_bin_restores,
                 coordinator=request.app.state.organization_execution,
+                filesystem_operation_admission=(
+                    request.app.state.filesystem_operation_admission
+                ),
             )
+        except FilesystemOperationBlockedError as error:
+            return _error(error.code, str(error), 409)
         except DuplicateBinRestoreError as error:
             return _restore_error(error)
         except ApplicationStoppingError as error:

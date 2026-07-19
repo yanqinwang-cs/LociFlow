@@ -15,6 +15,7 @@ from organizer.application.execution_service import (
 )
 from organizer.application.filesystem_operation_admission import (
     FilesystemOperationAdmission,
+    FilesystemOperationInspector,
 )
 from organizer.application.organization_decision_models import (
     STATUS_READY_TO_MOVE,
@@ -112,52 +113,68 @@ def preview_organization_movement(
     current_decision_revision: int,
     coordinator: OrganizationExecutionCoordinator,
     operation_repository: OrganizationOperationRepository,
+    filesystem_operation_admission: FilesystemOperationAdmission | None = None,
 ) -> OrganizationMovementPreview:
     """Issue a one-use authorization from server-owned approved state."""
 
-    _validate_current_approval(
-        approved_plan,
-        current_scan_generation,
-        current_decision_revision,
-    )
-    if not approved_plan.reviewed_move_items:
-        raise OrganizationMovementError("no_supported_moves")
-    try:
-        existing = operation_repository.find_for_plan(
-            approved_plan.scan_generation,
-            approved_plan.decision_revision,
-        )
-        blocking = operation_repository.blocking_record()
-    except ValueError as error:
-        raise OrganizationMovementError("movement_recovery_required") from error
-    if existing is not None:
-        raise OrganizationMovementError("movement_already_started")
-    if blocking is not None:
-        raise OrganizationMovementError(
-            "movement_recovery_required"
-            if blocking.status == STATUS_INTERRUPTED
-            else "movement_or_undo_in_progress"
-        )
     with coordinator.runtime_lifecycle.begin_operation(
         RuntimeOperationKind.STATE_MUTATION
     ):
         if not coordinator.try_acquire():
             raise OrganizationMovementError("movement_or_undo_in_progress")
-        coordinator.release()
-        authorization = _issue_movement_authorization(
-            approved_plan,
-            coordinator,
-            browser_session_id=browser_session_id,
-            configured_root_identity=operation_repository.configured_root_identity,
-        )
-        return OrganizationMovementPreview(
-            files_to_move=len(approved_plan.reviewed_move_items),
-            duplicate_copies_deferred=(
-                approved_plan.summary.duplicate_copies_for_future_bin
-            ),
-            confirmation=CONFIRM_MOVE_APPROVED_FILES,
-            confirmation_token=authorization.authorization_id,
-        )
+        try:
+            _validate_current_approval(
+                approved_plan,
+                current_scan_generation,
+                current_decision_revision,
+            )
+            if not approved_plan.reviewed_move_items:
+                raise OrganizationMovementError("no_supported_moves")
+            try:
+                existing = operation_repository.find_for_plan(
+                    approved_plan.scan_generation,
+                    approved_plan.decision_revision,
+                )
+                blocking = operation_repository.blocking_record()
+            except ValueError as error:
+                raise OrganizationMovementError(
+                    "movement_recovery_required"
+                ) from error
+            if existing is not None:
+                raise OrganizationMovementError("movement_already_started")
+            if blocking is not None:
+                raise OrganizationMovementError(
+                    "movement_recovery_required"
+                    if blocking.status == STATUS_INTERRUPTED
+                    else "movement_or_undo_in_progress"
+                )
+            admission = (
+                filesystem_operation_admission
+                or FilesystemOperationAdmission(
+                    FilesystemOperationInspector(operation_repository.root)
+                )
+            )
+            if admission.root != operation_repository.root:
+                raise OrganizationMovementError("approved_plan_stale")
+            admission.inspect_and_require_clear()
+            authorization = _issue_movement_authorization(
+                approved_plan,
+                coordinator,
+                browser_session_id=browser_session_id,
+                configured_root_identity=(
+                    operation_repository.configured_root_identity
+                ),
+            )
+            return OrganizationMovementPreview(
+                files_to_move=len(approved_plan.reviewed_move_items),
+                duplicate_copies_deferred=(
+                    approved_plan.summary.duplicate_copies_for_future_bin
+                ),
+                confirmation=CONFIRM_MOVE_APPROVED_FILES,
+                confirmation_token=authorization.authorization_id,
+            )
+        finally:
+            coordinator.release()
 
 
 def execute_organization_movement(

@@ -80,18 +80,25 @@ def issue_movement_authorization(
     approved_plan: ApprovedOrganizationPlan,
     coordinator: OrganizationExecutionCoordinator,
     *,
+    filesystem_operation_admission: FilesystemOperationAdmission,
     browser_session_id: str | None = None,
     configured_root_identity: str | None = None,
 ) -> MovementAuthorization:
     with coordinator.runtime_lifecycle.begin_operation(
         RuntimeOperationKind.STATE_MUTATION
     ):
-        return _issue_movement_authorization(
-            approved_plan,
-            coordinator,
-            browser_session_id=browser_session_id,
-            configured_root_identity=configured_root_identity,
-        )
+        if not coordinator.try_acquire():
+            raise OrganizationExecutionError("movement_already_started")
+        try:
+            filesystem_operation_admission.inspect_and_require_clear()
+            return _issue_movement_authorization(
+                approved_plan,
+                coordinator,
+                browser_session_id=browser_session_id,
+                configured_root_identity=configured_root_identity,
+            )
+        finally:
+            coordinator.release()
 
 
 def _issue_movement_authorization(

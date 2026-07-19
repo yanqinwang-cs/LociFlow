@@ -13,6 +13,9 @@ from organizer.application.duplicate_bin_repository import (
     DuplicateBinRepository,
     DuplicateBinRepositoryError,
 )
+from organizer.application.filesystem_operation_admission import (
+    FilesystemOperationBlockedError,
+)
 from organizer.application.organization_decision_service import (
     OrganizationDecisionError,
     approve_organization_plan,
@@ -311,9 +314,7 @@ class DuplicateBinApprovalServiceTests(unittest.TestCase):
             selected_again = _select_first_copy(
                 store, "browser", second_scan, second_projection
             )
-            with self.assertRaisesRegex(
-                OrganizationDecisionError, "duplicate_batch_conflict"
-            ):
+            with self.assertRaises(FilesystemOperationBlockedError):
                 store.approve(
                     "browser",
                     second_scan,

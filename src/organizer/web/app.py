@@ -107,10 +107,6 @@ def create_app(config: WebAppConfig) -> FastAPI:
     )
     app.state.duplicate_bin_operations = DuplicateBinOperationRepository(config.root)
     app.state.duplicate_bin_restores = DuplicateBinRestoreRepository(config.root)
-    app.state.organization_decisions = OrganizationDecisionStore(
-        app.state.duplicate_bin_batches,
-        runtime_lifecycle=app.state.runtime_lifecycle,
-    )
     app.state.organization_execution = OrganizationExecutionCoordinator(
         app.state.runtime_lifecycle
     )
@@ -130,6 +126,12 @@ def create_app(config: WebAppConfig) -> FastAPI:
     )
     app.state.filesystem_operation_admission = FilesystemOperationAdmission(
         app.state.filesystem_operation_inspector
+    )
+    app.state.organization_decisions = OrganizationDecisionStore(
+        app.state.duplicate_bin_batches,
+        runtime_lifecycle=app.state.runtime_lifecycle,
+        execution_coordinator=app.state.organization_execution,
+        filesystem_operation_admission=app.state.filesystem_operation_admission,
     )
     app.state.standards = StandardsService(
         StandardsRepository(config.root),

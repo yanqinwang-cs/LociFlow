@@ -65,29 +65,48 @@ def preview_organization_undo(
     coordinator: OrganizationExecutionCoordinator,
     operation_repository: OrganizationOperationRepository,
     undo_repository: OrganizationUndoRepository,
+    filesystem_operation_admission: FilesystemOperationAdmission | None = None,
 ) -> UndoPreview:
-    _load_operation(operation_id, operation_repository)
-    eligibility = calculate_undo_eligibility(
-        operation_repository=operation_repository,
-        undo_repository=undo_repository,
-        requested_operation_id=operation_id,
-    )
-    if not eligibility.undoable:
-        raise OrganizationUndoError(eligibility.error_code or "operation_not_undoable")
     with coordinator.runtime_lifecycle.begin_operation(
         RuntimeOperationKind.STATE_MUTATION
     ):
-        authorization = coordinator.issue_undo_authorization(
-            browser_session_id=browser_session_id,
-            configured_root_identity=operation_repository.configured_root_identity,
-            operation_id=operation_id,
-        )
-        return UndoPreview(
-            operation_id=operation_id,
-            files_to_restore=eligibility.files_to_restore,
-            confirmation_required=CONFIRM_UNDO_FILE_MOVE,
-            confirmation_token=authorization.authorization_id,
-        )
+        if not coordinator.try_acquire():
+            raise OrganizationUndoError("movement_or_undo_in_progress")
+        try:
+            _load_operation(operation_id, operation_repository)
+            eligibility = calculate_undo_eligibility(
+                operation_repository=operation_repository,
+                undo_repository=undo_repository,
+                requested_operation_id=operation_id,
+            )
+            if not eligibility.undoable:
+                raise OrganizationUndoError(
+                    eligibility.error_code or "operation_not_undoable"
+                )
+            admission = (
+                filesystem_operation_admission
+                or FilesystemOperationAdmission(
+                    FilesystemOperationInspector(operation_repository.root)
+                )
+            )
+            if admission.root != operation_repository.root:
+                raise OrganizationUndoError("operation_not_undoable")
+            admission.inspect_and_require_clear()
+            authorization = coordinator.issue_undo_authorization(
+                browser_session_id=browser_session_id,
+                configured_root_identity=(
+                    operation_repository.configured_root_identity
+                ),
+                operation_id=operation_id,
+            )
+            return UndoPreview(
+                operation_id=operation_id,
+                files_to_restore=eligibility.files_to_restore,
+                confirmation_required=CONFIRM_UNDO_FILE_MOVE,
+                confirmation_token=authorization.authorization_id,
+            )
+        finally:
+            coordinator.release()
 
 
 def undo_organization_operation(

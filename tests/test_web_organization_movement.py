@@ -56,6 +56,38 @@ class WebOrganizationMovementTests(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self) -> None:
         self.directory.cleanup()
 
+    async def test_preview_recovery_block_creates_no_capability_after_security(self) -> None:
+        async with _client(self.app) as client:
+            csrf = await _authenticate(client, self.token)
+            await _approve(client, csrf)
+            self.app.state.filesystem_operation_admission.inspect_and_require_clear = mock.Mock(
+                side_effect=FilesystemOperationBlockedError(
+                    RecoveryAdmissionState.BLOCKED_UNFINISHED_OPERATION
+                )
+            )
+            wrong_origin = await client.post(
+                "/api/organization/move/preview", data={"csrf_token": csrf}
+            )
+            blocked = await client.post(
+                "/api/organization/move/preview",
+                data={"csrf_token": csrf},
+                headers=_origin(),
+            )
+
+        self.assertEqual(wrong_origin.status_code, 403)
+        self.assertEqual(blocked.status_code, 409)
+        self.assertEqual(blocked.headers["cache-control"], "no-store")
+        self.assertEqual(
+            blocked.json(),
+            {
+                "error": {
+                    "code": "filesystem_operation_blocked",
+                    "message": SAFE_RECOVERY_MESSAGE,
+                }
+            },
+        )
+        self.assertEqual(self.app.state.organization_execution._authorizations, {})
+
     async def test_recovery_block_returns_safe_conflict_after_security_and_token_validation(self) -> None:
         async with _client(self.app) as client:
             csrf = await _authenticate(client, self.token)
