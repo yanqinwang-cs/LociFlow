@@ -10,6 +10,7 @@ import tempfile
 from threading import Lock
 import uuid
 
+from organizer.application.duplicate_bin_models import ITEM_STATES
 from organizer.application.duplicate_bin_restore_models import (
     AUTH_AVAILABLE,
     AUTH_CONSUMED,
@@ -122,6 +123,14 @@ class DuplicateBinRestoreRepository:
             raise DuplicateBinRestoreRepositoryError("invalid_confirmation_token")
         return record
 
+    def list_authorizations(
+        self,
+    ) -> tuple[DuplicateBinRestoreAuthorization, ...]:
+        """Return every canonical restore authorization without mutation."""
+
+        with self._lock:
+            return self._load_authorizations_unlocked()
+
     def consume_authorization(
         self, authorization_id: str, restore_operation_id: str
     ) -> None:
@@ -194,7 +203,7 @@ class DuplicateBinRestoreRepository:
         return record
 
     def list_operations(self) -> tuple[DuplicateBinRestoreOperation, ...]:
-        if not self.operation_directory.exists():
+        if not os.path.lexists(self.operation_directory):
             return ()
         if (
             self.operation_directory.is_symlink()
@@ -364,6 +373,9 @@ def _authorization_item(data: object) -> RestoreAuthorizationItem:
     version = data["batch_version"]
     if isinstance(version, bool) or not isinstance(version, int) or version < 1:
         raise ValueError("batch version")
+    item_state = _string(data["item_state"], "item state")
+    if item_state not in ITEM_STATES:
+        raise ValueError("item state")
     return RestoreAuthorizationItem(
         bin_item_id=_uuid(data["bin_item_id"], "bin_item_id"),
         movement_operation_id=_uuid(
@@ -371,7 +383,7 @@ def _authorization_item(data: object) -> RestoreAuthorizationItem:
         ),
         batch_id=_uuid(data["batch_id"], "batch_id"),
         batch_version=version,
-        item_state=_string(data["item_state"], "item state"),
+        item_state=item_state,
     )
 
 
@@ -424,6 +436,9 @@ def _operation_from_dict(data: object) -> DuplicateBinRestoreOperation:
         raise ValueError("restore verification fields")
     mismatch = verification["mismatch_codes"]
     count = verification["verified_count"]
+    verification_status = _string(verification["status"], "verification status")
+    if verification_status not in {"not_run", "passed", "failed"}:
+        raise ValueError("restore verification status")
     if not isinstance(mismatch, list) or not all(
         isinstance(item, str) for item in mismatch
     ):
@@ -448,7 +463,7 @@ def _operation_from_dict(data: object) -> DuplicateBinRestoreOperation:
         started_at=_optional_timestamp(data["started_at"]),
         completed_at=_optional_timestamp(data["completed_at"]),
         verification=DuplicateBinRestoreVerification(
-            status=_string(verification["status"], "verification status"),
+            status=verification_status,
             verified_count=count,
             mismatch_codes=tuple(mismatch),
         ),

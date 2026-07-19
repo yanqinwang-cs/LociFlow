@@ -85,14 +85,13 @@ class OrganizationOperationRepository:
         return record
 
     def list_records(self) -> tuple[OrganizationOperationRecord, ...]:
-        if not self.directory.exists():
+        if not os.path.lexists(self.directory):
             return ()
         self._validate_directory()
-        records = [
-            self.load(path.stem)
-            for path in sorted(self.directory.glob("*.json"))
-            if path.is_file() and not path.is_symlink()
-        ]
+        paths = tuple(sorted(self.directory.glob("*.json")))
+        if any(path.is_symlink() or not path.is_file() for path in paths):
+            raise ValueError("organization operation record is unsafe")
+        records = [self.load(path.stem) for path in paths]
         return tuple(records)
 
     def find_for_plan(

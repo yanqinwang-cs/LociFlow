@@ -172,7 +172,7 @@ class DuplicateBinRepositoryTests(unittest.TestCase):
             )
 
             with self.assertRaisesRegex(DuplicateBinRepositoryError, "malformed"):
-                DuplicateBinRepository(root)
+                DuplicateBinRepository(root).read_catalog()
 
     def test_completed_batches_release_claims_but_unresolved_batches_retain_them(
         self,

@@ -58,8 +58,6 @@ class DuplicateBinRepository:
         self.directory = resolved_root / DUPLICATE_BIN_RELATIVE_ROOT
         self.catalog_path = resolved_root / DUPLICATE_BIN_CATALOG
         self._lock = Lock()
-        with self._lock:
-            self._load_catalog_unlocked()
 
     @property
     def configured_root_identity(self) -> str:
@@ -129,6 +127,12 @@ class DuplicateBinRepository:
         return tuple(
             batch for batch in self.list_batches() if batch.status == BATCH_APPROVED
         )
+
+    def read_catalog(self) -> DuplicateBinCatalog:
+        """Return the canonical durable catalog without repairing it."""
+
+        with self._lock:
+            return self._read_catalog_unlocked()
 
     def transition_status(
         self,
@@ -233,6 +237,17 @@ class DuplicateBinRepository:
             raise DuplicateBinRepositoryError("invalid_duplicate_batch_candidate")
 
     def _load_catalog_unlocked(self) -> DuplicateBinCatalog:
+        catalog = self._read_catalog_unlocked()
+        reconciled = _reconcile_fully_restored_batches(
+            catalog,
+            updated_at=datetime.now(timezone.utc).isoformat(),
+        )
+        if reconciled is not catalog:
+            self._atomic_write(_catalog_to_dict(reconciled))
+            catalog = reconciled
+        return catalog
+
+    def _read_catalog_unlocked(self) -> DuplicateBinCatalog:
         if not os.path.lexists(self.catalog_path):
             return DuplicateBinCatalog(
                 configured_root_identity=self.configured_root_identity,
@@ -257,13 +272,6 @@ class DuplicateBinRepository:
             ) from error
         if catalog.configured_root_identity != self.configured_root_identity:
             raise DuplicateBinRepositoryError("duplicate_bin_catalog_wrong_root")
-        reconciled = _reconcile_fully_restored_batches(
-            catalog,
-            updated_at=datetime.now(timezone.utc).isoformat(),
-        )
-        if reconciled is not catalog:
-            self._atomic_write(_catalog_to_dict(reconciled))
-            catalog = reconciled
         return catalog
 
     def _atomic_write(self, data: dict[str, Any]) -> None:

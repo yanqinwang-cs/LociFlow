@@ -71,7 +71,7 @@ class DuplicateBinOperationRepository:
         return record
 
     def list_records(self) -> tuple[DuplicateBinOperationRecord, ...]:
-        if not self.directory.exists():
+        if not os.path.lexists(self.directory):
             return ()
         if self.directory.is_symlink() or not self.directory.is_dir():
             raise ValueError("duplicate bin operation directory is unsafe")

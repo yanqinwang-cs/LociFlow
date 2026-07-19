@@ -108,6 +108,12 @@ class DuplicateBinAuthorizationRepository:
             raise DuplicateBinAuthorizationError("invalid_confirmation_token")
         return record
 
+    def list_records(self) -> tuple[DuplicateBinMovementAuthorization, ...]:
+        """Return every canonical authorization without changing the catalog."""
+
+        with self._lock:
+            return self._load_unlocked()
+
     def consume(
         self, authorization_id: str, operation_id: str
     ) -> DuplicateBinMovementAuthorization:

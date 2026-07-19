@@ -24,6 +24,9 @@ from organizer.web.review_explorer import ReviewExplorerStore
 from organizer.web.organization_decision_store import OrganizationDecisionStore
 from organizer.web.scan_jobs import ScanJobController
 from organizer.application.execution_coordinator import OrganizationExecutionCoordinator
+from organizer.application.filesystem_operation_admission import (
+    FilesystemOperationInspector,
+)
 from organizer.application.duplicate_bin_repository import DuplicateBinRepository
 from organizer.application.duplicate_bin_authorization_repository import (
     DuplicateBinAuthorizationRepository,
@@ -112,6 +115,18 @@ def create_app(config: WebAppConfig) -> FastAPI:
     )
     app.state.organization_operations = OrganizationOperationRepository(config.root)
     app.state.organization_undos = OrganizationUndoRepository(config.root)
+    app.state.filesystem_operation_inspector = FilesystemOperationInspector(
+        config.root,
+        organization_operations=app.state.organization_operations,
+        organization_undos=app.state.organization_undos,
+        duplicate_bin_batches=app.state.duplicate_bin_batches,
+        duplicate_bin_authorizations=app.state.duplicate_bin_authorizations,
+        duplicate_bin_operations=app.state.duplicate_bin_operations,
+        duplicate_bin_restores=app.state.duplicate_bin_restores,
+    )
+    app.state.recovery_admission_snapshot = (
+        app.state.filesystem_operation_inspector.inspect()
+    )
     app.state.standards = StandardsService(
         StandardsRepository(config.root),
         decision_store=app.state.organization_decisions,

@@ -110,14 +110,13 @@ class OrganizationUndoRepository:
         return record
 
     def list_records(self) -> tuple[OrganizationUndoRecord, ...]:
-        if not self.directory.exists():
+        if not os.path.lexists(self.directory):
             return ()
         self._validate_directory()
-        return tuple(
-            self.load(path.stem)
-            for path in sorted(self.directory.glob("*.json"))
-            if path.is_file() and not path.is_symlink()
-        )
+        paths = tuple(sorted(self.directory.glob("*.json")))
+        if any(path.is_symlink() or not path.is_file() for path in paths):
+            raise ValueError("organization undo record is unsafe")
+        return tuple(self.load(path.stem) for path in paths)
 
     def linked_records(self, operation_id: str) -> tuple[OrganizationUndoRecord, ...]:
         _uuid_string(operation_id, "operation_id")
