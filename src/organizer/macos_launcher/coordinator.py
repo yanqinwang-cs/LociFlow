@@ -26,6 +26,10 @@ from organizer.web.launcher import (
 )
 from organizer.web.root_admission import RootAdmissionError
 from organizer.web.server import build_launcher_dependencies
+from organizer.web.signal_coordinator import (
+    ProcessSignalCoordinator,
+    SignalIntent,
+)
 
 
 @dataclass(frozen=True)
@@ -118,6 +122,9 @@ class NativeLauncherCoordinator:
         self._worker: Thread | None = None
         self._worker_started = False
         self._exit_code = 1
+        self._signals: ProcessSignalCoordinator | None = None
+        self._signal_intent: SignalIntent | None = None
+        self._signal_owned_shutdown = False
 
     def run(self) -> int:
         try:
@@ -165,6 +172,22 @@ class NativeLauncherCoordinator:
         self._remember_sensitive(config.session_secret)
 
         try:
+            self._signals = ProcessSignalCoordinator(
+                self._receive_signal,
+                terminal_completed=self._terminal_result.done,
+                diagnostic=self._record_signal_diagnostic,
+            )
+            self._signals.install()
+        except Exception as error:
+            self._record_diagnostic(
+                "signal_installation",
+                "signal_installation_failed",
+                error,
+            )
+            self._present_code("app_creation_failed")
+            return 1
+
+        try:
             dependencies = self._dependencies_factory(self._adapter.open_browser)
             self._worker = self._thread_factory(
                 lambda: self._run_worker(config, dependencies),
@@ -180,10 +203,13 @@ class NativeLauncherCoordinator:
                 error,
             )
             self._present_code("app_creation_failed")
-            return 1
+            return self._finish_signal_coordination(1)
 
-        self._adapter.run_event_loop()
-        return self._exit_code
+        try:
+            self._adapter.run_event_loop()
+        finally:
+            exit_code = self._finish_signal_coordination(self._exit_code)
+        return exit_code
 
     def _start_worker_on_main(self) -> None:
         try:
@@ -261,7 +287,7 @@ class NativeLauncherCoordinator:
             except Exception as error:
                 self._shutdown.worker_join_failed(error)
                 return
-            self._exit_code = result.exit_code
+            self._exit_code = self._signal_exit_code(result)
             self._shutdown.worker_completed(succeeded=result.succeeded)
             return
         if self._worker_has_started():
@@ -272,6 +298,43 @@ class NativeLauncherCoordinator:
             self._adapter.show_error(native_message_for(result.error.code))
         self._exit_code = result.exit_code
         self._adapter.stop_event_loop()
+
+    def _receive_signal(self, intent: SignalIntent) -> bool:
+        self._adapter.dispatch_to_main(
+            lambda intent=intent: self._receive_signal_on_main(intent)
+        )
+        return True
+
+    def _receive_signal_on_main(self, intent: SignalIntent) -> None:
+        if self._terminal_result.done():
+            return
+        if self._shutdown.request_signal_shutdown():
+            self._signal_intent = intent
+            self._signal_owned_shutdown = True
+
+    def _signal_exit_code(self, result: LaunchResult) -> int:
+        if (
+            result.succeeded
+            and self._signal_owned_shutdown
+            and self._signal_intent is not None
+        ):
+            return self._signal_intent.exit_code
+        return result.exit_code
+
+    def _finish_signal_coordination(self, exit_code: int) -> int:
+        signals = self._signals
+        if signals is None:
+            return exit_code
+        try:
+            result = signals.close()
+        except Exception as error:
+            self._record_signal_diagnostic("signal_restore_failed", error)
+            self._present_code("cleanup_failed")
+            return 1
+        if result.error is not None:
+            self._present_code("cleanup_failed")
+            return 1
+        return exit_code
 
     def _handle_keyboard_interrupt(self) -> int:
         self._record_interrupt_diagnostic()
@@ -349,6 +412,27 @@ class NativeLauncherCoordinator:
         )
         try:
             self._diagnostic_sink(diagnostic)
+        except Exception:
+            pass
+
+    def _record_signal_diagnostic(
+        self,
+        code: str,
+        exception: BaseException | None,
+    ) -> None:
+        if self._diagnostic_sink is None:
+            return
+        try:
+            self._diagnostic_sink(
+                NativeDiagnostic(
+                    phase="native_signal",
+                    code=code,
+                    exception_class=(
+                        None if exception is None else type(exception).__name__
+                    ),
+                    traceback=None,
+                )
+            )
         except Exception:
             pass
 
@@ -458,6 +542,7 @@ def _native_launcher_dependencies(
     return build_launcher_dependencies(
         browser_opener=browser_opener,
         fail_closed_readiness=True,
+        coordinated_signals=True,
     )
 
 

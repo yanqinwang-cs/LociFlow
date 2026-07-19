@@ -4,9 +4,11 @@ from collections.abc import Callable
 from concurrent.futures import Future
 from contextlib import redirect_stderr
 from io import StringIO
+import os
 from pathlib import Path
 from queue import Empty, Queue
 import tempfile
+import signal
 from threading import Event, Thread, current_thread, main_thread
 import unittest
 from unittest import mock
@@ -265,6 +267,36 @@ class _NativeQuitAdapter(_Adapter):
             callback()
 
 
+class _SignalAdapter(_Adapter):
+    def __init__(
+        self,
+        selected: str,
+        signal_number: int,
+        server_running: Event,
+    ) -> None:
+        super().__init__(selected)
+        self.signal_number = signal_number
+        self.server_running = server_running
+
+    def run_event_loop(self) -> None:
+        self.events.append("adapter.run_loop")
+        self.loop_started.set()
+        try:
+            start_worker = self.callbacks.get(timeout=2)
+        except Empty as error:
+            raise AssertionError("worker-start callback was not delivered") from error
+        start_worker()
+        if not self.server_running.wait(2):
+            raise AssertionError("server did not start")
+        os.kill(os.getpid(), self.signal_number)
+        while not self.loop_stopped.is_set():
+            try:
+                callback = self.callbacks.get(timeout=2)
+            except Empty as error:
+                raise AssertionError("signal callback was not delivered") from error
+            callback()
+
+
 class _AsyncObserver:
     def __init__(
         self,
@@ -413,6 +445,52 @@ class MacOSLauncherCoordinatorTests(unittest.TestCase):
         self.assertEqual(adapter.termination_replies, [True])
         self.assertIsNotNone(coordinator._worker)
         self.assertFalse(coordinator._worker.is_alive())
+
+    def test_native_post_selection_signals_wait_and_return_signal_code(self) -> None:
+        for signal_number, expected_code in (
+            (signal.SIGINT, 130),
+            (signal.SIGTERM, 143),
+        ):
+            with self.subTest(signal_number=signal_number):
+                lifecycle = RuntimeLifecycle()
+                server_running = Event()
+                server = _BlockingServer()
+                original_run = server.run
+
+                def run(*, sockets: list[_Socket]) -> None:
+                    server_running.set()
+                    original_run(sockets=sockets)
+
+                server.run = run  # type: ignore[method-assign]
+                adapter = _SignalAdapter(
+                    str(self.root),
+                    signal_number,
+                    server_running,
+                )
+                socket = _Socket()
+                dependencies = LauncherDependencies(
+                    config_factory=WebAppConfig,
+                    socket_binder=lambda _port, socket=socket: socket,
+                    app_factory=lambda _config: lifecycle,
+                    server_factory=lambda _app, _port, server=server: server,
+                    readiness_factory=(
+                        lambda _health, _launch, _stop, _exit: _Observer()
+                    ),
+                    manual_browser_bootstrap=lambda _url: None,
+                    runtime_lifecycle_accessor=lambda app: app,
+                )
+
+                result = NativeLauncherCoordinator(
+                    adapter,
+                    dependencies_factory=lambda _browser, deps=dependencies: deps,
+                ).run()
+
+                self.assertEqual(result, expected_code)
+                self.assertTrue(lifecycle.snapshot().is_stopping)
+                self.assertEqual(server.exit_requests, 1)
+                self.assertTrue(socket.closed)
+                self.assertEqual(adapter.termination_replies, [])
+                self.assertTrue(adapter.stopped)
 
     def test_cancellation_creates_no_config_worker_or_browser_side_effect(self) -> None:
         adapter = _Adapter(None)

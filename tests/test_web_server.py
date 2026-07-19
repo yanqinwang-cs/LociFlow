@@ -3,7 +3,9 @@ from __future__ import annotations
 from contextlib import redirect_stderr, redirect_stdout
 import errno
 from io import StringIO
+import os
 from pathlib import Path
+import signal
 import socket
 import tempfile
 from threading import Event
@@ -11,6 +13,11 @@ import unittest
 from unittest.mock import Mock, patch
 
 from organizer.web.config import WebAppConfig
+from organizer.application.runtime_lifecycle import (
+    RuntimeLifecycle,
+    RuntimeOperationKind,
+)
+from organizer.web.launcher import LaunchPhase, LaunchResult
 from organizer.web import server
 
 
@@ -313,6 +320,70 @@ class WebServerTests(unittest.TestCase):
         runner.request_exit()
 
         self.assertTrue(uvicorn_server.should_exit)
+
+    def test_coordinated_uvicorn_runner_delegates_signal_ownership(self) -> None:
+        with (
+            patch.object(server.uvicorn, "Config", return_value="config"),
+            patch.object(signal, "signal") as install_handler,
+        ):
+            runner = server._create_uvicorn_server(
+                object(),
+                43210,
+                coordinated_signals=True,
+            )
+            with runner._server.capture_signals():
+                pass
+
+        self.assertIsInstance(runner._server, server._CoordinatedUvicornServer)
+        install_handler.assert_not_called()
+
+    def test_development_signals_wait_for_active_work_and_return_signal_code(
+        self,
+    ) -> None:
+        for signal_number, expected_code in (
+            (signal.SIGINT, 130),
+            (signal.SIGTERM, 143),
+        ):
+            with self.subTest(signal_number=signal_number):
+                stopping = Event()
+                stopped = Event()
+                stop_calls = []
+
+                class _ObservedLifecycle(RuntimeLifecycle):
+                    def begin_shutdown(self):
+                        snapshot = super().begin_shutdown()
+                        stopping.set()
+                        return snapshot
+
+                def fake_launch(_root_provider, **kwargs):
+                    lifecycle = _ObservedLifecycle()
+                    lease = lifecycle.begin_operation(RuntimeOperationKind.SCAN)
+                    runtime_handle = kwargs["runtime_handle"]
+                    stop_controller = kwargs["stop_controller"]
+                    stop_controller.attach(
+                        lambda: (stop_calls.append("stop"), stopped.set())
+                    )
+                    runtime_handle.publish_lifecycle(lifecycle)
+
+                    os.kill(os.getpid(), signal_number)
+                    self.assertTrue(stopping.wait(1))
+                    self.assertEqual(stop_calls, [])
+                    lease.finish()
+                    self.assertTrue(stopped.wait(1))
+                    return LaunchResult(0, (LaunchPhase.STOPPED,))
+
+                stderr = StringIO()
+                with (
+                    patch.object(server, "launch", side_effect=fake_launch),
+                    redirect_stderr(stderr),
+                ):
+                    result = server.main(
+                        ["--root", str(self.root), "--no-browser"]
+                    )
+
+                self.assertEqual(result, expected_code)
+                self.assertEqual(stop_calls, ["stop"])
+                self.assertNotIn("Traceback", stderr.getvalue())
 
     def test_no_browser_uses_one_worker_and_always_closes_socket(self) -> None:
         fake_socket = _FakeSocket()

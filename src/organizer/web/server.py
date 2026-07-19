@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import argparse
 from collections.abc import Callable, Sequence
-from contextlib import closing
+from contextlib import closing, contextmanager
 import errno
 from pathlib import Path
 import socket
@@ -19,16 +19,24 @@ import uvicorn
 from organizer.web.app import app_runtime_lifecycle, create_app
 from organizer.web.config import WebAppConfig
 from organizer.web.launcher import (
+    LaunchRuntimeHandle,
+    LaunchStopController,
     LauncherDependencies,
     LauncherError,
     launch,
     launch_configured,
+)
+from organizer.web.signal_coordinator import (
+    LifecycleShutdownCoordinator,
+    ProcessSignalCoordinator,
+    ShutdownSequenceState,
 )
 
 LOOPBACK_HOST = "127.0.0.1"
 DEFAULT_READY_TIMEOUT_SECONDS = 5.0
 _SOCKET_BACKLOG = 2048
 _MAX_DYNAMIC_BIND_ATTEMPTS = 3
+_SAFE_SIGNAL_FAILURE_MESSAGE = "The local server could not close safely."
 
 
 class WebServerError(ValueError):
@@ -44,6 +52,14 @@ class _UvicornServerRunner:
 
     def request_exit(self) -> None:
         self._server.should_exit = True
+
+
+class _CoordinatedUvicornServer(uvicorn.Server):
+    """Delegate SIGINT/SIGTERM ownership to ProcessSignalCoordinator."""
+
+    @contextmanager
+    def capture_signals(self):
+        yield
 
 
 class _FailClosedReadinessObserver:
@@ -92,17 +108,45 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     default_root = args.root is None
     root = args.root if args.root is not None else Path.home() / "Downloads"
-    result = launch(
-        lambda: root,
-        dependencies=_launcher_dependencies(),
-        port=args.port,
-        open_browser=not args.no_browser,
+    stop_controller = LaunchStopController()
+    runtime_handle = LaunchRuntimeHandle(stop_controller)
+    shutdown = LifecycleShutdownCoordinator(runtime_handle)
+    launch_completed = Event()
+    signals = ProcessSignalCoordinator(
+        lambda _intent: shutdown.request_shutdown().started,
+        terminal_completed=launch_completed.is_set,
     )
+    try:
+        signals.install()
+    except Exception:
+        print(_SAFE_SIGNAL_FAILURE_MESSAGE, file=sys.stderr)
+        return 1
+    try:
+        result = launch(
+            lambda: root,
+            dependencies=build_launcher_dependencies(coordinated_signals=True),
+            port=args.port,
+            open_browser=not args.no_browser,
+            stop_controller=stop_controller,
+            runtime_handle=runtime_handle,
+        )
+    finally:
+        launch_completed.set()
+        shutdown.join()
+        signal_result = signals.close()
     if result.error is not None:
         message = result.error.safe_message
         if default_root and result.error.code == "root_missing":
             message = "The Downloads folder does not exist."
         parser.error(message)
+    if (
+        shutdown.state is ShutdownSequenceState.FAILED
+        or signal_result.error is not None
+    ):
+        print(_SAFE_SIGNAL_FAILURE_MESSAGE, file=sys.stderr)
+        return 1
+    if signal_result.intent is not None and signal_result.owns_shutdown:
+        return signal_result.intent.exit_code
     return result.exit_code
 
 
@@ -179,6 +223,7 @@ def build_launcher_dependencies(
     *,
     browser_opener: Callable[[str], bool] | None = None,
     fail_closed_readiness: bool = False,
+    coordinated_signals: bool = False,
 ) -> LauncherDependencies:
     if fail_closed_readiness:
         if browser_opener is None:
@@ -198,7 +243,11 @@ def build_launcher_dependencies(
         config_factory=lambda root: WebAppConfig(root=root),
         socket_binder=bind_loopback_socket,
         app_factory=create_app,
-        server_factory=_create_uvicorn_server,
+        server_factory=lambda app, port: _create_uvicorn_server(
+            app,
+            port,
+            coordinated_signals=coordinated_signals,
+        ),
         readiness_factory=readiness_factory,
         manual_browser_bootstrap=_print_manual_launch_url,
         runtime_lifecycle_accessor=app_runtime_lifecycle,
@@ -209,7 +258,12 @@ def _launcher_dependencies() -> LauncherDependencies:
     return build_launcher_dependencies()
 
 
-def _create_uvicorn_server(app: Any, port: int) -> _UvicornServerRunner:
+def _create_uvicorn_server(
+    app: Any,
+    port: int,
+    *,
+    coordinated_signals: bool = False,
+) -> _UvicornServerRunner:
     uvicorn_config = uvicorn.Config(
         app=app,
         host=LOOPBACK_HOST,
@@ -219,7 +273,8 @@ def _create_uvicorn_server(app: Any, port: int) -> _UvicornServerRunner:
         access_log=False,
         proxy_headers=False,
     )
-    return _UvicornServerRunner(uvicorn.Server(uvicorn_config))
+    server_type = _CoordinatedUvicornServer if coordinated_signals else uvicorn.Server
+    return _UvicornServerRunner(server_type(uvicorn_config))
 
 
 def _create_readiness_thread(

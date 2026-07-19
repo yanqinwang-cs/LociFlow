@@ -68,6 +68,9 @@ class _Adapter:
     def set_launch_running(self, running: bool) -> None:
         self.events.append(f"running:{running}")
 
+    def stop_event_loop(self) -> None:
+        self.events.append("loop.stop")
+
 
 class NativeShutdownCoordinatorTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -345,6 +348,35 @@ class NativeShutdownCoordinatorTests(unittest.TestCase):
 
         self.assertEqual(self.adapter.replies, [True])
         self.assertEqual(self.adapter.events.count("running:False"), 1)
+
+    def test_signal_shutdown_without_command_q_stops_loop_without_reply(self) -> None:
+        lifecycle = RuntimeLifecycle()
+        self.runtime_handle.publish_lifecycle(lifecycle)
+
+        self.assertTrue(self.shutdown.request_signal_shutdown())
+        self.assertFalse(self.shutdown.request_signal_shutdown())
+        self.terminal.set_result(object())
+        self.shutdown.worker_completed(succeeded=True)
+
+        self.assertEqual(self.stop_calls, ["stop"])
+        self.assertEqual(self.adapter.replies, [])
+        self.assertIn("loop.stop", self.adapter.events)
+
+    def test_command_q_joins_signal_shutdown_with_one_reply(self) -> None:
+        lifecycle = RuntimeLifecycle()
+        lease = lifecycle.begin_operation(RuntimeOperationKind.SCAN)
+        self.runtime_handle.publish_lifecycle(lifecycle)
+
+        self.assertTrue(self.shutdown.request_signal_shutdown())
+        self.assertTrue(self.shutdown.request_termination())
+        lease.finish()
+        self.adapter.run_next_callback()
+        self.terminal.set_result(object())
+        self.shutdown.worker_completed(succeeded=True)
+
+        self.assertEqual(self.stop_calls, ["stop"])
+        self.assertEqual(self.adapter.replies, [True])
+        self.assertNotIn("loop.stop", self.adapter.events)
 
 
 if __name__ == "__main__":

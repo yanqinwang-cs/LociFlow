@@ -212,12 +212,16 @@ def launch(
     port: int | None = None,
     open_browser: bool = True,
     lifecycle: LifecycleRecorder | None = None,
+    stop_controller: LaunchStopController | None = None,
+    runtime_handle: LaunchRuntimeHandle | None = None,
 ) -> LaunchResult:
     recorder = lifecycle or LifecycleRecorder()
     recorder.record(LaunchPhase.SELECTING_ROOT)
     try:
         raw_root = root_provider()
     except Exception:
+        if runtime_handle is not None:
+            runtime_handle.finish_lifecycle_publication()
         recorder.record(LaunchPhase.FAILED)
         return _result(
             recorder,
@@ -226,15 +230,21 @@ def launch(
         )
 
     if raw_root is None:
+        if runtime_handle is not None:
+            runtime_handle.finish_lifecycle_publication()
         recorder.record(LaunchPhase.STOPPED)
         return LaunchResult(exit_code=0, phases=recorder.snapshot())
 
     try:
         config = dependencies.config_factory(Path(raw_root))
     except RootAdmissionError as error:
+        if runtime_handle is not None:
+            runtime_handle.finish_lifecycle_publication()
         recorder.record(LaunchPhase.FAILED)
         return _result(recorder, error.code, error.safe_message)
     except (OSError, TypeError, ValueError):
+        if runtime_handle is not None:
+            runtime_handle.finish_lifecycle_publication()
         recorder.record(LaunchPhase.FAILED)
         return _result(
             recorder,
@@ -249,6 +259,8 @@ def launch(
         port=port,
         open_browser=open_browser,
         lifecycle=recorder,
+        stop_controller=stop_controller,
+        runtime_handle=runtime_handle,
     )
 
 
