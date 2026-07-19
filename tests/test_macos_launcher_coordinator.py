@@ -23,6 +23,11 @@ from organizer.macos_launcher.coordinator import (
 from organizer.macos_launcher import coordinator as coordinator_module
 from organizer.web.config import WebAppConfig
 from organizer.web.launcher import LauncherDependencies, LauncherError
+from organizer.web.signal_coordinator import (
+    SignalIntent,
+    SignalKind,
+    SignalShutdownResult,
+)
 
 
 class _Adapter:
@@ -51,6 +56,7 @@ class _Adapter:
         self.shutdown_failures = 0
         self.termination_replies: list[bool] = []
         self.diagnostic_handler: Callable[[str], None] | None = None
+        self.chooser_cancellations = 0
 
     def initialize(self) -> None:
         self.events.append("adapter.initialize")
@@ -60,6 +66,11 @@ class _Adapter:
         if self.choose_error is not None:
             raise self.choose_error
         return self.selected
+
+    def cancel_active_directory_selection(self) -> bool:
+        self.events.append("adapter.choose.cancel")
+        self.chooser_cancellations += 1
+        return True
 
     def open_browser(self, launch_url: str) -> bool:
         self.events.append("adapter.browser.request")
@@ -297,6 +308,102 @@ class _SignalAdapter(_Adapter):
             callback()
 
 
+class _PreRootSignalAdapter(_Adapter):
+    def __init__(self, selected: str, signal_number: int) -> None:
+        super().__init__(selected)
+        self.signal_number = signal_number
+        self.chooser_active = False
+
+    def choose_directory(self) -> str | None:
+        self.events.append("adapter.choose")
+        self.chooser_active = True
+        os.kill(os.getpid(), self.signal_number)
+        try:
+            callback = self.callbacks.get(timeout=2)
+        except Empty as error:
+            raise AssertionError("pre-root signal callback was not delivered") from error
+        callback()
+        self.chooser_active = False
+        return None if self.chooser_cancellations else self.selected
+
+    def cancel_active_directory_selection(self) -> bool:
+        if not self.chooser_active or self.chooser_cancellations:
+            return False
+        return super().cancel_active_directory_selection()
+
+
+class _SignalThenQuitAdapter(_PreRootSignalAdapter):
+    def choose_directory(self) -> str | None:
+        self.events.append("adapter.choose")
+        self.chooser_active = True
+        os.kill(os.getpid(), self.signal_number)
+        try:
+            callback = self.callbacks.get(timeout=2)
+        except Empty as error:
+            raise AssertionError("pre-root signal callback was not delivered") from error
+        callback()
+        if self.termination_handler is None:
+            raise AssertionError("pre-root termination handler was not installed")
+        self.termination_handler()
+        self.chooser_active = False
+        return None
+
+
+class _QuitThenSignalAdapter(_Adapter):
+    def __init__(self, selected: str, signal_number: int) -> None:
+        super().__init__(selected)
+        self.signal_number = signal_number
+
+    def choose_directory(self) -> str | None:
+        self.events.append("adapter.choose")
+        if self.termination_handler is None:
+            raise AssertionError("pre-root termination handler was not installed")
+        self.termination_handler()
+        os.kill(os.getpid(), self.signal_number)
+        return None
+
+
+class _FailingChooserCancellationAdapter(_PreRootSignalAdapter):
+    def cancel_active_directory_selection(self) -> bool:
+        raise RuntimeError("controlled chooser cancellation failure")
+
+
+class _PreRootQuitAdapter(_Adapter):
+    def choose_directory(self) -> str | None:
+        self.events.append("adapter.choose")
+        if self.termination_handler is None:
+            raise AssertionError("pre-root termination handler was not installed")
+        self.events.append("adapter.quit")
+        self.termination_handler()
+        return None
+
+
+class _ControlledSignalCoordinator:
+    instances: list["_ControlledSignalCoordinator"] = []
+    capture_results: list[SignalIntent | None] = []
+
+    def __init__(self, on_signal, **_kwargs: object) -> None:
+        self.on_signal = on_signal
+        self.installs = 0
+        self.closes = 0
+        self.captures = 0
+        self.intent: SignalIntent | None = None
+        self.__class__.instances.append(self)
+
+    def install(self) -> None:
+        self.installs += 1
+
+    def capture_pending_intent(self) -> SignalIntent | None:
+        self.captures += 1
+        if self.__class__.capture_results:
+            self.intent = self.__class__.capture_results.pop(0)
+        return self.intent
+
+    def close(self) -> SignalShutdownResult:
+        self.closes += 1
+        return SignalShutdownResult(self.intent, False, None)
+
+
 class _AsyncObserver:
     def __init__(
         self,
@@ -512,6 +619,160 @@ class MacOSLauncherCoordinatorTests(unittest.TestCase):
         self.assertEqual(adapter.messages, [])
         self.assertNotIn("adapter.browser", adapter.events)
         self.assertNotIn("adapter.run_loop", adapter.events)
+
+    def test_pre_root_signals_abort_chooser_and_create_no_root_side_effects(self) -> None:
+        for signal_number, expected_code in (
+            (signal.SIGINT, 130),
+            (signal.SIGTERM, 143),
+        ):
+            with self.subTest(signal_number=signal_number):
+                adapter = _PreRootSignalAdapter(str(self.root), signal_number)
+                config_factory = mock.Mock()
+                dependencies_factory = mock.Mock()
+                thread_factory = mock.Mock()
+
+                result = NativeLauncherCoordinator(
+                    adapter,
+                    config_factory=config_factory,
+                    dependencies_factory=dependencies_factory,
+                    thread_factory=thread_factory,
+                ).run()
+
+                self.assertEqual(result, expected_code)
+                self.assertEqual(adapter.chooser_cancellations, 1)
+                config_factory.assert_not_called()
+                dependencies_factory.assert_not_called()
+                thread_factory.assert_not_called()
+                self.assertNotIn("adapter.run_loop", adapter.events)
+                self.assertEqual(adapter.messages, [])
+
+    def test_native_quit_during_chooser_wins_without_fake_runtime_shutdown(self) -> None:
+        adapter = _PreRootQuitAdapter(str(self.root))
+        config_factory = mock.Mock()
+        dependencies_factory = mock.Mock()
+        thread_factory = mock.Mock()
+
+        result = NativeLauncherCoordinator(
+            adapter,
+            config_factory=config_factory,
+            dependencies_factory=dependencies_factory,
+            thread_factory=thread_factory,
+        ).run()
+
+        self.assertEqual(result, 0)
+        self.assertEqual(adapter.chooser_cancellations, 1)
+        config_factory.assert_not_called()
+        dependencies_factory.assert_not_called()
+        thread_factory.assert_not_called()
+        self.assertFalse(adapter.finishing_shown)
+        self.assertEqual(adapter.termination_replies, [])
+        self.assertNotIn("adapter.run_loop", adapter.events)
+
+    def test_signal_then_native_quit_preserves_signal_exit_owner(self) -> None:
+        adapter = _SignalThenQuitAdapter(str(self.root), signal.SIGTERM)
+        config_factory = mock.Mock()
+
+        result = NativeLauncherCoordinator(
+            adapter,
+            config_factory=config_factory,
+            dependencies_factory=mock.Mock(),
+            thread_factory=mock.Mock(),
+        ).run()
+
+        self.assertEqual(result, 143)
+        self.assertEqual(adapter.chooser_cancellations, 1)
+        config_factory.assert_not_called()
+
+    def test_native_quit_then_signal_preserves_clean_quit_owner(self) -> None:
+        adapter = _QuitThenSignalAdapter(str(self.root), signal.SIGINT)
+        config_factory = mock.Mock()
+
+        result = NativeLauncherCoordinator(
+            adapter,
+            config_factory=config_factory,
+            dependencies_factory=mock.Mock(),
+            thread_factory=mock.Mock(),
+        ).run()
+
+        self.assertEqual(result, 0)
+        self.assertEqual(adapter.chooser_cancellations, 1)
+        config_factory.assert_not_called()
+
+    def test_signal_cancellation_failure_is_safe_and_starts_no_server(self) -> None:
+        adapter = _FailingChooserCancellationAdapter(
+            str(self.root),
+            signal.SIGINT,
+        )
+        config_factory = mock.Mock()
+        diagnostics = []
+
+        result = NativeLauncherCoordinator(
+            adapter,
+            config_factory=config_factory,
+            dependencies_factory=mock.Mock(),
+            thread_factory=mock.Mock(),
+            diagnostic_sink=diagnostics.append,
+        ).run()
+
+        self.assertEqual(result, 1)
+        config_factory.assert_not_called()
+        self.assertEqual(adapter.messages, [])
+        self.assertIn(
+            "chooser_cancellation_failed",
+            [diagnostic.code for diagnostic in diagnostics],
+        )
+
+    def test_signal_observed_before_panel_presentation_skips_chooser(self) -> None:
+        intent = SignalIntent(SignalKind.SIGINT, signal.SIGINT, 130)
+        _ControlledSignalCoordinator.instances = []
+        _ControlledSignalCoordinator.capture_results = [intent]
+        adapter = _Adapter(str(self.root))
+        config_factory = mock.Mock()
+
+        with mock.patch.object(
+            coordinator_module,
+            "ProcessSignalCoordinator",
+            _ControlledSignalCoordinator,
+        ):
+            result = NativeLauncherCoordinator(
+                adapter,
+                config_factory=config_factory,
+                dependencies_factory=mock.Mock(),
+                thread_factory=mock.Mock(),
+            ).run()
+
+        self.assertEqual(result, 130)
+        self.assertNotIn("adapter.choose", adapter.events)
+        config_factory.assert_not_called()
+        self.assertEqual(len(_ControlledSignalCoordinator.instances), 1)
+        signals = _ControlledSignalCoordinator.instances[0]
+        self.assertEqual((signals.installs, signals.closes), (1, 1))
+
+    def test_signal_observed_as_selection_returns_discards_selected_root(self) -> None:
+        intent = SignalIntent(SignalKind.SIGTERM, signal.SIGTERM, 143)
+        _ControlledSignalCoordinator.instances = []
+        _ControlledSignalCoordinator.capture_results = [None, intent]
+        adapter = _Adapter(str(self.root))
+        config_factory = mock.Mock()
+
+        with mock.patch.object(
+            coordinator_module,
+            "ProcessSignalCoordinator",
+            _ControlledSignalCoordinator,
+        ):
+            result = NativeLauncherCoordinator(
+                adapter,
+                config_factory=config_factory,
+                dependencies_factory=mock.Mock(),
+                thread_factory=mock.Mock(),
+            ).run()
+
+        self.assertEqual(result, 143)
+        self.assertEqual(adapter.events.count("adapter.choose"), 1)
+        config_factory.assert_not_called()
+        self.assertEqual(len(_ControlledSignalCoordinator.instances), 1)
+        signals = _ControlledSignalCoordinator.instances[0]
+        self.assertEqual((signals.installs, signals.closes), (1, 1))
 
     def test_keyboard_interrupt_before_worker_creation_returns_130(self) -> None:
         adapter = _Adapter(None, choose_error=KeyboardInterrupt())

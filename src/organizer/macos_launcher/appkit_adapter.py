@@ -55,6 +55,8 @@ class AppKitAdapter:
         self._browser_lock = Lock()
         self._termination_handler: Callable[[], bool] | None = None
         self._diagnostic_handler: Callable[[str], None] | None = None
+        self._active_directory_panel: Any = None
+        self._directory_panel_abort_requested = False
         self._finishing_panel: Any = None
         self._finishing_label: Any = None
 
@@ -75,6 +77,8 @@ class AppKitAdapter:
 
     def choose_directory(self) -> str | None:
         self._require_main_thread()
+        if self._active_directory_panel is not None:
+            raise NativeAdapterError("selection_failed")
         bindings = self._bindings
         panel = bindings.NSOpenPanel.openPanel()
         panel.setCanChooseDirectories_(True)
@@ -93,15 +97,37 @@ class AppKitAdapter:
                 )
             )
 
-        if panel.runModal() != bindings.NSModalResponseOK:
-            return None
-        selected_urls = list(panel.URLs())
-        if len(selected_urls) != 1:
-            raise NativeAdapterError("selection_failed")
-        selected_path = selected_urls[0].path()
-        if not isinstance(selected_path, str) or not selected_path:
-            raise NativeAdapterError("selection_failed")
-        return selected_path
+        self._active_directory_panel = panel
+        self._directory_panel_abort_requested = False
+        self._emit_diagnostic("chooser_presenting")
+        try:
+            if panel.runModal() != bindings.NSModalResponseOK:
+                return None
+            selected_urls = list(panel.URLs())
+            if len(selected_urls) != 1:
+                raise NativeAdapterError("selection_failed")
+            selected_path = selected_urls[0].path()
+            if not isinstance(selected_path, str) or not selected_path:
+                raise NativeAdapterError("selection_failed")
+            return selected_path
+        finally:
+            if self._active_directory_panel is panel:
+                self._active_directory_panel = None
+                self._directory_panel_abort_requested = False
+
+    def cancel_active_directory_selection(self) -> bool:
+        self._require_main_thread()
+        panel = self._active_directory_panel
+        if panel is None or self._directory_panel_abort_requested:
+            return False
+        if self._app is None:
+            raise RuntimeError("AppKit application is unavailable")
+        self._directory_panel_abort_requested = True
+        self._emit_diagnostic("chooser_cancel_requested")
+        self._app.abortModal()
+        panel.orderOut_(None)
+        self._emit_diagnostic("chooser_modal_aborted")
+        return True
 
     def open_browser(self, launch_url: str) -> bool:
         with self._browser_lock:
@@ -162,6 +188,13 @@ class AppKitAdapter:
 
     def running_quit_requested(self) -> Any:
         self._require_main_thread()
+        if self._active_directory_panel is not None:
+            if self._termination_handler is not None:
+                self._termination_handler()
+            else:
+                self.cancel_active_directory_selection()
+            self._emit_diagnostic("chooser_quit_requested")
+            return self._bindings.NSTerminateCancel
         if not self._launch_running:
             return self._bindings.NSTerminateNow
         if self._termination_handler is None:

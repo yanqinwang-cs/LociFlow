@@ -53,6 +53,8 @@ class _Panel:
         self.response = response
         self.urls = urls
         self.values: dict[str, object] = {}
+        self.on_run = None
+        self.order_outs = 0
 
     def setCanChooseDirectories_(self, value: bool) -> None:
         self.values["directories"] = value
@@ -82,7 +84,12 @@ class _Panel:
         self.values["initial"] = value.path()
 
     def runModal(self) -> int:
+        if self.on_run is not None:
+            self.on_run()
         return self.response
+
+    def orderOut_(self, _sender: object) -> None:
+        self.order_outs += 1
 
     def URLs(self) -> list[_URL]:
         return self.urls
@@ -103,6 +110,7 @@ class _Application:
         self.termination_replies: list[bool] = []
         self.termination_requests = 0
         self.last_termination_result = None
+        self.modal_aborts = 0
 
     def setActivationPolicy_(self, _policy: object) -> None:
         pass
@@ -123,6 +131,9 @@ class _Application:
         self.termination_requests += 1
         self.last_termination_result = self.delegate.applicationShouldTerminate_(self)
         return self.last_termination_result
+
+    def abortModal(self) -> None:
+        self.modal_aborts += 1
 
 
 class _NSApplication:
@@ -395,6 +406,77 @@ class MacOSAppKitAdapterTests(unittest.TestCase):
 
             self.assertIsNone(adapter.choose_directory())
             self.assertEqual(_Alert.shown, [])
+
+    def test_external_chooser_cancellation_aborts_and_hides_exactly_once(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            panel = _Panel(0, [])
+            adapter = self.adapter(panel, Path(directory))
+            adapter.initialize()
+            results: list[bool] = []
+
+            def cancel_twice() -> None:
+                results.append(adapter.cancel_active_directory_selection())
+                results.append(adapter.cancel_active_directory_selection())
+
+            panel.on_run = cancel_twice
+
+            self.assertIsNone(adapter.choose_directory())
+            self.assertEqual(results, [True, False])
+            self.assertEqual(_NSApplication.application.modal_aborts, 1)
+            self.assertEqual(panel.order_outs, 1)
+            self.assertIsNone(adapter._active_directory_panel)
+            self.assertFalse(adapter.cancel_active_directory_selection())
+
+    def test_chooser_cancellation_rejects_non_main_thread_appkit_access(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            panel = _Panel(0, [])
+            adapter = self.adapter(panel, Path(directory))
+            adapter.initialize()
+            adapter._active_directory_panel = panel
+            errors: list[BaseException] = []
+            worker = Thread(
+                target=lambda: self._capture_error(
+                    adapter.cancel_active_directory_selection,
+                    errors,
+                )
+            )
+
+            worker.start()
+            worker.join()
+
+            self.assertEqual(len(errors), 1)
+            self.assertIsInstance(errors[0], RuntimeError)
+            self.assertEqual(_NSApplication.application.modal_aborts, 0)
+            self.assertEqual(panel.order_outs, 0)
+
+    @staticmethod
+    def _capture_error(callback, errors: list[BaseException]) -> None:
+        try:
+            callback()
+        except BaseException as error:
+            errors.append(error)
+
+    def test_quit_during_chooser_aborts_modal_without_delayed_termination(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            panel = _Panel(0, [])
+            adapter = self.adapter(panel, Path(directory))
+            adapter.initialize()
+            handler = mock.Mock(
+                side_effect=adapter.cancel_active_directory_selection
+            )
+            adapter.set_termination_handler(handler)
+            panel.on_run = lambda: _NSApplication.application.terminate_(None)
+
+            self.assertIsNone(adapter.choose_directory())
+
+            handler.assert_called_once_with()
+            self.assertEqual(
+                _NSApplication.application.last_termination_result,
+                "cancel",
+            )
+            self.assertEqual(_NSApplication.application.modal_aborts, 1)
+            self.assertEqual(panel.order_outs, 1)
+            self.assertEqual(_NSApplication.application.termination_replies, [])
 
     def test_browser_request_is_marshaled_once_and_url_is_opaque(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

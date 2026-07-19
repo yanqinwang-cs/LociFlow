@@ -211,6 +211,7 @@ class ProcessSignalCoordinator:
         self._diagnostic = diagnostic
         self._lock = Lock()
         self._intent: SignalIntent | None = None
+        self._callback_started = False
         self._owns_shutdown = False
         self._error: str | None = None
         self._read_fd: int | None = None
@@ -230,6 +231,11 @@ class ProcessSignalCoordinator:
     def owns_shutdown(self) -> bool:
         with self._lock:
             return self._owns_shutdown
+
+    def capture_pending_intent(self) -> SignalIntent | None:
+        """Atomically expose an accepted or handler-observed first signal."""
+        with self._lock:
+            return self._intent
 
     def install(self) -> None:
         if current_thread() is not main_thread():
@@ -253,7 +259,7 @@ class ProcessSignalCoordinator:
             )
             for number in (signal.SIGINT, signal.SIGTERM):
                 previous_handlers[number] = signal.getsignal(number)
-                signal.signal(number, _noop_signal_handler)
+                signal.signal(number, self._record_pending_signal)
             reader = self._thread_factory(
                 self._read_signals,
                 "loci-flow-signal-coordinator",
@@ -283,9 +289,12 @@ class ProcessSignalCoordinator:
     def close(self) -> SignalShutdownResult:
         if current_thread() is not main_thread():
             raise RuntimeError("process signal handlers require the main thread")
+        terminal_completed = self._terminal_completed()
         with self._lock:
             if self._closed:
                 return self._result_locked()
+            if terminal_completed and not self._callback_started:
+                self._intent = None
             self._closed = True
             installed = self._installed
             handlers = dict(self._previous_handlers)
@@ -358,21 +367,37 @@ class ProcessSignalCoordinator:
 
     def _accept(self, intent: SignalIntent) -> None:
         with self._lock:
-            if self._intent is not None or self._closed:
+            if self._callback_started or self._closed:
                 return
         if self._terminal_completed():
+            with self._lock:
+                if not self._callback_started:
+                    self._intent = None
             return
         with self._lock:
-            if self._intent is not None or self._closed:
+            if self._callback_started or self._closed:
                 return
-            self._intent = intent
+            if self._intent is None:
+                self._intent = intent
+            accepted_intent = self._intent
+            self._callback_started = True
         try:
-            owns_shutdown = bool(self._on_signal(intent))
+            owns_shutdown = bool(self._on_signal(accepted_intent))
         except Exception as error:
             self._record_failure("signal_shutdown_failed", error)
             return
         with self._lock:
             self._owns_shutdown = owns_shutdown
+
+    def _record_pending_signal(
+        self,
+        number: int,
+        _frame: FrameType | None,
+    ) -> None:
+        # Python invokes this handler on the main thread. Keep it lock-free and
+        # callback-free; the wakeup-fd reader performs the callback work.
+        if self._intent is None:
+            self._intent = _intent_for(number)
 
     def _restore_partial(
         self,
@@ -416,10 +441,6 @@ def _intent_for(number: int) -> SignalIntent | None:
         return SignalIntent(SignalKind.SIGINT, number, 130)
     if number == signal.SIGTERM:
         return SignalIntent(SignalKind.SIGTERM, number, 143)
-    return None
-
-
-def _noop_signal_handler(_number: int, _frame: FrameType | None) -> None:
     return None
 
 

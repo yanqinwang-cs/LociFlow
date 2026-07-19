@@ -3,11 +3,12 @@ from __future__ import annotations
 from collections.abc import Callable
 from concurrent.futures import Future
 from dataclasses import dataclass
+from enum import StrEnum
 import os
 from pathlib import Path
 import re
 import sys
-from threading import Thread
+from threading import Event, Lock, Thread
 import traceback
 from typing import Protocol, TextIO
 
@@ -52,10 +53,22 @@ class NativeAdapterError(ValueError):
         self.code = code
 
 
+class _PreRootPhase(StrEnum):
+    INITIALIZING = "initializing"
+    CHOOSING = "choosing"
+    SIGNAL_WON = "signal_won"
+    QUIT_WON = "quit_won"
+    CANCEL_WON = "cancel_won"
+    SELECTION_WON = "selection_won"
+    RUNNING = "running"
+
+
 class NativeAdapter(Protocol):
     def initialize(self) -> None: ...
 
     def choose_directory(self) -> str | None: ...
+
+    def cancel_active_directory_selection(self) -> bool: ...
 
     def open_browser(self, launch_url: str) -> bool: ...
 
@@ -125,6 +138,11 @@ class NativeLauncherCoordinator:
         self._signals: ProcessSignalCoordinator | None = None
         self._signal_intent: SignalIntent | None = None
         self._signal_owned_shutdown = False
+        self._signal_cleanup_succeeded = False
+        self._pre_root_lock = Lock()
+        self._pre_root_phase = _PreRootPhase.INITIALIZING
+        self._pre_root_terminal = Event()
+        self._pre_root_cancellation_failed = False
 
     def run(self) -> int:
         try:
@@ -136,15 +154,38 @@ class NativeLauncherCoordinator:
         try:
             self._adapter.set_diagnostic_handler(self._record_native_event)
             self._adapter.initialize()
-            self._adapter.set_termination_handler(
-                self._shutdown.request_termination
+            self._signals = ProcessSignalCoordinator(
+                self._receive_signal,
+                terminal_completed=lambda: (
+                    self._terminal_result.done()
+                    or self._pre_root_terminal.is_set()
+                ),
+                diagnostic=self._record_signal_diagnostic,
             )
+            self._signals.install()
+            self._record_native_event("pre_root_signal_owner_installed")
+            self._adapter.set_termination_handler(self._request_pre_root_quit)
+            with self._pre_root_lock:
+                self._pre_root_phase = _PreRootPhase.CHOOSING
+            pending = self._signals.capture_pending_intent()
+            if pending is not None:
+                self._claim_pre_root_signal(pending)
+                return self._finish_pre_root(pending.exit_code)
             raw_root = self._adapter.choose_directory()
+            outcome, intent = self._resolve_directory_selection(raw_root)
         except NativeAdapterError as error:
+            self._pre_root_terminal.set()
+            self._finish_signal_coordination(1)
             self._record_diagnostic("native_shell", error.code, error)
             self._present_code(error.code)
             return 1
+        except KeyboardInterrupt:
+            self._pre_root_terminal.set()
+            self._finish_signal_coordination(130)
+            raise
         except Exception as error:
+            self._pre_root_terminal.set()
+            self._finish_signal_coordination(1)
             self._record_diagnostic(
                 "native_shell",
                 "app_creation_failed",
@@ -153,39 +194,36 @@ class NativeLauncherCoordinator:
             self._present_code("app_creation_failed")
             return 1
 
-        if raw_root is None:
-            return 0
+        if outcome is _PreRootPhase.SIGNAL_WON:
+            assert intent is not None
+            return self._finish_pre_root(intent.exit_code)
+        if outcome in (_PreRootPhase.QUIT_WON, _PreRootPhase.CANCEL_WON):
+            return self._finish_pre_root(0)
+        self._record_native_event("selection_committed")
+        self._adapter.set_termination_handler(self._shutdown.request_termination)
+        with self._pre_root_lock:
+            self._pre_root_phase = _PreRootPhase.RUNNING
+        self._record_native_event("signal_handoff_post_selection")
+        assert raw_root is not None
         self._remember_sensitive(raw_root)
 
         try:
             config = self._config_factory(Path(raw_root))
         except RootAdmissionError as error:
+            self._pre_root_terminal.set()
+            self._finish_signal_coordination(1)
             self._record_diagnostic("root_admission", error.code, error)
             self._present_code(error.code)
             return 1
         except (OSError, TypeError, ValueError) as error:
+            self._pre_root_terminal.set()
+            self._finish_signal_coordination(1)
             self._record_diagnostic("root_admission", "root_not_allowed", error)
             self._present_code("root_not_allowed")
             return 1
         self._remember_sensitive(str(config.root))
         self._remember_sensitive(config.launch_token)
         self._remember_sensitive(config.session_secret)
-
-        try:
-            self._signals = ProcessSignalCoordinator(
-                self._receive_signal,
-                terminal_completed=self._terminal_result.done,
-                diagnostic=self._record_signal_diagnostic,
-            )
-            self._signals.install()
-        except Exception as error:
-            self._record_diagnostic(
-                "signal_installation",
-                "signal_installation_failed",
-                error,
-            )
-            self._present_code("app_creation_failed")
-            return 1
 
         try:
             dependencies = self._dependencies_factory(self._adapter.open_browser)
@@ -306,11 +344,107 @@ class NativeLauncherCoordinator:
         return True
 
     def _receive_signal_on_main(self, intent: SignalIntent) -> None:
+        with self._pre_root_lock:
+            phase = self._pre_root_phase
+            if phase in (_PreRootPhase.INITIALIZING, _PreRootPhase.CHOOSING):
+                self._pre_root_phase = _PreRootPhase.SIGNAL_WON
+                self._signal_intent = intent
+                pre_root = True
+            elif phase is _PreRootPhase.SIGNAL_WON:
+                pre_root = True
+            elif phase in (_PreRootPhase.QUIT_WON, _PreRootPhase.CANCEL_WON):
+                return
+            else:
+                pre_root = False
+        if pre_root:
+            self._record_native_event("pre_root_signal_won")
+            try:
+                self._adapter.cancel_active_directory_selection()
+            except Exception as error:
+                with self._pre_root_lock:
+                    self._pre_root_cancellation_failed = True
+                self._record_signal_diagnostic(
+                    "chooser_cancellation_failed",
+                    error,
+                )
+            return
         if self._terminal_result.done():
             return
         if self._shutdown.request_signal_shutdown():
             self._signal_intent = intent
             self._signal_owned_shutdown = True
+
+    def _request_pre_root_quit(self) -> bool:
+        signals = self._signals
+        pending = None if signals is None else signals.capture_pending_intent()
+        with self._pre_root_lock:
+            if self._pre_root_phase is _PreRootPhase.SIGNAL_WON or pending is not None:
+                self._pre_root_phase = _PreRootPhase.SIGNAL_WON
+                if pending is not None:
+                    self._signal_intent = pending
+                event = "pre_root_signal_won"
+            elif self._pre_root_phase is _PreRootPhase.CHOOSING:
+                self._pre_root_phase = _PreRootPhase.QUIT_WON
+                event = "pre_root_quit_won"
+            else:
+                return True
+        self._record_native_event(event)
+        try:
+            self._adapter.cancel_active_directory_selection()
+        except Exception as error:
+            with self._pre_root_lock:
+                self._pre_root_cancellation_failed = True
+            self._record_signal_diagnostic("chooser_cancellation_failed", error)
+            return False
+        return True
+
+    def _claim_pre_root_signal(self, intent: SignalIntent) -> None:
+        with self._pre_root_lock:
+            if self._pre_root_phase not in (
+                _PreRootPhase.QUIT_WON,
+                _PreRootPhase.CANCEL_WON,
+                _PreRootPhase.SELECTION_WON,
+            ):
+                self._pre_root_phase = _PreRootPhase.SIGNAL_WON
+                self._signal_intent = intent
+        self._record_native_event("pre_root_signal_won")
+
+    def _resolve_directory_selection(
+        self,
+        raw_root: str | None,
+    ) -> tuple[_PreRootPhase, SignalIntent | None]:
+        signals = self._signals
+        pending = None if signals is None else signals.capture_pending_intent()
+        with self._pre_root_lock:
+            phase = self._pre_root_phase
+            if phase is _PreRootPhase.SIGNAL_WON:
+                intent = self._signal_intent or pending
+                if intent is not None:
+                    self._signal_intent = intent
+                return phase, intent
+            if phase is _PreRootPhase.QUIT_WON:
+                return phase, None
+            if pending is not None:
+                self._pre_root_phase = _PreRootPhase.SIGNAL_WON
+                self._signal_intent = pending
+                return _PreRootPhase.SIGNAL_WON, pending
+            if raw_root is None:
+                self._pre_root_phase = _PreRootPhase.CANCEL_WON
+                return _PreRootPhase.CANCEL_WON, None
+            self._pre_root_phase = _PreRootPhase.SELECTION_WON
+            return _PreRootPhase.SELECTION_WON, None
+
+    def _finish_pre_root(self, exit_code: int) -> int:
+        self._pre_root_terminal.set()
+        self._record_native_event("pre_root_exit_code_selected")
+        with self._pre_root_lock:
+            cancellation_failed = self._pre_root_cancellation_failed
+        result = self._finish_signal_coordination(
+            1 if cancellation_failed else exit_code
+        )
+        if self._signal_cleanup_succeeded:
+            self._record_native_event("pre_root_signal_state_restored")
+        return result
 
     def _signal_exit_code(self, result: LaunchResult) -> int:
         if (
@@ -334,6 +468,7 @@ class NativeLauncherCoordinator:
         if result.error is not None:
             self._present_code("cleanup_failed")
             return 1
+        self._signal_cleanup_succeeded = True
         return exit_code
 
     def _handle_keyboard_interrupt(self) -> int:

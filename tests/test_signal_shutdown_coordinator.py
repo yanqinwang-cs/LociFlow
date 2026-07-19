@@ -21,6 +21,22 @@ from organizer.web.signal_coordinator import (
 
 
 class ProcessSignalCoordinatorTests(unittest.TestCase):
+    def test_main_thread_handler_intent_is_visible_before_reader_dispatch(self) -> None:
+        callbacks = []
+        coordinator = ProcessSignalCoordinator(
+            lambda intent: callbacks.append(intent) or True
+        )
+
+        coordinator._record_pending_signal(signal.SIGTERM, None)
+        coordinator._record_pending_signal(signal.SIGINT, None)
+        intent = coordinator.capture_pending_intent()
+
+        self.assertIsNotNone(intent)
+        assert intent is not None
+        self.assertEqual(intent.kind, SignalKind.SIGTERM)
+        self.assertEqual(intent.exit_code, 143)
+        self.assertEqual(callbacks, [])
+
     def test_wakeup_fd_records_first_signal_and_restores_process_state(self) -> None:
         received = Event()
         intents = []
