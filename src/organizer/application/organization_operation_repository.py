@@ -9,6 +9,7 @@ import tempfile
 from typing import Any
 import uuid
 
+from organizer.application.content_identity import RegularFileContentIdentity
 from organizer.application.organization_operation_models import (
     BLOCKING_OPERATION_STATUSES,
     MOVE_ATTEMPTING,
@@ -18,6 +19,7 @@ from organizer.application.organization_operation_models import (
     MOVE_UNATTEMPTED,
     ORGANIZATION_OPERATION_RECORD_TYPE,
     ORGANIZATION_OPERATION_SCHEMA_VERSION,
+    ORGANIZATION_OPERATION_SCHEMA_VERSION_V2,
     REPLAYABLE_TERMINAL_STATUSES,
     STATUS_INTERRUPTED,
     STATUS_MOVED_UNVERIFIED,
@@ -185,6 +187,11 @@ class OrganizationOperationRepository:
 def _record_to_dict(record: OrganizationOperationRecord) -> dict[str, Any]:
     data = asdict(record)
     data["expected_moves"] = [asdict(item) for item in record.expected_moves]
+    if record.schema_version == ORGANIZATION_OPERATION_SCHEMA_VERSION:
+        for item in data["expected_moves"]:
+            item.pop("content_identity")
+    elif record.schema_version != ORGANIZATION_OPERATION_SCHEMA_VERSION_V2:
+        raise ValueError("unsupported organization operation schema version")
     data["verification"] = asdict(record.verification)
     data["verification"]["mismatch_codes"] = list(
         record.verification.mismatch_codes
@@ -195,6 +202,33 @@ def _record_to_dict(record: OrganizationOperationRecord) -> dict[str, Any]:
 def _record_from_dict(data: object, root: Path) -> OrganizationOperationRecord:
     if not isinstance(data, dict):
         raise ValueError("organization operation must contain an object")
+    schema_version = data.get("schema_version")
+    if isinstance(schema_version, bool) or not isinstance(schema_version, int):
+        raise ValueError("unsupported organization operation schema version")
+    if schema_version == ORGANIZATION_OPERATION_SCHEMA_VERSION:
+        return _record_from_versioned_dict(
+            data,
+            root,
+            schema_version=ORGANIZATION_OPERATION_SCHEMA_VERSION,
+            move_parser=_move_from_dict_v1,
+        )
+    if schema_version == ORGANIZATION_OPERATION_SCHEMA_VERSION_V2:
+        return _record_from_versioned_dict(
+            data,
+            root,
+            schema_version=ORGANIZATION_OPERATION_SCHEMA_VERSION_V2,
+            move_parser=_move_from_dict_v2,
+        )
+    raise ValueError("unsupported organization operation schema version")
+
+
+def _record_from_versioned_dict(
+    data: dict[str, Any],
+    root: Path,
+    *,
+    schema_version: int,
+    move_parser,
+) -> OrganizationOperationRecord:
     required = {
         "schema_version",
         "record_type",
@@ -215,8 +249,10 @@ def _record_from_dict(data: object, root: Path) -> OrganizationOperationRecord:
         "duplicate_actions_deferred",
     }
     if set(data) != required:
-        raise ValueError("organization operation fields do not match schema version 1")
-    if data["schema_version"] != ORGANIZATION_OPERATION_SCHEMA_VERSION:
+        raise ValueError(
+            f"organization operation fields do not match schema version {schema_version}"
+        )
+    if data["schema_version"] != schema_version:
         raise ValueError("unsupported organization operation schema version")
     if data["record_type"] != ORGANIZATION_OPERATION_RECORD_TYPE:
         raise ValueError("unexpected organization operation record type")
@@ -233,7 +269,7 @@ def _record_from_dict(data: object, root: Path) -> OrganizationOperationRecord:
     verification = data["verification"]
     if not isinstance(expected_moves, list) or not isinstance(verification, dict):
         raise ValueError("organization operation collections are invalid")
-    moves = tuple(_move_from_dict(item, root) for item in expected_moves)
+    moves = tuple(move_parser(item, root) for item in expected_moves)
     if set(verification) != {"status", "verified_count", "mismatch_codes"}:
         raise ValueError("organization operation verification fields are invalid")
     mismatch_codes = verification["mismatch_codes"]
@@ -278,12 +314,12 @@ def _record_from_dict(data: object, root: Path) -> OrganizationOperationRecord:
         duplicate_actions_deferred=_integer(
             data["duplicate_actions_deferred"], "duplicate_actions_deferred"
         ),
-        schema_version=ORGANIZATION_OPERATION_SCHEMA_VERSION,
+        schema_version=schema_version,
         record_type=ORGANIZATION_OPERATION_RECORD_TYPE,
     )
 
 
-def _move_from_dict(data: object, root: Path) -> OrganizationExpectedMove:
+def _move_from_dict_v1(data: object, root: Path) -> OrganizationExpectedMove:
     if not isinstance(data, dict):
         raise ValueError("organization expected move must contain an object")
     required = {
@@ -301,7 +337,45 @@ def _move_from_dict(data: object, root: Path) -> OrganizationExpectedMove:
         "recovery_state",
     }
     if set(data) != required:
-        raise ValueError("organization expected move fields are invalid")
+        raise ValueError("organization expected move fields are invalid for schema version 1")
+    return _move_from_versioned_dict(data, root, content_identity=None)
+
+
+def _move_from_dict_v2(data: object, root: Path) -> OrganizationExpectedMove:
+    if not isinstance(data, dict):
+        raise ValueError("organization expected move must contain an object")
+    required = {
+        "change_id",
+        "source",
+        "destination",
+        "source_size_bytes",
+        "source_modified_time",
+        "reason",
+        "confidence",
+        "operation",
+        "overwrite_risk",
+        "result_state",
+        "failure_code",
+        "recovery_state",
+        "content_identity",
+    }
+    if set(data) != required:
+        raise ValueError("organization expected move fields are invalid for schema version 2")
+    return _move_from_versioned_dict(
+        data,
+        root,
+        content_identity=RegularFileContentIdentity.from_dict(
+            data["content_identity"]
+        ),
+    )
+
+
+def _move_from_versioned_dict(
+    data: dict[str, Any],
+    root: Path,
+    *,
+    content_identity: RegularFileContentIdentity | None,
+) -> OrganizationExpectedMove:
     modified_time = data["source_modified_time"]
     if isinstance(modified_time, bool) or not isinstance(modified_time, (int, float)):
         raise ValueError("source_modified_time must be numeric")
@@ -330,6 +404,7 @@ def _move_from_dict(data: object, root: Path) -> OrganizationExpectedMove:
         result_state=result_state,
         failure_code=_optional_string(data["failure_code"], "failure_code"),
         recovery_state=_optional_string(data["recovery_state"], "recovery_state"),
+        content_identity=content_identity,
     )
 
 

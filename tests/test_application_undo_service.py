@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 import tempfile
@@ -171,6 +172,13 @@ class OrganizationUndoServiceTests(unittest.TestCase):
                 self.assertFalse((root / "Documents" / f"file-{index}.txt").exists())
             persisted = OrganizationUndoRepository(root).load(outcome.undo_id)
             self.assertEqual(persisted.status, UNDO_RESTORED)
+            self.assertEqual(persisted.schema_version, 1)
+            payload = json.loads(
+                (
+                    undos.directory / f"{persisted.undo_id}.json"
+                ).read_text(encoding="utf-8")
+            )
+            self.assertNotIn("content_identity", payload["expected_restores"][0])
             self.assertTrue(persisted.legacy_undo_log)
 
             with self.assertRaisesRegex(OrganizationUndoError, "undo_already_started"):

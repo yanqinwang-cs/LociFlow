@@ -9,9 +9,11 @@ import tempfile
 from typing import Any
 import uuid
 
+from organizer.application.content_identity import RegularFileContentIdentity
 from organizer.application.organization_undo_models import (
     ORGANIZATION_UNDO_RECORD_TYPE,
     ORGANIZATION_UNDO_SCHEMA_VERSION,
+    ORGANIZATION_UNDO_SCHEMA_VERSION_V2,
     UNDO_FAILED,
     UNDO_INTERRUPTED,
     UNDO_ITEM_ATTEMPTING,
@@ -180,6 +182,11 @@ class OrganizationUndoRepository:
 def _record_to_dict(record: OrganizationUndoRecord) -> dict[str, Any]:
     data = asdict(record)
     data["expected_restores"] = [asdict(item) for item in record.expected_restores]
+    if record.schema_version == ORGANIZATION_UNDO_SCHEMA_VERSION:
+        for item in data["expected_restores"]:
+            item.pop("content_identity")
+    elif record.schema_version != ORGANIZATION_UNDO_SCHEMA_VERSION_V2:
+        raise ValueError("unsupported organization undo schema version")
     data["verification"] = asdict(record.verification)
     data["verification"]["mismatch_codes"] = list(record.verification.mismatch_codes)
     return data
@@ -188,6 +195,33 @@ def _record_to_dict(record: OrganizationUndoRecord) -> dict[str, Any]:
 def _record_from_dict(data: object, root: Path) -> OrganizationUndoRecord:
     if not isinstance(data, dict):
         raise ValueError("organization undo must contain an object")
+    schema_version = data.get("schema_version")
+    if isinstance(schema_version, bool) or not isinstance(schema_version, int):
+        raise ValueError("unsupported organization undo schema version")
+    if schema_version == ORGANIZATION_UNDO_SCHEMA_VERSION:
+        return _record_from_versioned_dict(
+            data,
+            root,
+            schema_version=ORGANIZATION_UNDO_SCHEMA_VERSION,
+            item_parser=_item_from_dict_v1,
+        )
+    if schema_version == ORGANIZATION_UNDO_SCHEMA_VERSION_V2:
+        return _record_from_versioned_dict(
+            data,
+            root,
+            schema_version=ORGANIZATION_UNDO_SCHEMA_VERSION_V2,
+            item_parser=_item_from_dict_v2,
+        )
+    raise ValueError("unsupported organization undo schema version")
+
+
+def _record_from_versioned_dict(
+    data: dict[str, Any],
+    root: Path,
+    *,
+    schema_version: int,
+    item_parser,
+) -> OrganizationUndoRecord:
     required = {
         "schema_version", "record_type", "undo_id", "operation_id",
         "authorization_id", "configured_root_identity", "status", "created_at",
@@ -195,8 +229,10 @@ def _record_from_dict(data: object, root: Path) -> OrganizationUndoRecord:
         "legacy_undo_log", "failure_code",
     }
     if set(data) != required:
-        raise ValueError("organization undo fields do not match schema version 1")
-    if data["schema_version"] != ORGANIZATION_UNDO_SCHEMA_VERSION:
+        raise ValueError(
+            f"organization undo fields do not match schema version {schema_version}"
+        )
+    if data["schema_version"] != schema_version:
         raise ValueError("unsupported organization undo schema version")
     if data["record_type"] != ORGANIZATION_UNDO_RECORD_TYPE:
         raise ValueError("unexpected organization undo record type")
@@ -224,7 +260,7 @@ def _record_from_dict(data: object, root: Path) -> OrganizationUndoRecord:
         created_at=_string(data["created_at"], "created_at"),
         started_at=_optional_string(data["started_at"], "started_at"),
         completed_at=_optional_string(data["completed_at"], "completed_at"),
-        expected_restores=tuple(_item_from_dict(item, root) for item in restores),
+        expected_restores=tuple(item_parser(item, root) for item in restores),
         verification=UndoVerificationResult(
             status=verification_status,
             verified_count=_integer(verification["verified_count"], "verified_count"),
@@ -232,10 +268,12 @@ def _record_from_dict(data: object, root: Path) -> OrganizationUndoRecord:
         ),
         legacy_undo_log=_optional_relative_path(data["legacy_undo_log"], root, "legacy_undo_log"),
         failure_code=_optional_string(data["failure_code"], "failure_code"),
+        schema_version=schema_version,
+        record_type=ORGANIZATION_UNDO_RECORD_TYPE,
     )
 
 
-def _item_from_dict(data: object, root: Path) -> OrganizationUndoItem:
+def _item_from_dict_v1(data: object, root: Path) -> OrganizationUndoItem:
     if not isinstance(data, dict):
         raise ValueError("organization undo item must contain an object")
     required = {
@@ -243,7 +281,35 @@ def _item_from_dict(data: object, root: Path) -> OrganizationUndoItem:
         "baseline_modified_time", "result_state", "failure_code", "recovery_state",
     }
     if set(data) != required:
-        raise ValueError("organization undo item fields are invalid")
+        raise ValueError("organization undo item fields are invalid for schema version 1")
+    return _item_from_versioned_dict(data, root, content_identity=None)
+
+
+def _item_from_dict_v2(data: object, root: Path) -> OrganizationUndoItem:
+    if not isinstance(data, dict):
+        raise ValueError("organization undo item must contain an object")
+    required = {
+        "change_id", "restore_target", "moved_from", "baseline_size_bytes",
+        "baseline_modified_time", "result_state", "failure_code", "recovery_state",
+        "content_identity",
+    }
+    if set(data) != required:
+        raise ValueError("organization undo item fields are invalid for schema version 2")
+    return _item_from_versioned_dict(
+        data,
+        root,
+        content_identity=RegularFileContentIdentity.from_dict(
+            data["content_identity"]
+        ),
+    )
+
+
+def _item_from_versioned_dict(
+    data: dict[str, Any],
+    root: Path,
+    *,
+    content_identity: RegularFileContentIdentity | None,
+) -> OrganizationUndoItem:
     state = _string(data["result_state"], "result_state")
     if state not in _ITEM_STATES:
         raise ValueError("organization undo item state is invalid")
@@ -259,6 +325,7 @@ def _item_from_dict(data: object, root: Path) -> OrganizationUndoItem:
         result_state=state,
         failure_code=_optional_string(data["failure_code"], "failure_code"),
         recovery_state=_optional_string(data["recovery_state"], "recovery_state"),
+        content_identity=content_identity,
     )
 
 

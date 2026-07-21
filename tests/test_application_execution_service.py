@@ -121,6 +121,13 @@ class ApplicationExecutionServiceTests(unittest.TestCase):
 
             record = repository.load(outcome.operation_id)
             self.assertEqual(outcome.status, STATUS_VERIFIED)
+            self.assertEqual(record.schema_version, 1)
+            payload = json.loads(
+                (
+                    repository.directory / f"{record.operation_id}.json"
+                ).read_text(encoding="utf-8")
+            )
+            self.assertNotIn("content_identity", payload["expected_moves"][0])
             self.assertEqual(outcome.files_moved, 2)
             self.assertEqual(record.verification.status, "passed")
             self.assertEqual([item.result_state for item in record.expected_moves], ["moved", "moved"])

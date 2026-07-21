@@ -11,6 +11,7 @@ import unittest
 from unittest import mock
 import uuid
 
+from organizer.application.content_identity import RegularFileContentIdentity
 from organizer.application.duplicate_bin_models import (
     BATCH_MOVED,
     ITEM_AVAILABLE,
@@ -51,9 +52,11 @@ from organizer.application.organization_operation_models import (
     STATUS_MOVING,
     STATUS_PREPARED,
     VERIFICATION_NOT_RUN,
+    ORGANIZATION_OPERATION_SCHEMA_VERSION_V2,
     OrganizationOperationVerification,
 )
 from organizer.application.organization_undo_models import (
+    ORGANIZATION_UNDO_SCHEMA_VERSION_V2,
     UNDO_INTERRUPTED,
     UNDO_ITEM_ATTEMPTING,
     UNDO_ITEM_PENDING,
@@ -138,6 +141,101 @@ class RecoveryEvidenceTests(unittest.TestCase):
             )
             self.assertEqual(aggregate.safe_projection().affected_items, 2)
             self.assertEqual(len(first.list_records()), 2)
+
+    def test_v2_representation_does_not_enable_recovery_and_malformed_v2_blocks(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            repository, record = _ordinary_movement(
+                root, STATUS_MOVED_UNVERIFIED, "completed"
+            )
+            v2 = replace(
+                record,
+                schema_version=ORGANIZATION_OPERATION_SCHEMA_VERSION_V2,
+                expected_moves=tuple(
+                    replace(
+                        item,
+                        content_identity=RegularFileContentIdentity(
+                            "regular_file", "sha256", "a" * 64
+                        ),
+                    )
+                    for item in record.expected_moves
+                ),
+            )
+            repository.save(v2)
+
+            admission = FilesystemOperationInspector(root).inspect()
+            evidence = _inspect(root)
+
+            self.assertEqual(
+                admission.state,
+                RecoveryAdmissionState.BLOCKED_UNFINISHED_OPERATION,
+            )
+            self.assertEqual(evidence.actionability, RecoveryActionability.INSPECT_ONLY)
+            self.assertEqual(evidence.case.available_action_kinds, ())
+
+            path = repository.directory / f"{record.operation_id}.json"
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            payload["expected_moves"][0]["content_identity"]["digest"] = "A" * 64
+            path.write_text(json.dumps(payload), encoding="utf-8")
+
+            malformed_admission = FilesystemOperationInspector(root).inspect()
+            malformed_evidence = _inspect(root)
+            self.assertEqual(
+                malformed_admission.state,
+                RecoveryAdmissionState.BLOCKED_MALFORMED_OPERATION_STATE,
+            )
+            self.assertEqual(
+                malformed_evidence.actionability,
+                RecoveryActionability.NON_ACTIONABLE_MALFORMED,
+            )
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            operations, parent = _ordinary_operation(root)
+            identity = RegularFileContentIdentity(
+                "regular_file", "sha256", "b" * 64
+            )
+            parent_v2 = replace(
+                parent,
+                schema_version=ORGANIZATION_OPERATION_SCHEMA_VERSION_V2,
+                expected_moves=tuple(
+                    replace(item, content_identity=identity)
+                    for item in parent.expected_moves
+                ),
+            )
+            operations.save(parent_v2)
+            undos, undo = _ordinary_undo(root, parent_v2)
+            undo_v2 = replace(
+                undo,
+                status=UNDO_RESTORED_UNVERIFIED,
+                started_at=None,
+                completed_at=None,
+                schema_version=ORGANIZATION_UNDO_SCHEMA_VERSION_V2,
+                expected_restores=tuple(
+                    replace(
+                        item,
+                        result_state=UNDO_ITEM_RESTORED,
+                        content_identity=identity,
+                    )
+                    for item in undo.expected_restores
+                ),
+                verification=UndoVerificationResult(status="not_run"),
+            )
+            undos.save(undo_v2)
+            restored = root / undo_v2.expected_restores[0].restore_target
+            restored.parent.mkdir(parents=True)
+            restored.write_bytes(b"data")
+            os.utime(restored, (100.0, 100.0))
+
+            admission = FilesystemOperationInspector(root).inspect()
+            evidence = _inspect(root)
+
+            self.assertEqual(
+                admission.state,
+                RecoveryAdmissionState.BLOCKED_UNFINISHED_OPERATION,
+            )
+            self.assertEqual(evidence.actionability, RecoveryActionability.INSPECT_ONLY)
+            self.assertEqual(evidence.case.available_action_kinds, ())
 
     def test_unfinished_plus_malformed_never_hides_malformed_state(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

@@ -2,8 +2,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from organizer.application.content_identity import (
+    OrdinaryFileIdentityCompatibility,
+    RegularFileContentIdentity,
+    identity_compatibility,
+)
+
 
 ORGANIZATION_UNDO_SCHEMA_VERSION = 1
+ORGANIZATION_UNDO_SCHEMA_VERSION_V2 = 2
 ORGANIZATION_UNDO_RECORD_TYPE = "loci_flow_organization_undo"
 
 UNDO_AUTHORIZATION_AVAILABLE = "available"
@@ -50,6 +57,7 @@ class OrganizationUndoItem:
     result_state: str = UNDO_ITEM_PENDING
     failure_code: str | None = None
     recovery_state: str | None = None
+    content_identity: RegularFileContentIdentity | None = None
 
 
 @dataclass(frozen=True)
@@ -75,6 +83,10 @@ class OrganizationUndoRecord:
     failure_code: str | None
     schema_version: int = ORGANIZATION_UNDO_SCHEMA_VERSION
     record_type: str = ORGANIZATION_UNDO_RECORD_TYPE
+
+    @property
+    def identity_compatibility(self) -> OrdinaryFileIdentityCompatibility:
+        return identity_compatibility(self.schema_version)
 
 
 @dataclass(frozen=True)

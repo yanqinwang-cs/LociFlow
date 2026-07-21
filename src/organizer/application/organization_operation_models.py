@@ -2,8 +2,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from organizer.application.content_identity import (
+    OrdinaryFileIdentityCompatibility,
+    RegularFileContentIdentity,
+    identity_compatibility,
+)
+
 
 ORGANIZATION_OPERATION_SCHEMA_VERSION = 1
+ORGANIZATION_OPERATION_SCHEMA_VERSION_V2 = 2
 ORGANIZATION_OPERATION_RECORD_TYPE = "loci_flow_organization_operation"
 
 AUTHORIZATION_AVAILABLE = "available"
@@ -71,6 +78,7 @@ class OrganizationExpectedMove:
     result_state: str = MOVE_PENDING
     failure_code: str | None = None
     recovery_state: str | None = None
+    content_identity: RegularFileContentIdentity | None = None
 
 
 @dataclass(frozen=True)
@@ -99,6 +107,10 @@ class OrganizationOperationRecord:
     duplicate_actions_deferred: int
     schema_version: int = ORGANIZATION_OPERATION_SCHEMA_VERSION
     record_type: str = ORGANIZATION_OPERATION_RECORD_TYPE
+
+    @property
+    def identity_compatibility(self) -> OrdinaryFileIdentityCompatibility:
+        return identity_compatibility(self.schema_version)
 
 
 @dataclass(frozen=True)

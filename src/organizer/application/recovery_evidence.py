@@ -7,6 +7,7 @@ import os
 from pathlib import Path, PurePosixPath
 import stat
 
+from organizer.application.content_identity import OrdinaryFileIdentityCompatibility
 from organizer.application.duplicate_bin_models import canonical_json_bytes
 from organizer.application.duplicate_bin_movement_models import (
     MOVE_ATTEMPTING as DUPLICATE_MOVE_ATTEMPTING,
@@ -451,6 +452,20 @@ class RecoveryEvidenceInspector:
             completed_states,
             pending_states,
         )
+        if (
+            family
+            in {
+                RecoveryOperationFamily.ORGANIZATION_MOVEMENT,
+                RecoveryOperationFamily.ORGANIZATION_UNDO,
+            }
+            and record.identity_compatibility
+            is OrdinaryFileIdentityCompatibility.IDENTITY_V2
+        ):
+            # A0-A defines the durable representation only. Later stages must
+            # explicitly enable identity-aware verification before v2 records
+            # can advertise a recovery action.
+            actionability = RecoveryActionability.INSPECT_ONLY
+            actions = ()
         digest = _digest(
             self.inspector.organization_operations.configured_root_identity,
             family,
