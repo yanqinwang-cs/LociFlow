@@ -30,7 +30,15 @@ def create_loci_flow_router(templates: Jinja2Templates) -> APIRouter:
         response = templates.TemplateResponse(
             request=request,
             name="loci_flow.html",
-            context={"csrf_token": csrf_token_for_session(request.session)},
+            context={
+                "csrf_token": csrf_token_for_session(request.session),
+                # Startup-scoped display state only; never recovery authority.
+                "recovery_attention": (
+                    "true"
+                    if request.app.state.recovery_admission_snapshot.is_blocked
+                    else "false"
+                ),
+            },
         )
         response.headers["Cache-Control"] = "no-store"
         return response

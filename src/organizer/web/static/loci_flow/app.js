@@ -15,6 +15,7 @@ import {
   buildDuplicateBinConfirmationViewModel,
   buildMovementConfirmationViewModel,
   buildProductionStageB1Contract,
+  buildRecoveryDialogViewModel,
   buildRouteViewModel,
   buildShellViewModel,
 } from "./view_models.js";
@@ -34,6 +35,9 @@ const elements = {
 };
 
 const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || "";
+const recoveryAttention = (
+  document.querySelector('meta[name="recovery-attention"]')?.content === "true"
+);
 const dataSource = createBackendDataSource({
   apiClient: createLociFlowApiClient(),
   csrfToken,
@@ -151,6 +155,7 @@ const viewSource = {
         duplicateMovement: state.duplicateMovement,
         duplicateBin: state.duplicateBin,
         standards: state.standards,
+        recoveryAttention,
       }),
     };
   },
@@ -177,6 +182,7 @@ let dialogTrigger = null;
 let activityLoadPromise = null;
 let duplicateBinLoadPromise = null;
 let standardsLoadPromise = null;
+let recoveryLoadPending = false;
 
 function routeFromHash() {
   const value = window.location.hash.startsWith("#/") ? window.location.hash.slice(2) : "home";
@@ -354,6 +360,9 @@ function navigate(route, options = {}) {
   if (previousRoute === "standards" && route !== "standards") {
     discardStandardBuilder({ close: true });
   }
+  if (state.activeDialog === "recovery" && route !== previousRoute) {
+    closeDialog({ restoreFocus: false });
+  }
   state.route = route;
   if (window.location.hash !== `#/${route}`) window.location.hash = `#/${route}`;
   render(options);
@@ -408,6 +417,62 @@ function closeDialog({ restoreFocus = true } = {}) {
   dialogPayload = {};
   if (restoreFocus) dialogTrigger?.focus?.();
   dialogTrigger = null;
+}
+
+const SAFE_RECOVERY_FAILURE = Object.freeze({
+  state: "cannot_continue_automatically",
+  title: "Loci Flow can’t continue this file operation automatically.",
+  message: "New file changes remain paused. Get help before changing these files.",
+  affected_items: 0,
+});
+
+async function reviewRecovery(trigger) {
+  if (recoveryLoadPending) return;
+  recoveryLoadPending = true;
+  trigger.disabled = true;
+  const openingRoute = state.route;
+  try {
+    const projection = await dataSource.loadRecoveryProjection();
+    if (state.route === openingRoute && state.route === "home") {
+      openRecoveryDialog(projection, trigger);
+    }
+  } catch {
+    if (state.route === openingRoute && state.route === "home") {
+      openRecoveryDialog(SAFE_RECOVERY_FAILURE, trigger);
+    }
+  } finally {
+    recoveryLoadPending = false;
+    trigger.disabled = false;
+  }
+}
+
+function openRecoveryDialog(projection, trigger = document.activeElement) {
+  const view = buildRecoveryDialogViewModel(projection);
+  state.activeDialog = "recovery";
+  dialogPayload = projection;
+  dialogTrigger = trigger;
+  elements.dialogEyebrow.textContent = view.eyebrow;
+  elements.dialogTitle.textContent = view.title;
+  elements.dialogDescription.textContent = view.description;
+  elements.dialogContent.replaceChildren();
+  if (view.affectedItems > 0) {
+    const count = document.createElement("p");
+    const strong = document.createElement("strong");
+    strong.textContent = String(view.affectedItems);
+    count.append(
+      strong,
+      ` ${view.affectedItems === 1 ? "item needs" : "items need"} review.`,
+    );
+    elements.dialogContent.append(count);
+  }
+  const close = document.createElement("button");
+  close.type = "button";
+  close.className = "button button-secondary";
+  close.dataset.action = "close-dialog";
+  close.textContent = view.closeLabel;
+  elements.dialogActions.replaceChildren(close);
+  if (!elements.dialog.open) elements.dialog.showModal();
+  window.requestAnimationFrame(() => close.focus());
 }
 
 function resetStandardBuilder() {
@@ -1689,6 +1754,7 @@ function actionFor(target) {
   if (action === "open-duplicate-bin") return navigate("duplicate-bin", { focusMain: true });
   if (action === "open-activity") return navigate("activity", { focusMain: true });
   if (action === "open-standards") return navigate("standards", { focusMain: true });
+  if (action === "review-recovery") return reviewRecovery(target);
   if (action === "check-files" || action === "check-again") return checkFiles();
   if (action === "reload-choices") {
     discardMovementConfirmation();
@@ -1889,6 +1955,9 @@ window.addEventListener("hashchange", () => {
   }
   if (previousRoute === "standards" && nextRoute !== "standards") {
     discardStandardBuilder({ close: true });
+  }
+  if (state.activeDialog === "recovery" && nextRoute !== previousRoute) {
+    closeDialog({ restoreFocus: false });
   }
   state.route = nextRoute;
   render({ focusMain: true });

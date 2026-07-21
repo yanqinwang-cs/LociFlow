@@ -36,7 +36,10 @@ class _StructureParser(HTMLParser):
         tag: str,
         attrs: list[tuple[str, str | None]],
     ) -> None:
-        if tag == "meta" and ("name", "csrf-token") in attrs:
+        if tag == "meta" and any(
+            ("name", name) in attrs
+            for name in ("csrf-token", "recovery-attention")
+        ):
             return
         normalized = []
         for name, value in attrs:

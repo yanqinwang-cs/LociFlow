@@ -1,4 +1,5 @@
 const CURRENT_ORGANIZATION_URL = "/api/organization/current";
+const CURRENT_RECOVERY_URL = "/api/recovery/current";
 const DECISIONS_URL = "/api/organization/decisions";
 const APPROVAL_URL = "/api/organization/approval";
 const MOVEMENT_PREVIEW_URL = "/api/organization/move/preview";
@@ -115,6 +116,14 @@ function requiredOperationId(operationId) {
 
 export async function getCurrentOrganization(fetchImpl = defaultFetch) {
   const response = await fetchImpl(CURRENT_ORGANIZATION_URL, {
+    ...baseOptions(),
+    method: "GET",
+  });
+  return responseJson(response);
+}
+
+export async function getCurrentRecovery(fetchImpl = defaultFetch) {
+  const response = await fetchImpl(CURRENT_RECOVERY_URL, {
     ...baseOptions(),
     method: "GET",
   });
@@ -502,6 +511,7 @@ export function executeActivityUndo(payload, fetchImpl = defaultFetch, csrfToken
 export function createLociFlowApiClient(fetchImpl = defaultFetch) {
   return Object.freeze({
     getCurrentOrganization: () => getCurrentOrganization(fetchImpl),
+    getCurrentRecovery: () => getCurrentRecovery(fetchImpl),
     startScan: (payload) => startScan(payload, fetchImpl),
     updateRecommendationDecision: (payload, csrfToken) => (
       updateRecommendationDecision(payload, fetchImpl, csrfToken)

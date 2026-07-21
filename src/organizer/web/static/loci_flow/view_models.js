@@ -196,6 +196,16 @@ function contractModel(store, page) {
       enabled: true,
     };
   }
+  if (page === "home" && contract.recoveryAttention) {
+    workflow.stage = "move_failed";
+    workflow.status = "File changes need attention.";
+    workflow.message = "Review unfinished file work before starting new file changes.";
+    workflow.primaryAction = {
+      label: "Review unfinished file work",
+      action: "review-recovery",
+      enabled: true,
+    };
+  }
   return {
     mode: "production_fixture",
     scenarioId: contract.id,
@@ -905,6 +915,7 @@ export function buildProductionStageB1Contract({
   duplicateMovement = null,
   duplicateBin = null,
   standards = null,
+  recoveryAttention = false,
 } = {}) {
   const backend = snapshot?.backendState || null;
   const scopeName = backend?.scope.display_name || "Selected folder";
@@ -922,6 +933,7 @@ export function buildProductionStageB1Contract({
   const activityEntries = activity?.entries || [];
   return {
     id: "backend",
+    recoveryAttention: recoveryAttention === true,
     scope: {
       displayName: scopeName,
       breadcrumb: [scopeName],
@@ -1053,6 +1065,16 @@ export function buildDuplicateBinConfirmationViewModel(
     canConfirm: confirmationText === preview.confirmation,
     cancelLabel: "Cancel",
     confirmLabel: restore ? "Restore copies" : "Move copies",
+  };
+}
+
+export function buildRecoveryDialogViewModel(projection) {
+  return {
+    eyebrow: "Needs attention",
+    title: projection.title,
+    description: projection.message,
+    affectedItems: projection.affected_items,
+    closeLabel: "Close",
   };
 }
 

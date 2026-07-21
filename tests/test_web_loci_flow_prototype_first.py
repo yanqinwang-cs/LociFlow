@@ -88,6 +88,7 @@ class WebLociFlowPrototypeFirstTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("Sample files only", shell.text)
         self.assertIn('data-theme-value="light"', shell.text)
         self.assertIn('data-theme-value="dark"', shell.text)
+        self.assertIn('<meta name="recovery-attention" content="false">', shell.text)
         self.assertNotIn("site-header", shell.text)
         self.assertNotIn("Open existing scan workflow", shell.text)
         self.assertNotIn(str(self.root), shell.text)

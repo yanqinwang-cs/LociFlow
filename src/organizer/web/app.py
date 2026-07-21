@@ -18,6 +18,7 @@ from organizer.web.routes.activity_api import create_activity_api_router
 from organizer.web.routes.consumer import create_consumer_router
 from organizer.web.routes.loci_flow import create_loci_flow_router
 from organizer.web.routes.organization_api import create_organization_api_router
+from organizer.web.routes.recovery_api import create_recovery_api_router
 from organizer.web.routes.review import create_review_router
 from organizer.web.routes.standards_api import create_standards_api_router
 from organizer.web.review_explorer import ReviewExplorerStore
@@ -28,6 +29,8 @@ from organizer.application.filesystem_operation_admission import (
     FilesystemOperationAdmission,
     FilesystemOperationInspector,
 )
+from organizer.application.recovery_evidence import RecoveryEvidenceInspector
+from organizer.application.recovery_projection_service import RecoveryProjectionService
 from organizer.application.duplicate_bin_repository import DuplicateBinRepository
 from organizer.application.duplicate_bin_authorization_repository import (
     DuplicateBinAuthorizationRepository,
@@ -124,6 +127,9 @@ def create_app(config: WebAppConfig) -> FastAPI:
     app.state.recovery_admission_snapshot = (
         app.state.filesystem_operation_inspector.inspect()
     )
+    app.state.recovery_projection_service = RecoveryProjectionService(
+        RecoveryEvidenceInspector(app.state.filesystem_operation_inspector)
+    )
     app.state.filesystem_operation_admission = FilesystemOperationAdmission(
         app.state.filesystem_operation_inspector
     )
@@ -156,6 +162,7 @@ def create_app(config: WebAppConfig) -> FastAPI:
     app.include_router(create_duplicate_bin_api_router())
     app.include_router(create_activity_api_router())
     app.include_router(create_standards_api_router())
+    app.include_router(create_recovery_api_router())
     app.include_router(create_review_router(templates))
     app.mount(
         "/static",

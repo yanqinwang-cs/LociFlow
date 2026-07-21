@@ -8,6 +8,9 @@ const REVIEW_STATUSES = new Set(["in_progress", "ready_for_approval", "ready_to_
 const RECOMMENDATION_DECISIONS = new Set(["undecided", "accept", "keep"]);
 const MAX_TEXT_LENGTH = 2048;
 const MAX_CONFIRMATION_TOKEN_LENGTH = 512;
+const RECOVERY_STATES = new Set([
+  "clear", "needs_attention", "cannot_continue_automatically",
+]);
 const MOVEMENT_CONFIRMATION = "MOVE APPROVED FILES";
 const UNDO_CONFIRMATION = "UNDO FILE MOVE";
 const DUPLICATE_BIN_MOVEMENT_CONFIRMATION = "MOVE COPIES TO DUPLICATE BIN";
@@ -232,6 +235,38 @@ function requireText(value, { allowDot = false } = {}) {
 function requireCount(value) {
   if (!Number.isSafeInteger(value) || value < 0) throw contractError();
   return value;
+}
+
+function recoveryContractError() {
+  return new OrganizationDataError(
+    "invalid_recovery_contract",
+    "The unfinished file work could not be reviewed safely.",
+  );
+}
+
+export function validateRecoveryResponse(rawPayload) {
+  if (!rawPayload || typeof rawPayload !== "object" || Array.isArray(rawPayload)) {
+    throw recoveryContractError();
+  }
+  const keys = Object.keys(rawPayload).sort();
+  const expected = ["affected_items", "message", "state", "title"];
+  if (JSON.stringify(keys) !== JSON.stringify(expected)) throw recoveryContractError();
+  if (!RECOVERY_STATES.has(rawPayload.state)) throw recoveryContractError();
+  for (const value of [rawPayload.title, rawPayload.message]) {
+    if (typeof value !== "string" || value.length === 0 || value.length > 512) {
+      throw recoveryContractError();
+    }
+  }
+  if (!Number.isSafeInteger(rawPayload.affected_items) || rawPayload.affected_items < 0) {
+    throw recoveryContractError();
+  }
+  if (
+    new Set(["clear", "cannot_continue_automatically"]).has(rawPayload.state)
+    && rawPayload.affected_items !== 0
+  ) {
+    throw recoveryContractError();
+  }
+  return deepFreeze(clone(rawPayload));
 }
 
 function requireMovementToken(value) {
@@ -1747,6 +1782,19 @@ export function createBackendDataSource({
     }
   }
 
+  async function loadRecoveryProjection() {
+    assertActive();
+    try {
+      if (typeof apiClient.getCurrentRecovery !== "function") {
+        throw new TypeError("recovery API is unavailable");
+      }
+      return validateRecoveryResponse(await apiClient.getCurrentRecovery());
+    } catch (error) {
+      if (error instanceof OrganizationDataError) throw error;
+      throw recoveryContractError();
+    }
+  }
+
   async function loadStandards() {
     assertActive();
     try {
@@ -2028,6 +2076,7 @@ export function createBackendDataSource({
     previewDuplicateBinRestore,
     confirmDuplicateBinRestore,
     loadActivity,
+    loadRecoveryProjection,
     loadStandards,
     loadStandardsCreationContext,
     clearStandardsCreationContext,
