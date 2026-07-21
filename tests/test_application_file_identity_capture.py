@@ -52,7 +52,7 @@ class FileIdentityCaptureTests(unittest.TestCase):
                 return real_read(descriptor, size)
 
             with mock.patch(
-                "organizer.application.file_identity_capture.os.read",
+                "organizer.file_identity.os.read",
                 side_effect=observed_read,
             ):
                 captured = capture_regular_file_identity(source, root, chunk_size=17)
@@ -107,7 +107,7 @@ class FileIdentityCaptureTests(unittest.TestCase):
             source = root / "private-name.txt"
             source.write_bytes(b"private-content")
             with mock.patch(
-                "organizer.application.file_identity_capture.os.open",
+                "organizer.file_identity.os.open",
                 side_effect=PermissionError(errno.EACCES, "private operating-system detail"),
             ):
                 with self.assertRaises(FileIdentityCaptureError) as raised:
@@ -130,11 +130,11 @@ class FileIdentityCaptureTests(unittest.TestCase):
                 with (
                     self.subTest(mode=mode),
                     mock.patch(
-                        "organizer.application.file_identity_capture.os.lstat",
+                        "organizer.file_identity.os.lstat",
                         return_value=fake_stat,
                     ),
                     mock.patch(
-                        "organizer.application.file_identity_capture.os.open"
+                        "organizer.file_identity.os.open"
                     ) as opened,
                     self.assertRaises(FileIdentityCaptureError) as raised,
                 ):
@@ -177,7 +177,7 @@ class FileIdentityCaptureTests(unittest.TestCase):
                     return block
 
                 with mock.patch(
-                    "organizer.application.file_identity_capture.os.read",
+                    "organizer.file_identity.os.read",
                     side_effect=mutating_read,
                 ):
                     with self.assertRaises(FileIdentityCaptureError) as raised:
@@ -200,11 +200,11 @@ class FileIdentityCaptureTests(unittest.TestCase):
 
                 with (
                     mock.patch(
-                        "organizer.application.file_identity_capture.os.open",
+                        "organizer.file_identity.os.open",
                         side_effect=observed_open,
                     ),
                     mock.patch(
-                        "organizer.application.file_identity_capture.os.read",
+                        "organizer.file_identity.os.read",
                         side_effect=failure,
                     ),
                 ):
@@ -235,7 +235,7 @@ class FileIdentityCaptureTests(unittest.TestCase):
                 return descriptor
 
             with mock.patch(
-                "organizer.application.file_identity_capture.os.open",
+                "organizer.file_identity.os.open",
                 side_effect=observed_open,
             ):
                 for _ in range(40):
@@ -248,11 +248,11 @@ class FileIdentityCaptureTests(unittest.TestCase):
 
             with (
                 mock.patch(
-                    "organizer.application.file_identity_capture.os.open",
+                    "organizer.file_identity.os.open",
                     side_effect=observed_open,
                 ),
                 mock.patch(
-                    "organizer.application.file_identity_capture._require_stable_regular_file",
+                    "organizer.file_identity._require_stable_stat",
                     side_effect=FileIdentityCaptureError("source_changed_during_hash"),
                 ),
             ):

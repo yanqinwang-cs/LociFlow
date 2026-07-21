@@ -131,15 +131,11 @@ class OrganizationIdentityIntentTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             plan, authorization, moves, captures, root_identity = _inputs(root)
-            invalid_capture = replace(
-                captures["O1"],
-                stat_fingerprint=replace(
+            with self.assertRaises(ValueError):
+                replace(
                     captures["O1"].stat_fingerprint,
                     file_type="directory",
-                ),
-            )
-            with self.assertRaises(ValueError):
-                _build(plan, authorization, moves, {**captures, "O1": invalid_capture}, root_identity)
+                )
             malformed_capture = replace(captures["O1"], content_identity="not-an-identity")
             with self.assertRaises(ValueError):
                 _build(plan, authorization, moves, {**captures, "O1": malformed_capture}, root_identity)
