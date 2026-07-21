@@ -130,7 +130,7 @@ class FileIdentityCaptureTests(unittest.TestCase):
                 with (
                     self.subTest(mode=mode),
                     mock.patch(
-                        "organizer.file_identity.os.lstat",
+                        "organizer.file_identity._lstat_initial",
                         return_value=fake_stat,
                     ),
                     mock.patch(
