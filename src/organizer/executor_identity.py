@@ -37,16 +37,51 @@ _SAFE_MESSAGES = {
     "destination_volume_indeterminate": (
         "The file could not be moved safely. Check the folder and try again."
     ),
+    "destination_publication_failed": (
+        "The file could not be moved safely. Check the folder and try again."
+    ),
+    "destination_verification_failed": (
+        "The moved file could not be verified. Check the folder before trying again."
+    ),
+    "source_path_changed": (
+        "The file changed while it was being moved. Check the folder before trying again."
+    ),
+    "source_removal_failed": (
+        "The file could not be removed from its old folder. Check the folder before trying again."
+    ),
+    "filesystem_changed_recovery_required": (
+        "The move needs attention before more file work can start."
+    ),
 }
 
 
 class StrictExecutorError(Exception):
-    def __init__(self, code: str) -> None:
+    def __init__(
+        self,
+        code: str,
+        *,
+        filesystem_changed: bool = False,
+        recovery_required: bool = False,
+    ) -> None:
         if code not in _SAFE_MESSAGES:
             raise ValueError("strict executor error code is invalid")
+        if recovery_required and not filesystem_changed:
+            raise ValueError("recovery requires a filesystem change")
         self.code = code
         self.safe_message = _SAFE_MESSAGES[code]
+        self.filesystem_changed = filesystem_changed
+        self.recovery_required = recovery_required
         super().__init__(self.safe_message)
+
+
+class StrictExecutorInterrupted(KeyboardInterrupt):
+    code = "filesystem_changed_recovery_required"
+    safe_message = _SAFE_MESSAGES[code]
+    filesystem_changed = True
+    recovery_required = True
+
+    def __str__(self) -> str:
+        return self.safe_message
 
 
 class VolumePlacement(str, Enum):
@@ -119,6 +154,9 @@ def validate_identity_move_plan(
         len(set(structural_sources)) != len(items)
         or len(set(structural_destinations)) != len(items)
         or set(structural_sources) & set(structural_destinations)
+        or _has_path_ancestry_overlap(
+            structural_sources + structural_destinations
+        )
     ):
         raise StrictExecutorError("invalid_strict_plan")
 
@@ -289,3 +327,11 @@ def _classify_volume(source_device: int, destination_ancestor: Path) -> VolumePl
 
 def _volume_device(path: Path) -> int:
     return path.stat().st_dev
+
+
+def _has_path_ancestry_overlap(paths: tuple[Path, ...]) -> bool:
+    for index, path in enumerate(paths):
+        for other in paths[index + 1 :]:
+            if path in other.parents or other in path.parents:
+                return True
+    return False

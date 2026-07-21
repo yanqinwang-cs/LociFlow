@@ -19,6 +19,24 @@ from organizer.models import MovePlanItem
 
 
 class StrictExecutorIdentityModelTests(unittest.TestCase):
+    def test_failure_properties_are_explicit_and_safe(self) -> None:
+        ordinary = StrictExecutorError("destination_publication_failed")
+        self.assertFalse(ordinary.filesystem_changed)
+        self.assertFalse(ordinary.recovery_required)
+        recovery = StrictExecutorError(
+            "destination_verification_failed",
+            filesystem_changed=True,
+            recovery_required=True,
+        )
+        self.assertTrue(recovery.filesystem_changed)
+        self.assertTrue(recovery.recovery_required)
+        with self.assertRaises(ValueError):
+            StrictExecutorError(
+                "destination_verification_failed",
+                recovery_required=True,
+            )
+        self.assertNotIn("destination_verification_failed", str(recovery))
+
     def test_valid_model_is_immutable_mandatory_and_redacted(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -171,7 +189,6 @@ class StrictExecutorIdentityModelTests(unittest.TestCase):
 
             repository_root = Path(__file__).resolve().parents[1]
             production = (
-                repository_root / "src/organizer/executor.py",
                 repository_root / "src/organizer/application/execution_service.py",
                 repository_root
                 / "src/organizer/application/organization_movement_service.py",

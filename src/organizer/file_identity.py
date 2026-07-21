@@ -148,7 +148,10 @@ def capture_open_regular_file(
     )
     try:
         yield VerifiedRegularFileHandle(descriptor, identity)
-    finally:
+    except BaseException:
+        _close_quietly(descriptor)
+        raise
+    else:
         _close_after_context(descriptor)
 
 
@@ -172,7 +175,10 @@ def open_verified_regular_file(
     )
     try:
         yield VerifiedRegularFileHandle(descriptor, identity)
-    finally:
+    except BaseException:
+        _close_quietly(descriptor)
+        raise
+    else:
         _close_after_context(descriptor)
 
 
@@ -191,6 +197,35 @@ def fingerprint_from_stat(value: os.stat_result) -> RegularFileStatFingerprint:
 
 def is_canonical_sha256(value: object) -> bool:
     return isinstance(value, str) and _SHA256_DIGEST.fullmatch(value) is not None
+
+
+def verify_open_regular_file_descriptor(
+    descriptor: int,
+    required_digest: str,
+    *,
+    chunk_size: int = DEFAULT_HASH_CHUNK_SIZE,
+) -> RegularFileStatFingerprint:
+    """Verify an already-open regular file without taking descriptor ownership."""
+
+    if not is_canonical_sha256(required_digest):
+        raise StableFileIdentityError("malformed_identity")
+    _validate_chunk_size(chunk_size)
+    before = _fstat(descriptor)
+    if not stat.S_ISREG(before.st_mode):
+        raise StableFileIdentityError("unsupported_item")
+    try:
+        os.lseek(descriptor, 0, os.SEEK_SET)
+    except OSError:
+        raise StableFileIdentityError("identity_capture_failed") from None
+    try:
+        digest = _hash_descriptor(descriptor, chunk_size)
+        after = _fstat(descriptor)
+        _require_stable_stat(before, after, code="source_unstable")
+        if digest != required_digest:
+            raise StableFileIdentityError("source_identity_changed")
+        return fingerprint_from_stat(after)
+    except KeyboardInterrupt:
+        raise StableFileIdentityInterrupted() from None
 
 
 def _open_stable_regular_file(
@@ -308,7 +343,12 @@ def _require_safe_parent(
 
 
 def _open_source(source: Path) -> int:
-    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    flags = (
+        os.O_RDONLY
+        | getattr(os, "O_CLOEXEC", 0)
+        | getattr(os, "O_NOFOLLOW", 0)
+        | getattr(os, "O_NONBLOCK", 0)
+    )
     try:
         return os.open(source, flags)
     except FileNotFoundError:

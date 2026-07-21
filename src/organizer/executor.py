@@ -1,13 +1,37 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime, timezone
+import errno
 import json
 import os
 from pathlib import Path
 import shutil
+import stat
+import sys
 from typing import Protocol
 
+from organizer.executor_identity import (
+    IdentityMovePlanItem,
+    StrictExecutorError,
+    StrictExecutorInterrupted,
+    ValidatedIdentityMovePlan,
+    validate_same_volume_identity_move_plan,
+)
+from organizer.file_identity import (
+    RequiredRegularFileIdentity,
+    RegularFileStatFingerprint,
+    StableFileIdentityError,
+    fingerprint_from_stat,
+    open_verified_regular_file,
+    verify_open_regular_file_descriptor,
+)
 from organizer.models import MovePlanItem, MoveResult, OperationLog
+
+
+_DIR_FD_FUNCTIONS = (os.open, os.mkdir, os.stat, os.link, os.unlink)
+_LINK_FUNCTION = os.link
+_STAT_FUNCTION = os.stat
 
 
 class MovementRecorder(Protocol):
@@ -80,6 +104,696 @@ class UndoRecordingError(RuntimeError):
         self.phase = phase
         self.operation_log = operation_log
         self.filesystem_changed = filesystem_changed
+
+
+@dataclass(frozen=True, repr=False)
+class _SameVolumeIdentityPublication:
+    completed: bool
+    destination_parent_created: bool
+
+    def __repr__(self) -> str:
+        return "_SameVolumeIdentityPublication(<completed>)"
+
+
+def _prepare_same_volume_identity_batch(
+    plan_items: tuple[IdentityMovePlanItem, ...],
+    root: Path,
+) -> ValidatedIdentityMovePlan:
+    _require_strict_platform_support()
+    _reject_existing_source_hard_links(plan_items, root)
+    validated = validate_same_volume_identity_move_plan(plan_items, root)
+    for classified in validated.items:
+        item = classified.item
+        try:
+            current = os.lstat(item.plan_item.source)
+            observed = fingerprint_from_stat(current)
+        except (OSError, StableFileIdentityError, ValueError):
+            raise StrictExecutorError("source_identity_changed") from None
+        if current.st_nlink != 1:
+            raise StrictExecutorError("unsupported_item")
+        if observed != item.captured_stat:
+            raise StrictExecutorError("source_identity_changed")
+    return validated
+
+
+def _reject_existing_source_hard_links(
+    plan_items: tuple[IdentityMovePlanItem, ...],
+    root: Path,
+) -> None:
+    if (
+        not isinstance(plan_items, tuple)
+        or not plan_items
+        or any(not isinstance(item, IdentityMovePlanItem) for item in plan_items)
+    ):
+        return
+    try:
+        resolved_root = Path(root).resolve(strict=True)
+    except (OSError, ValueError):
+        return
+    for item in plan_items:
+        source = Path(item.plan_item.source)
+        try:
+            resolved_source = source.resolve(strict=True)
+            if (
+                resolved_source != resolved_root
+                and resolved_root not in resolved_source.parents
+            ):
+                continue
+            current = os.lstat(source)
+        except OSError:
+            continue
+        if stat.S_ISREG(current.st_mode) and current.st_nlink != 1:
+            raise StrictExecutorError("unsupported_item")
+
+
+def _execute_same_volume_identity_batch(
+    plan_items: tuple[IdentityMovePlanItem, ...],
+    root: Path,
+) -> tuple[_SameVolumeIdentityPublication, ...]:
+    """Private A2-A engine; intentionally has no recorder or operation log."""
+
+    validated = _prepare_same_volume_identity_batch(plan_items, root)
+    requested_root = Path(os.path.abspath(root))
+    resolved_root = Path(root).resolve(strict=True)
+    root_descriptor = _open_root_directory(resolved_root)
+    try:
+        return tuple(
+            _execute_same_volume_identity_item(
+                classified.item,
+                resolved_root,
+                requested_root,
+                root_descriptor,
+            )
+            for classified in validated.items
+        )
+    finally:
+        _close_descriptor_quietly(root_descriptor)
+
+
+def _execute_same_volume_identity_item(
+    item: IdentityMovePlanItem,
+    root: Path,
+    requested_root: Path,
+    root_descriptor: int,
+) -> _SameVolumeIdentityPublication:
+    source = _root_relative_lexical_path(
+        item.plan_item.source,
+        requested_root,
+        root,
+    )
+    destination = _root_relative_lexical_path(
+        item.plan_item.destination,
+        requested_root,
+        root,
+    )
+    source_parent_descriptor: int | None = None
+    destination_parent_descriptor: int | None = None
+    destination_descriptor: int | None = None
+    destination_parent_created = False
+    published = False
+    try:
+        source_parent_descriptor, _ = _open_directory_chain(
+            root_descriptor,
+            _parent_parts(source, root),
+            create=False,
+            failure_code="source_unstable",
+        )
+        required = RequiredRegularFileIdentity(
+            digest=item.expected_digest,
+            stat_fingerprint=item.captured_stat,
+        )
+        try:
+            source_context = open_verified_regular_file(source, root, required)
+            source_handle = source_context.__enter__()
+        except StableFileIdentityError as error:
+            raise _source_identity_failure(error) from None
+        try:
+            destination_parent_descriptor, destination_parent_created = (
+                _open_directory_chain(
+                    root_descriptor,
+                    _parent_parts(destination, root),
+                    create=True,
+                    failure_code="destination_publication_failed",
+                )
+            )
+            _require_directory_binding(
+                source.parent,
+                source_parent_descriptor,
+                root,
+                failure_code="source_unstable",
+            )
+            _require_directory_binding(
+                destination.parent,
+                destination_parent_descriptor,
+                root,
+                failure_code="destination_publication_failed",
+                filesystem_changed=destination_parent_created,
+            )
+            _require_source_binding(
+                source_parent_descriptor,
+                source.name,
+                source_handle.fileno(),
+                expected_fingerprint=item.captured_stat,
+                expected_link_count=1,
+                failure_code="source_identity_changed",
+            )
+            _require_destination_absent(
+                destination_parent_descriptor,
+                destination.name,
+                filesystem_changed=destination_parent_created,
+            )
+            source_stat = os.fstat(source_handle.fileno())
+            destination_parent_stat = os.fstat(destination_parent_descriptor)
+            if source_stat.st_dev != destination_parent_stat.st_dev:
+                raise StrictExecutorError(
+                    "cross_volume_unsupported",
+                    filesystem_changed=destination_parent_created,
+                )
+            _require_directory_binding(
+                destination.parent,
+                destination_parent_descriptor,
+                root,
+                failure_code="destination_publication_failed",
+                filesystem_changed=destination_parent_created,
+            )
+            _publish_hard_link(
+                source_parent_descriptor,
+                source.name,
+                destination_parent_descriptor,
+                destination.name,
+                filesystem_changed=destination_parent_created,
+            )
+            published = True
+
+            destination_descriptor = _open_destination_descriptor(
+                destination_parent_descriptor,
+                destination.name,
+            )
+            _verify_destination_binding(
+                destination_parent_descriptor,
+                destination.name,
+                destination_descriptor,
+                source_handle.fileno(),
+                item.expected_digest,
+                expected_link_count=2,
+            )
+            _fsync_after_publication(destination_descriptor)
+            _fsync_after_publication(destination_parent_descriptor)
+
+            _require_directory_binding(
+                source.parent,
+                source_parent_descriptor,
+                root,
+                failure_code="source_path_changed",
+                filesystem_changed=True,
+                recovery_required=True,
+            )
+            _require_directory_binding(
+                destination.parent,
+                destination_parent_descriptor,
+                root,
+                failure_code="destination_verification_failed",
+                filesystem_changed=True,
+                recovery_required=True,
+            )
+            _require_source_binding(
+                source_parent_descriptor,
+                source.name,
+                source_handle.fileno(),
+                expected_fingerprint=None,
+                expected_link_count=2,
+                failure_code="source_path_changed",
+                recovery_required=True,
+            )
+            _verify_destination_binding(
+                destination_parent_descriptor,
+                destination.name,
+                destination_descriptor,
+                source_handle.fileno(),
+                item.expected_digest,
+                expected_link_count=2,
+            )
+            try:
+                os.unlink(source.name, dir_fd=source_parent_descriptor)
+            except OSError:
+                raise _recovery_failure("source_removal_failed") from None
+            _require_source_absent(source_parent_descriptor, source.name)
+            _require_descriptor_link_count(source_handle.fileno(), 1)
+            _fsync_after_publication(source_parent_descriptor)
+
+            _require_directory_binding(
+                source.parent,
+                source_parent_descriptor,
+                root,
+                failure_code="source_path_changed",
+                filesystem_changed=True,
+                recovery_required=True,
+            )
+            _require_directory_binding(
+                destination.parent,
+                destination_parent_descriptor,
+                root,
+                failure_code="destination_verification_failed",
+                filesystem_changed=True,
+                recovery_required=True,
+            )
+            _verify_destination_binding(
+                destination_parent_descriptor,
+                destination.name,
+                destination_descriptor,
+                source_handle.fileno(),
+                item.expected_digest,
+                expected_link_count=1,
+            )
+            _fsync_after_publication(destination_descriptor)
+            _fsync_after_publication(destination_parent_descriptor)
+            return _SameVolumeIdentityPublication(
+                completed=True,
+                destination_parent_created=destination_parent_created,
+            )
+        except StrictExecutorInterrupted:
+            raise
+        except KeyboardInterrupt:
+            if published or _leaf_exists(
+                destination_parent_descriptor,
+                destination.name,
+            ):
+                raise StrictExecutorInterrupted() from None
+            raise
+        finally:
+            active_exception = sys.exc_info()
+            try:
+                source_context.__exit__(*active_exception)
+            except BaseException:
+                if active_exception[0] is not None:
+                    raise active_exception[1].with_traceback(active_exception[2])
+                if published:
+                    raise _recovery_failure(
+                        "filesystem_changed_recovery_required"
+                    ) from None
+                raise
+    finally:
+        if destination_descriptor is not None:
+            _close_descriptor_quietly(destination_descriptor)
+        if destination_parent_descriptor is not None:
+            _close_descriptor_quietly(destination_parent_descriptor)
+        if source_parent_descriptor is not None:
+            _close_descriptor_quietly(source_parent_descriptor)
+
+
+def _require_strict_platform_support() -> None:
+    if (
+        not all(function in os.supports_dir_fd for function in _DIR_FD_FUNCTIONS)
+        or _LINK_FUNCTION not in os.supports_follow_symlinks
+        or _STAT_FUNCTION not in os.supports_follow_symlinks
+        or not getattr(os, "O_DIRECTORY", 0)
+        or not getattr(os, "O_NOFOLLOW", 0)
+    ):
+        raise StrictExecutorError("unsupported_item")
+
+
+def _open_root_directory(root: Path) -> int:
+    flags = (
+        os.O_RDONLY
+        | os.O_DIRECTORY
+        | os.O_NOFOLLOW
+        | getattr(os, "O_CLOEXEC", 0)
+    )
+    try:
+        descriptor = os.open(root, flags)
+        if not stat.S_ISDIR(os.fstat(descriptor).st_mode):
+            raise OSError
+        return descriptor
+    except BaseException as error:
+        if "descriptor" in locals():
+            _close_descriptor_quietly(descriptor)
+        if isinstance(error, KeyboardInterrupt):
+            raise
+        raise StrictExecutorError("invalid_strict_plan") from None
+
+
+def _parent_parts(path: Path, root: Path) -> tuple[str, ...]:
+    try:
+        relative = path.relative_to(root)
+    except ValueError:
+        raise StrictExecutorError("invalid_strict_plan") from None
+    parts = relative.parts[:-1]
+    if not relative.name or any(part in {"", ".", ".."} for part in parts):
+        raise StrictExecutorError("invalid_strict_plan")
+    return parts
+
+
+def _root_relative_lexical_path(
+    path: Path,
+    requested_root: Path,
+    resolved_root: Path,
+) -> Path:
+    absolute = Path(os.path.abspath(path))
+    for candidate_root in (requested_root, resolved_root):
+        try:
+            relative = absolute.relative_to(candidate_root)
+        except ValueError:
+            continue
+        if any(part in {"", ".", ".."} for part in relative.parts):
+            break
+        return resolved_root.joinpath(*relative.parts)
+    raise StrictExecutorError("invalid_strict_plan")
+
+
+def _open_directory_chain(
+    root_descriptor: int,
+    parts: tuple[str, ...],
+    *,
+    create: bool,
+    failure_code: str,
+) -> tuple[int, bool]:
+    current = os.dup(root_descriptor)
+    created = False
+    flags = (
+        os.O_RDONLY
+        | os.O_DIRECTORY
+        | os.O_NOFOLLOW
+        | getattr(os, "O_CLOEXEC", 0)
+    )
+    try:
+        for part in parts:
+            try:
+                following = os.open(part, flags, dir_fd=current)
+            except FileNotFoundError:
+                if not create:
+                    raise StrictExecutorError(failure_code) from None
+                try:
+                    os.mkdir(part, 0o777, dir_fd=current)
+                    created = True
+                    following = os.open(part, flags, dir_fd=current)
+                    try:
+                        _fsync_before_publication(following)
+                        _fsync_before_publication(current)
+                    except BaseException:
+                        _close_descriptor_quietly(following)
+                        raise
+                except OSError:
+                    raise StrictExecutorError(
+                        failure_code,
+                        filesystem_changed=created,
+                    ) from None
+            except OSError:
+                raise StrictExecutorError(
+                    failure_code,
+                    filesystem_changed=created,
+                ) from None
+            try:
+                following_stat = os.fstat(following)
+            except BaseException:
+                _close_descriptor_quietly(following)
+                raise
+            if not stat.S_ISDIR(following_stat.st_mode):
+                _close_descriptor_quietly(following)
+                raise StrictExecutorError(
+                    failure_code,
+                    filesystem_changed=created,
+                )
+            _close_descriptor_quietly(current)
+            current = following
+        return current, created
+    except BaseException:
+        _close_descriptor_quietly(current)
+        raise
+
+
+def _require_source_binding(
+    parent_descriptor: int,
+    leaf: str,
+    source_descriptor: int,
+    *,
+    expected_fingerprint: RegularFileStatFingerprint | None,
+    expected_link_count: int,
+    failure_code: str,
+    recovery_required: bool = False,
+) -> None:
+    try:
+        path_stat = os.stat(
+            leaf,
+            dir_fd=parent_descriptor,
+            follow_symlinks=False,
+        )
+        descriptor_stat = os.fstat(source_descriptor)
+        if (
+            not stat.S_ISREG(path_stat.st_mode)
+            or not stat.S_ISREG(descriptor_stat.st_mode)
+            or _inode_identity(path_stat) != _inode_identity(descriptor_stat)
+            or _stable_stat_evidence(path_stat) != _stable_stat_evidence(
+                descriptor_stat
+            )
+            or descriptor_stat.st_nlink != expected_link_count
+            or path_stat.st_nlink != expected_link_count
+            or (
+                expected_fingerprint is not None
+                and fingerprint_from_stat(descriptor_stat) != expected_fingerprint
+            )
+        ):
+            raise OSError
+    except (OSError, StableFileIdentityError, ValueError):
+        if recovery_required:
+            raise _recovery_failure(failure_code) from None
+        raise StrictExecutorError(failure_code) from None
+
+
+def _require_directory_binding(
+    path: Path,
+    descriptor: int,
+    root: Path,
+    *,
+    failure_code: str,
+    filesystem_changed: bool = False,
+    recovery_required: bool = False,
+) -> None:
+    try:
+        path_stat = os.lstat(path)
+        descriptor_stat = os.fstat(descriptor)
+        resolved = path.resolve(strict=True)
+        if (
+            not stat.S_ISDIR(path_stat.st_mode)
+            or not stat.S_ISDIR(descriptor_stat.st_mode)
+            or _inode_identity(path_stat) != _inode_identity(descriptor_stat)
+            or (resolved != root and root not in resolved.parents)
+        ):
+            raise OSError
+    except OSError:
+        if recovery_required:
+            raise _recovery_failure(failure_code) from None
+        raise StrictExecutorError(
+            failure_code,
+            filesystem_changed=filesystem_changed,
+        ) from None
+
+
+def _require_destination_absent(
+    parent_descriptor: int,
+    leaf: str,
+    *,
+    filesystem_changed: bool,
+) -> None:
+    try:
+        os.stat(leaf, dir_fd=parent_descriptor, follow_symlinks=False)
+    except FileNotFoundError:
+        return
+    except OSError:
+        raise StrictExecutorError(
+            "destination_publication_failed",
+            filesystem_changed=filesystem_changed,
+        ) from None
+    raise StrictExecutorError(
+        "destination_collision",
+        filesystem_changed=filesystem_changed,
+    )
+
+
+def _publish_hard_link(
+    source_parent_descriptor: int,
+    source_leaf: str,
+    destination_parent_descriptor: int,
+    destination_leaf: str,
+    *,
+    filesystem_changed: bool,
+) -> None:
+    try:
+        os.link(
+            source_leaf,
+            destination_leaf,
+            src_dir_fd=source_parent_descriptor,
+            dst_dir_fd=destination_parent_descriptor,
+            follow_symlinks=False,
+        )
+    except FileExistsError:
+        raise StrictExecutorError(
+            "destination_collision",
+            filesystem_changed=filesystem_changed,
+        ) from None
+    except OSError as error:
+        code = (
+            "cross_volume_unsupported"
+            if error.errno == errno.EXDEV
+            else "destination_publication_failed"
+        )
+        raise StrictExecutorError(
+            code,
+            filesystem_changed=filesystem_changed,
+        ) from None
+
+
+def _open_destination_descriptor(parent_descriptor: int, leaf: str) -> int:
+    flags = (
+        os.O_RDONLY
+        | os.O_NOFOLLOW
+        | getattr(os, "O_CLOEXEC", 0)
+        | getattr(os, "O_NONBLOCK", 0)
+    )
+    try:
+        return os.open(leaf, flags, dir_fd=parent_descriptor)
+    except OSError:
+        raise _recovery_failure("destination_verification_failed") from None
+
+
+def _verify_destination_binding(
+    parent_descriptor: int,
+    leaf: str,
+    destination_descriptor: int,
+    source_descriptor: int,
+    expected_digest: str,
+    *,
+    expected_link_count: int,
+) -> None:
+    try:
+        path_before = os.stat(
+            leaf,
+            dir_fd=parent_descriptor,
+            follow_symlinks=False,
+        )
+        source_stat = os.fstat(source_descriptor)
+        destination_stat = os.fstat(destination_descriptor)
+        if (
+            not stat.S_ISREG(path_before.st_mode)
+            or not stat.S_ISREG(destination_stat.st_mode)
+            or _inode_identity(path_before) != _inode_identity(source_stat)
+            or _inode_identity(destination_stat) != _inode_identity(source_stat)
+            or source_stat.st_nlink != expected_link_count
+            or destination_stat.st_nlink != expected_link_count
+            or path_before.st_nlink != expected_link_count
+        ):
+            raise OSError
+        verified = verify_open_regular_file_descriptor(
+            destination_descriptor,
+            expected_digest,
+        )
+        path_after = os.stat(
+            leaf,
+            dir_fd=parent_descriptor,
+            follow_symlinks=False,
+        )
+        destination_after = os.fstat(destination_descriptor)
+        if (
+            _inode_identity(path_after) != _inode_identity(source_stat)
+            or _inode_identity(destination_after) != _inode_identity(source_stat)
+            or _stable_stat_evidence(path_after)
+            != _stable_stat_evidence(destination_after)
+            or destination_after.st_nlink != expected_link_count
+            or verified.device != source_stat.st_dev
+            or verified.inode != source_stat.st_ino
+        ):
+            raise OSError
+    except StrictExecutorError:
+        raise
+    except (OSError, StableFileIdentityError, ValueError):
+        raise _recovery_failure("destination_verification_failed") from None
+
+
+def _require_source_absent(parent_descriptor: int, leaf: str) -> None:
+    try:
+        os.stat(leaf, dir_fd=parent_descriptor, follow_symlinks=False)
+    except FileNotFoundError:
+        return
+    except OSError:
+        raise _recovery_failure("source_removal_failed") from None
+    raise _recovery_failure("source_removal_failed")
+
+
+def _require_descriptor_link_count(descriptor: int, expected: int) -> None:
+    try:
+        current = os.fstat(descriptor)
+        if not stat.S_ISREG(current.st_mode) or current.st_nlink != expected:
+            raise OSError
+    except OSError:
+        raise _recovery_failure("filesystem_changed_recovery_required") from None
+
+
+def _fsync_after_publication(descriptor: int) -> None:
+    try:
+        os.fsync(descriptor)
+    except OSError:
+        raise _recovery_failure("filesystem_changed_recovery_required") from None
+
+
+def _fsync_before_publication(descriptor: int) -> None:
+    try:
+        os.fsync(descriptor)
+    except OSError:
+        raise StrictExecutorError(
+            "destination_publication_failed",
+            filesystem_changed=True,
+        ) from None
+
+
+def _leaf_exists(parent_descriptor: int | None, leaf: str) -> bool:
+    if parent_descriptor is None:
+        return False
+    try:
+        os.stat(leaf, dir_fd=parent_descriptor, follow_symlinks=False)
+        return True
+    except OSError:
+        return False
+
+
+def _source_identity_failure(error: StableFileIdentityError) -> StrictExecutorError:
+    code = (
+        error.code
+        if error.code
+        in {"source_identity_changed", "source_unstable", "unsupported_item"}
+        else "source_identity_changed"
+    )
+    return StrictExecutorError(code)
+
+
+def _recovery_failure(code: str) -> StrictExecutorError:
+    return StrictExecutorError(
+        code,
+        filesystem_changed=True,
+        recovery_required=True,
+    )
+
+
+def _inode_identity(value: os.stat_result) -> tuple[int, int]:
+    return value.st_dev, value.st_ino
+
+
+def _stable_stat_evidence(
+    value: os.stat_result,
+) -> tuple[int, int, int, int, int, int | None]:
+    return (
+        stat.S_IFMT(value.st_mode),
+        value.st_dev,
+        value.st_ino,
+        value.st_size,
+        value.st_mtime_ns,
+        getattr(value, "st_ctime_ns", None),
+    )
+
+
+def _close_descriptor_quietly(descriptor: int) -> None:
+    try:
+        os.close(descriptor)
+    except OSError:
+        pass
 
 
 def apply_move_plan(

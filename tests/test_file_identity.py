@@ -14,10 +14,30 @@ from organizer.file_identity import (
     StableFileIdentityInterrupted,
     capture_open_regular_file,
     open_verified_regular_file,
+    verify_open_regular_file_descriptor,
 )
 
 
 class NeutralFileIdentityTests(unittest.TestCase):
+    def test_retained_descriptor_verification_does_not_take_ownership(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source"
+            source.write_bytes(b"identity")
+            descriptor = os.open(source, os.O_RDONLY)
+            try:
+                observed = verify_open_regular_file_descriptor(
+                    descriptor,
+                    hashlib.sha256(b"identity").hexdigest(),
+                )
+                self.assertEqual(observed.inode, os.fstat(descriptor).st_ino)
+                with self.assertRaises(StableFileIdentityError) as raised:
+                    verify_open_regular_file_descriptor(descriptor, "0" * 64)
+                self.assertEqual(raised.exception.code, "source_identity_changed")
+                self.assertEqual(os.fstat(descriptor).st_size, len(b"identity"))
+            finally:
+                os.close(descriptor)
+
     def test_capture_retains_verified_descriptor_until_context_exit(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
