@@ -373,7 +373,7 @@ def _execute_same_volume_identity_item(
             )
         except StrictExecutorInterrupted:
             raise
-        except KeyboardInterrupt:
+        except (KeyboardInterrupt, SystemExit):
             if published or _leaf_exists(
                 destination_parent_descriptor,
                 destination.name,
@@ -384,10 +384,12 @@ def _execute_same_volume_identity_item(
             active_exception = sys.exc_info()
             try:
                 source_context.__exit__(*active_exception)
-            except BaseException:
+            except BaseException as close_error:
                 if active_exception[0] is not None:
                     raise active_exception[1].with_traceback(active_exception[2])
                 if published:
+                    if isinstance(close_error, (KeyboardInterrupt, SystemExit)):
+                        raise StrictExecutorInterrupted() from None
                     raise _recovery_failure(
                         "filesystem_changed_recovery_required"
                     ) from None
@@ -427,7 +429,7 @@ def _open_root_directory(root: Path) -> int:
     except BaseException as error:
         if "descriptor" in locals():
             _close_descriptor_quietly(descriptor)
-        if isinstance(error, KeyboardInterrupt):
+        if isinstance(error, (KeyboardInterrupt, SystemExit)):
             raise
         raise StrictExecutorError("invalid_strict_plan") from None
 
@@ -631,6 +633,10 @@ def _publish_hard_link(
             filesystem_changed=filesystem_changed,
         ) from None
     except OSError as error:
+        if _leaf_exists(destination_parent_descriptor, destination_leaf):
+            raise _recovery_failure(
+                "filesystem_changed_recovery_required"
+            ) from None
         code = (
             "cross_volume_unsupported"
             if error.errno == errno.EXDEV
@@ -873,6 +879,110 @@ def apply_move_plan(
                 filesystem_changed=any(item.success for item in operations),
             ) from error
     return operation_log
+
+
+def apply_same_volume_identity_move_plan(
+    plan_items: tuple[IdentityMovePlanItem, ...],
+    root: Path,
+    log_dir_name: str = "operation_logs",
+    *,
+    recorder: MovementRecorder | None = None,
+) -> OperationLog:
+    """Apply a fully validated same-volume identity-bearing move batch."""
+
+    validated = _prepare_same_volume_identity_batch(plan_items, root)
+    requested_root = Path(os.path.abspath(root))
+    resolved_root = Path(root).resolve(strict=True)
+    root_descriptor = _open_root_directory(resolved_root)
+    underlying_items = tuple(
+        classified.item.plan_item for classified in validated.items
+    )
+    operations: list[MoveResult] = []
+    filesystem_changed = False
+    try:
+        log_path = _next_log_path(
+            resolved_root,
+            log_dir_name,
+            "operation_log",
+        )
+        if recorder is not None:
+            try:
+                recorder.before_batch(underlying_items)
+            except Exception as error:
+                raise MovementRecordingError("before_batch") from error
+
+        for index, classified in enumerate(validated.items):
+            identity_item = classified.item
+            item = identity_item.plan_item
+            if recorder is not None:
+                try:
+                    recorder.before_move(index, item)
+                except Exception as error:
+                    raise MovementRecordingError("before_move") from error
+            try:
+                publication = _execute_same_volume_identity_item(
+                    identity_item,
+                    resolved_root,
+                    requested_root,
+                    root_descriptor,
+                )
+            except StrictExecutorError as error:
+                if error.recovery_required:
+                    raise
+                filesystem_changed = filesystem_changed or error.filesystem_changed
+                result = MoveResult(
+                    source=item.source,
+                    destination=item.destination,
+                    success=False,
+                    message=error.safe_message,
+                )
+                operations.append(result)
+                if recorder is not None:
+                    try:
+                        recorder.after_failure(index, item, result)
+                    except Exception as recording_error:
+                        operation_log = _write_operation_log(log_path, operations)
+                        raise MovementRecordingError(
+                            "after_failure",
+                            operation_log=operation_log,
+                            filesystem_changed=filesystem_changed,
+                        ) from recording_error
+                break
+
+            if not publication.completed:
+                raise _recovery_failure("filesystem_changed_recovery_required")
+            filesystem_changed = True
+            result = MoveResult(
+                source=item.source,
+                destination=item.destination,
+                success=True,
+                message="moved",
+            )
+            operations.append(result)
+            if recorder is not None:
+                try:
+                    recorder.after_success(index, item, result)
+                except Exception as error:
+                    operation_log = _write_operation_log(log_path, operations)
+                    raise MovementRecordingError(
+                        "after_success",
+                        operation_log=operation_log,
+                        filesystem_changed=True,
+                    ) from error
+
+        operation_log = _write_operation_log(log_path, operations)
+        if recorder is not None:
+            try:
+                recorder.after_batch(operation_log)
+            except Exception as error:
+                raise MovementRecordingError(
+                    "after_batch",
+                    operation_log=operation_log,
+                    filesystem_changed=filesystem_changed,
+                ) from error
+        return operation_log
+    finally:
+        _close_descriptor_quietly(root_descriptor)
 
 
 def undo_operation_log(

@@ -572,8 +572,6 @@ class SameVolumeIdentityPublicationTests(unittest.TestCase):
 
     def test_private_engine_has_no_recorder_log_activity_or_production_caller(self) -> None:
         repository = Path(__file__).resolve().parents[1]
-        executor_text = (repository / "src/organizer/executor.py").read_text()
-        self.assertNotIn("apply_same_volume_identity_move_plan", executor_text)
         for relative in (
             "src/organizer/application/execution_service.py",
             "src/organizer/application/organization_movement_service.py",
@@ -581,6 +579,7 @@ class SameVolumeIdentityPublicationTests(unittest.TestCase):
             "src/organizer/application/duplicate_bin_movement_service.py",
         ):
             text = (repository / relative).read_text()
+            self.assertNotIn("apply_same_volume_identity_move_plan", text)
             self.assertNotIn("_execute_same_volume_identity", text)
             self.assertNotIn("IdentityMovePlanItem", text)
 
