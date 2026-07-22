@@ -18,6 +18,10 @@ from organizer.application.filesystem_operation_admission import (
     SAFE_RECOVERY_MESSAGE,
 )
 from organizer.application.scan_service import scan_root
+from organizer.application.volume_admission import (
+    SAFE_CROSS_VOLUME_MESSAGE,
+    VolumeAdmissionError,
+)
 from organizer.web.app import create_app
 from organizer.web.config import WebAppConfig
 from organizer.web.scan_jobs import ScanJobSnapshot
@@ -87,6 +91,79 @@ class WebOrganizationMovementTests(unittest.IsolatedAsyncioTestCase):
             },
         )
         self.assertEqual(self.app.state.organization_execution._authorizations, {})
+
+    async def test_cross_volume_preview_is_safe_no_store_and_issues_no_capability(
+        self,
+    ) -> None:
+        async with _client(self.app) as client:
+            csrf = await _authenticate(client, self.token)
+            await _approve(client, csrf)
+            with mock.patch(
+                "organizer.application.organization_movement_service."
+                "OrganizationVolumeAdmission.inspect_and_require_allowed",
+                side_effect=VolumeAdmissionError("cross_volume_plan"),
+            ):
+                response = await client.post(
+                    "/api/organization/move/preview",
+                    data={"csrf_token": csrf},
+                    headers=_origin(),
+                )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.headers["cache-control"], "no-store")
+        self.assertEqual(
+            response.json(),
+            {
+                "error": {
+                    "code": "cross_volume_plan",
+                    "message": SAFE_CROSS_VOLUME_MESSAGE,
+                }
+            },
+        )
+        self.assertNotIn(str(self.root), response.text)
+        self.assertEqual(self.app.state.organization_execution._authorizations, {})
+        self.assertEqual(self.app.state.organization_operations.list_records(), ())
+
+    async def test_topology_change_at_confirmation_is_safe_and_consumes_token(
+        self,
+    ) -> None:
+        async with _client(self.app) as client:
+            csrf = await _authenticate(client, self.token)
+            await _approve(client, csrf)
+            preview = await client.post(
+                "/api/organization/move/preview",
+                data={"csrf_token": csrf},
+                headers=_origin(),
+            )
+            token = preview.json()["confirmation_token"]
+            with mock.patch(
+                "organizer.application.execution_service."
+                "OrganizationVolumeAdmission.inspect_and_require_allowed",
+                side_effect=VolumeAdmissionError("cross_volume_plan"),
+            ):
+                response = await client.post(
+                    "/api/organization/move",
+                    data={
+                        "csrf_token": csrf,
+                        "confirmation_token": token,
+                        "confirmation": "MOVE APPROVED FILES",
+                    },
+                    headers=_origin(),
+                )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.headers["cache-control"], "no-store")
+        self.assertEqual(response.json()["error"]["code"], "cross_volume_plan")
+        self.assertEqual(
+            response.json()["error"]["message"], SAFE_CROSS_VOLUME_MESSAGE
+        )
+        self.assertNotIn(str(self.root), response.text)
+        self.assertEqual(
+            self.app.state.organization_execution.authorization_snapshot(token).status,
+            "consumed",
+        )
+        self.assertEqual(self.app.state.organization_operations.list_records(), ())
+        self.assertTrue((self.root / "EvoSim_project_slides.pptx").is_file())
 
     async def test_recovery_block_returns_safe_conflict_after_security_and_token_validation(self) -> None:
         async with _client(self.app) as client:

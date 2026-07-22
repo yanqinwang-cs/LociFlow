@@ -260,17 +260,10 @@ class ApplicationExecutionServiceTests(unittest.TestCase):
             repeated = _move(plan, root, authorization, coordinator, repository)
             self.assertEqual(repeated.operation_id, first.operation_id)
             self.assertEqual(len(repository.list_records()), 1)
-            replay_authorization = issue_movement_authorization(plan, coordinator)
             with self.assertRaisesRegex(
-                OrganizationExecutionError, "movement_already_started"
+                OrganizationExecutionError, "indeterminate_volume"
             ):
-                _move(
-                    plan,
-                    root,
-                    replay_authorization,
-                    coordinator,
-                    repository,
-                )
+                issue_movement_authorization(plan, coordinator)
             self.assertEqual(len(repository.list_records()), 1)
 
         with tempfile.TemporaryDirectory() as directory:
@@ -342,7 +335,11 @@ class ApplicationExecutionServiceTests(unittest.TestCase):
             except (NotImplementedError, OSError):
                 pass
             else:
-                _assert_preflight_error(self, plan, root, "source_changed")
+                coordinator = OrganizationExecutionCoordinator()
+                with self.assertRaisesRegex(
+                    OrganizationExecutionError, "unsafe_volume_path"
+                ):
+                    issue_movement_authorization(plan, coordinator)
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -371,7 +368,17 @@ class ApplicationExecutionServiceTests(unittest.TestCase):
                 plan_item=replace(reviewed.plan_item, source=outside_source),
             )
             outside_plan = replace(plan, reviewed_move_items=(changed_item,))
-            _assert_preflight_error(self, outside_plan, root, "approved_plan_stale")
+            coordinator = OrganizationExecutionCoordinator()
+            with self.assertRaisesRegex(
+                OrganizationExecutionError, "unsafe_volume_path"
+            ):
+                _issue_movement_authorization(
+                    outside_plan,
+                    coordinator,
+                    filesystem_operation_admission=FilesystemOperationAdmission(
+                        FilesystemOperationInspector(root)
+                    ),
+                )
 
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory)
@@ -401,7 +408,17 @@ class ApplicationExecutionServiceTests(unittest.TestCase):
                         ),
                     ),
                 )
-                _assert_preflight_error(self, unsafe, root, "approved_plan_stale")
+                coordinator = OrganizationExecutionCoordinator()
+                with self.assertRaisesRegex(
+                    OrganizationExecutionError, "unsafe_volume_path"
+                ):
+                    _issue_movement_authorization(
+                        unsafe,
+                        coordinator,
+                        filesystem_operation_admission=FilesystemOperationAdmission(
+                            FilesystemOperationInspector(root)
+                        ),
+                    )
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

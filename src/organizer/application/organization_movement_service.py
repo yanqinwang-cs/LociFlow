@@ -38,6 +38,10 @@ from organizer.application.organization_operation_repository import (
     OrganizationOperationRepository,
 )
 from organizer.application.runtime_lifecycle import RuntimeOperationKind
+from organizer.application.volume_admission import (
+    OrganizationVolumeAdmission,
+    VolumeAdmissionError,
+)
 
 
 class OrganizationMovementError(ValueError):
@@ -114,6 +118,7 @@ def preview_organization_movement(
     coordinator: OrganizationExecutionCoordinator,
     operation_repository: OrganizationOperationRepository,
     filesystem_operation_admission: FilesystemOperationAdmission | None = None,
+    volume_admission: OrganizationVolumeAdmission | None = None,
 ) -> OrganizationMovementPreview:
     """Issue a one-use authorization from server-owned approved state."""
 
@@ -157,6 +162,15 @@ def preview_organization_movement(
             if admission.root != operation_repository.root:
                 raise OrganizationMovementError("approved_plan_stale")
             admission.inspect_and_require_clear()
+            volume = volume_admission or OrganizationVolumeAdmission(
+                operation_repository.root
+            )
+            if volume.root != operation_repository.root:
+                raise OrganizationMovementError("approved_plan_stale")
+            try:
+                volume.inspect_and_require_allowed(approved_plan)
+            except VolumeAdmissionError as error:
+                raise OrganizationMovementError(error.code) from error
             authorization = _issue_movement_authorization(
                 approved_plan,
                 coordinator,
@@ -188,6 +202,7 @@ def execute_organization_movement(
     coordinator: OrganizationExecutionCoordinator,
     operation_repository: OrganizationOperationRepository,
     filesystem_operation_admission: FilesystemOperationAdmission | None = None,
+    volume_admission: OrganizationVolumeAdmission | None = None,
 ) -> OrganizationExecutionState:
     """Revalidate server state and delegate movement to the durable D1 owner."""
 
@@ -223,6 +238,7 @@ def execute_organization_movement(
             operation_repository=operation_repository,
             confirmation=confirmation,
             filesystem_operation_admission=filesystem_operation_admission,
+            volume_admission=volume_admission,
         )
     except OrganizationExecutionError as error:
         if error.code == "movement_already_started":

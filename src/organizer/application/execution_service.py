@@ -15,6 +15,10 @@ from organizer.application.filesystem_operation_admission import (
     FilesystemOperationInspector,
 )
 from organizer.application.runtime_lifecycle import RuntimeOperationKind
+from organizer.application.volume_admission import (
+    OrganizationVolumeAdmission,
+    VolumeAdmissionError,
+)
 from organizer.application.organization_decision_models import (
     STATUS_READY_TO_MOVE,
     ApprovedOrganizationPlan,
@@ -81,6 +85,7 @@ def issue_movement_authorization(
     coordinator: OrganizationExecutionCoordinator,
     *,
     filesystem_operation_admission: FilesystemOperationAdmission,
+    volume_admission: OrganizationVolumeAdmission | None = None,
     browser_session_id: str | None = None,
     configured_root_identity: str | None = None,
 ) -> MovementAuthorization:
@@ -90,7 +95,18 @@ def issue_movement_authorization(
         if not coordinator.try_acquire():
             raise OrganizationExecutionError("movement_already_started")
         try:
+            if approved_plan.status != STATUS_READY_TO_MOVE:
+                raise OrganizationExecutionError("approved_plan_not_found")
             filesystem_operation_admission.inspect_and_require_clear()
+            volume = volume_admission or OrganizationVolumeAdmission(
+                filesystem_operation_admission.root
+            )
+            if volume.root != filesystem_operation_admission.root:
+                raise OrganizationExecutionError("approved_plan_stale")
+            try:
+                volume.inspect_and_require_allowed(approved_plan)
+            except VolumeAdmissionError as error:
+                raise OrganizationExecutionError(error.code) from error
             return _issue_movement_authorization(
                 approved_plan,
                 coordinator,
@@ -127,6 +143,7 @@ def move_approved_organization(
     operation_repository: OrganizationOperationRepository,
     confirmation: str,
     filesystem_operation_admission: FilesystemOperationAdmission | None = None,
+    volume_admission: OrganizationVolumeAdmission | None = None,
 ) -> OrganizationOperationOutcome:
     if not coordinator.try_acquire(RuntimeOperationKind.ORGANIZATION_MOVEMENT):
         raise OrganizationExecutionError("movement_already_started")
@@ -178,6 +195,15 @@ def move_approved_organization(
             raise OrganizationExecutionError(code)
 
         _require_available_authorization(authorization, coordinator)
+
+        volume = volume_admission or OrganizationVolumeAdmission(resolved_root)
+        if volume.root != resolved_root:
+            raise OrganizationExecutionError("approved_plan_stale")
+        try:
+            volume.inspect_and_require_allowed(approved_plan)
+        except VolumeAdmissionError as error:
+            coordinator.consume(authorization.authorization_id)
+            raise OrganizationExecutionError(error.code) from error
 
         plan_items, expected_moves = _preflight(approved_plan, resolved_root)
         now = _utc_timestamp()

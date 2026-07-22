@@ -25,6 +25,11 @@ from organizer.application.organization_slice_service import (
 )
 from organizer.application.runtime_lifecycle import ApplicationStoppingError
 from organizer.application.standards_read_models import OrganizationUnavailableError
+from organizer.application.volume_admission import (
+    SAFE_CROSS_VOLUME_MESSAGE,
+    SAFE_INDETERMINATE_VOLUME_MESSAGE,
+    SAFE_UNSAFE_VOLUME_PATH_MESSAGE,
+)
 from organizer.web.forms import FormDataError, read_urlencoded_form
 from organizer.web.scan_jobs import ScanJobSnapshot
 from organizer.web.security import (
@@ -114,6 +119,18 @@ _MOVEMENT_ERRORS = {
     "overwrite_detected": (409, "A destination is no longer available."),
     "move_conflict": (409, "The approved moves now conflict."),
     "no_supported_moves": (409, "No regular files are ready to move."),
+    "cross_volume_plan": (
+        409,
+        SAFE_CROSS_VOLUME_MESSAGE,
+    ),
+    "indeterminate_volume": (
+        409,
+        SAFE_INDETERMINATE_VOLUME_MESSAGE,
+    ),
+    "unsafe_volume_path": (
+        409,
+        SAFE_UNSAFE_VOLUME_PATH_MESSAGE,
+    ),
 }
 
 
