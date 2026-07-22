@@ -467,12 +467,15 @@ class RecoveryEvidenceInspector:
             actions = ()
         elif (
             family is RecoveryOperationFamily.ORGANIZATION_UNDO
-            and record.identity_compatibility
-            is OrdinaryFileIdentityCompatibility.IDENTITY_V2
+            and (
+                record.status == UNDO_RESTORED_UNVERIFIED
+                or record.identity_compatibility
+                is OrdinaryFileIdentityCompatibility.IDENTITY_V2
+            )
         ):
-            # A0-A defines the durable representation only. Later stages must
-            # explicitly enable identity-aware verification before v2 records
-            # can advertise a recovery action.
+            # Historical v1 records lack authoritative content identity, and
+            # the v2 verifier is not yet a public recovery capability. Neither
+            # representation can safely advertise result checking here.
             actionability = RecoveryActionability.INSPECT_ONLY
             actions = ()
         digest = _digest(

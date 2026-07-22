@@ -41,7 +41,9 @@ class RecoveryProjectionServiceTests(unittest.TestCase):
             check.message,
             "Loci Flow can check what happened before you continue.",
         )
+        self.assertEqual(inspect_only.title, "File changes need attention.")
         self.assertEqual(inspect_only.message, "Review what happened before continuing.")
+        self.assertNotIn("can check", inspect_only.message)
         self.assertEqual(check.affected_items, 2)
 
     def test_continue_evidence_exposes_copy_but_no_capability(self) -> None:

@@ -436,7 +436,7 @@ class RecoveryEvidenceTests(unittest.TestCase):
             (
                 UNDO_RESTORED_UNVERIFIED,
                 "complete",
-                RecoveryActionability.CHECK_RESULT_POSSIBLE,
+                RecoveryActionability.INSPECT_ONLY,
             ),
             (
                 UNDO_INTERRUPTED,
@@ -451,6 +451,16 @@ class RecoveryEvidenceTests(unittest.TestCase):
                 before = _durable_bytes_and_mtimes(root)
                 result = _inspect(root)
                 self.assertEqual(result.actionability, expected)
+                if status == UNDO_RESTORED_UNVERIFIED:
+                    self.assertEqual(result.case.available_action_kinds, ())
+                    projection = result.safe_projection()
+                    self.assertFalse(projection.is_actionable)
+                    self.assertEqual(projection.available_action_kinds, ())
+                    self.assertEqual(
+                        projection.message,
+                        "Review what happened before continuing.",
+                    )
+                    self.assertNotIn("can check", projection.message)
                 self.assertEqual(_durable_bytes_and_mtimes(root), before)
                 self.assertEqual(undo_repository.load(undo.undo_id), undo)
 
