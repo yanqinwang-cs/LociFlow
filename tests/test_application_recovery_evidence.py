@@ -342,7 +342,7 @@ class RecoveryEvidenceTests(unittest.TestCase):
             (
                 STATUS_MOVED_UNVERIFIED,
                 "complete",
-                RecoveryActionability.CHECK_RESULT_POSSIBLE,
+                RecoveryActionability.INSPECT_ONLY,
             ),
             (
                 STATUS_INTERRUPTED,
@@ -360,6 +360,12 @@ class RecoveryEvidenceTests(unittest.TestCase):
 
                 self.assertEqual(result.actionability, expected)
                 self.assertEqual(result.case.durable_status, status)
+                if status == STATUS_MOVED_UNVERIFIED:
+                    self.assertEqual(result.case.available_action_kinds, ())
+                    self.assertEqual(
+                        result.safe_projection().message,
+                        "Review what happened before continuing.",
+                    )
                 self.assertEqual(_durable_bytes_and_mtimes(root), before)
                 self.assertEqual(repository.load(record.operation_id), record)
 

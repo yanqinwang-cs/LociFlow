@@ -49,6 +49,7 @@ from organizer.application.organization_operation_models import (
     MOVE_MOVED,
     MOVE_PENDING,
     MOVE_UNATTEMPTED,
+    ORGANIZATION_OPERATION_SCHEMA_VERSION,
     STATUS_INTERRUPTED,
     STATUS_MOVED_UNVERIFIED,
     STATUS_MOVEMENT_FAILED,
@@ -297,7 +298,8 @@ def _is_meaningful(record: OrganizationOperationRecord) -> bool:
 
 def _is_complete_verified(record: OrganizationOperationRecord) -> bool:
     return (
-        record.status == STATUS_VERIFIED
+        record.schema_version == ORGANIZATION_OPERATION_SCHEMA_VERSION
+        and record.status == STATUS_VERIFIED
         and record.verification.status == VERIFICATION_PASSED
         and bool(record.expected_moves)
         and all(move.result_state == MOVE_MOVED for move in record.expected_moves)

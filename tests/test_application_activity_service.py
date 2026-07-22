@@ -9,10 +9,12 @@ import unittest
 import uuid
 
 from organizer.application.activity_service import list_activity_entries
+from organizer.application.content_identity import RegularFileContentIdentity
 from organizer.application.organization_operation_models import (
     MOVE_FAILED,
     MOVE_MOVED,
     MOVE_UNATTEMPTED,
+    ORGANIZATION_OPERATION_SCHEMA_VERSION_V2,
     STATUS_INTERRUPTED,
     STATUS_MOVEMENT_FAILED,
     STATUS_PARTIAL_MOVEMENT,
@@ -193,6 +195,35 @@ class ActivityServiceTests(unittest.TestCase):
             )
             operations.create(record)
             result = list_activity_entries(operation_repository=operations, undo_repository=undos)
+            self.assertFalse(result.activity[0].undoable)
+
+    def test_verified_v2_record_remains_non_undoable_with_valid_legacy_log(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            operations = OrganizationOperationRepository(root)
+            undos = OrganizationUndoRepository(root)
+            v1 = _operation(operations, root, status=STATUS_VERIFIED, live=True)
+            v2 = replace(
+                v1,
+                schema_version=ORGANIZATION_OPERATION_SCHEMA_VERSION_V2,
+                expected_moves=tuple(
+                    replace(
+                        item,
+                        content_identity=RegularFileContentIdentity(
+                            "regular_file", "sha256", "a" * 64
+                        ),
+                    )
+                    for item in v1.expected_moves
+                ),
+            )
+            operations.create(v2)
+
+            result = list_activity_entries(
+                operation_repository=operations,
+                undo_repository=undos,
+            )
+
+            self.assertEqual(len(result.activity), 1)
             self.assertFalse(result.activity[0].undoable)
 
 

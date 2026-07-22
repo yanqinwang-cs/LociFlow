@@ -185,6 +185,7 @@ class RecoveryEvidenceResult:
             message=(
                 "Review what happened before continuing."
                 if actions
+                or self.case.actionability is RecoveryActionability.INSPECT_ONLY
                 else "Loci Flow can’t continue this file operation automatically."
             ),
             affected_items=self.case.affected_items,
@@ -453,11 +454,19 @@ class RecoveryEvidenceInspector:
             pending_states,
         )
         if (
-            family
-            in {
-                RecoveryOperationFamily.ORGANIZATION_MOVEMENT,
-                RecoveryOperationFamily.ORGANIZATION_UNDO,
-            }
+            family is RecoveryOperationFamily.ORGANIZATION_MOVEMENT
+            and (
+                record.status == STATUS_MOVED_UNVERIFIED
+                or record.identity_compatibility
+                is OrdinaryFileIdentityCompatibility.IDENTITY_V2
+            )
+        ):
+            # Neither historical metadata nor the disconnected v2 verifier is
+            # a public recovery capability. Review remains the only safe action.
+            actionability = RecoveryActionability.INSPECT_ONLY
+            actions = ()
+        elif (
+            family is RecoveryOperationFamily.ORGANIZATION_UNDO
             and record.identity_compatibility
             is OrdinaryFileIdentityCompatibility.IDENTITY_V2
         ):
