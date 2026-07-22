@@ -32,6 +32,7 @@ from organizer.application.organization_undo_repository import (
 )
 from organizer.application.volume_admission import (
     OrganizationVolumeAdmission,
+    OrganizationVolumePathPair,
     VolumeAdmissionError,
     VolumeAdmissionState,
 )
@@ -39,6 +40,75 @@ from tests.test_application_execution_service import _approved_plan
 
 
 class ApplicationVolumeAdmissionTests(unittest.TestCase):
+    def test_neutral_relative_path_batch_is_root_bound_and_creates_no_destination(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            source = root / "Documents" / "a.txt"
+            source.parent.mkdir()
+            source.write_bytes(b"a")
+            pairs = (
+                OrganizationVolumePathPair(
+                    "Documents/a.txt", "Inbox/a.txt"
+                ),
+            )
+
+            result = OrganizationVolumeAdmission(root).inspect_path_pairs(pairs)
+
+            self.assertEqual(result.state, VolumeAdmissionState.ALLOWED)
+            self.assertFalse((root / "Inbox").exists())
+            self.assertNotIn("Documents", repr(pairs[0]))
+
+    def test_neutral_batch_rejects_cross_volume_unsafe_and_indeterminate_completely(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            first = root / "Documents" / "a.txt"
+            second = root / "Documents" / "b.txt"
+            first.parent.mkdir()
+            first.write_bytes(b"a")
+            second.write_bytes(b"b")
+            pairs = tuple(
+                OrganizationVolumePathPair(
+                    f"Documents/{name}.txt", f"Inbox/{name}.txt"
+                )
+                for name in ("a", "b")
+            )
+            root_device = os.lstat(root).st_dev
+            cross = OrganizationVolumeAdmission(
+                root,
+                lstat_reader=_lstat_with_device(second, root_device + 1),
+            )
+            self.assertEqual(
+                cross.inspect_path_pairs(pairs).state,
+                VolumeAdmissionState.CROSS_VOLUME,
+            )
+            with self.assertRaises(VolumeAdmissionError):
+                cross.require_same_volume_path_pairs(pairs)
+            self.assertFalse((root / "Inbox").exists())
+
+            unsafe = (
+                OrganizationVolumePathPair("../outside", "Inbox/a.txt"),
+            )
+            self.assertEqual(
+                OrganizationVolumeAdmission(root).inspect_path_pairs(unsafe).state,
+                VolumeAdmissionState.UNSAFE,
+            )
+
+            def unreadable(path: Path):
+                if Path(path) == root:
+                    raise OSError("private device detail")
+                return os.lstat(path)
+
+            self.assertEqual(
+                OrganizationVolumeAdmission(
+                    root, lstat_reader=unreadable
+                ).inspect_path_pairs(pairs).state,
+                VolumeAdmissionState.INDETERMINATE,
+            )
+
     def test_selected_root_and_same_device_plan_are_allowed_without_creating_parent(
         self,
     ) -> None:

@@ -47,6 +47,15 @@ class VolumeAdmissionResult:
         return self.state is VolumeAdmissionState.ALLOWED
 
 
+@dataclass(frozen=True, repr=False)
+class OrganizationVolumePathPair:
+    source_relative_path: str
+    destination_relative_path: str
+
+    def __repr__(self) -> str:
+        return "OrganizationVolumePathPair(<paths redacted>)"
+
+
 class VolumeAdmissionError(RuntimeError):
     def __init__(self, code: str) -> None:
         if code not in _SAFE_MESSAGES:
@@ -83,20 +92,45 @@ class OrganizationVolumeAdmission:
         if not isinstance(approved_plan, ApprovedOrganizationPlan):
             return VolumeAdmissionResult(VolumeAdmissionState.UNSAFE)
         try:
+            pairs = tuple(
+                self._relative_pair(
+                    item.plan_item.source,
+                    item.plan_item.destination,
+                )
+                for item in approved_plan.reviewed_move_items
+            )
+        except (OSError, TypeError, ValueError):
+            return VolumeAdmissionResult(VolumeAdmissionState.UNSAFE)
+        return self.inspect_path_pairs(pairs)
+
+    def inspect_path_pairs(
+        self,
+        path_pairs: tuple[OrganizationVolumePathPair, ...],
+    ) -> VolumeAdmissionResult:
+        """Classify one complete server-owned relative-path batch read-only."""
+
+        if not isinstance(path_pairs, tuple) or any(
+            not isinstance(pair, OrganizationVolumePathPair) for pair in path_pairs
+        ):
+            return VolumeAdmissionResult(VolumeAdmissionState.UNSAFE)
+        try:
             root_stat = self._lstat(self.root)
         except OSError:
             return VolumeAdmissionResult(VolumeAdmissionState.INDETERMINATE)
         if stat.S_ISLNK(root_stat.st_mode) or not stat.S_ISDIR(root_stat.st_mode):
             return VolumeAdmissionResult(VolumeAdmissionState.UNSAFE)
 
-        states = tuple(
-            self._inspect_item(
-                item.plan_item.source,
-                item.plan_item.destination,
-                root_stat.st_dev,
+        try:
+            states = tuple(
+                self._inspect_item(
+                    self._path_under_root(pair.source_relative_path),
+                    self._path_under_root(pair.destination_relative_path),
+                    root_stat.st_dev,
+                )
+                for pair in path_pairs
             )
-            for item in approved_plan.reviewed_move_items
-        )
+        except (OSError, TypeError, ValueError):
+            return VolumeAdmissionResult(VolumeAdmissionState.UNSAFE)
         if any(state is VolumeAdmissionState.UNSAFE for state in states):
             return VolumeAdmissionResult(VolumeAdmissionState.UNSAFE)
         if any(state is VolumeAdmissionState.INDETERMINATE for state in states):
@@ -105,18 +139,59 @@ class OrganizationVolumeAdmission:
             return VolumeAdmissionResult(VolumeAdmissionState.CROSS_VOLUME)
         return VolumeAdmissionResult(VolumeAdmissionState.ALLOWED)
 
+    def require_same_volume_path_pairs(
+        self,
+        path_pairs: tuple[OrganizationVolumePathPair, ...],
+    ) -> VolumeAdmissionResult:
+        result = self.inspect_path_pairs(path_pairs)
+        self._require_allowed(result)
+        return result
+
     def inspect_and_require_allowed(
         self,
         approved_plan: ApprovedOrganizationPlan,
     ) -> VolumeAdmissionResult:
         result = self.inspect(approved_plan)
+        self._require_allowed(result)
+        return result
+
+    def _require_allowed(self, result: VolumeAdmissionResult) -> None:
         if result.state is VolumeAdmissionState.CROSS_VOLUME:
             raise VolumeAdmissionError("cross_volume_plan")
         if result.state is VolumeAdmissionState.INDETERMINATE:
             raise VolumeAdmissionError("indeterminate_volume")
         if result.state is VolumeAdmissionState.UNSAFE:
             raise VolumeAdmissionError("unsafe_volume_path")
-        return result
+
+    def _relative_pair(
+        self,
+        source: Path,
+        destination: Path,
+    ) -> OrganizationVolumePathPair:
+        source_path = self._absolute_path(source)
+        destination_path = self._absolute_path(destination)
+        normalized_source = source_path.parent.resolve(strict=False) / source_path.name
+        normalized_destination = (
+            destination_path.parent.resolve(strict=False) / destination_path.name
+        )
+        return OrganizationVolumePathPair(
+            source_relative_path=normalized_source.relative_to(self.root).as_posix(),
+            destination_relative_path=normalized_destination.relative_to(
+                self.root
+            ).as_posix(),
+        )
+
+    def _path_under_root(self, value: str) -> Path:
+        if not isinstance(value, str) or not value or "\\" in value:
+            raise ValueError("relative path is invalid")
+        path = Path(value)
+        if (
+            path.is_absolute()
+            or any(part in {"", ".", ".."} for part in path.parts)
+            or path.as_posix() != value
+        ):
+            raise ValueError("relative path is invalid")
+        return self.root / path
 
     def _inspect_item(
         self,
