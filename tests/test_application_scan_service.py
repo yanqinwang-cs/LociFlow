@@ -7,7 +7,7 @@ from unittest import mock
 from organizer.application.scan_service import scan_root, write_scan_report
 from organizer.ollama_client import OllamaClient
 from organizer.reports import build_scan_report
-from organizer.scanner import scan_directory
+from organizer.scanner import scan_directory_with_boundaries
 
 
 class ScanServiceTests(unittest.TestCase):
@@ -75,8 +75,8 @@ class ScanServiceTests(unittest.TestCase):
             root = Path(directory)
             (root / "notes.txt").write_text("notes", encoding="utf-8")
             with mock.patch(
-                "organizer.application.scan_service.scan_directory",
-                wraps=scan_directory,
+                "organizer.application.scan_service.scan_directory_with_boundaries",
+                wraps=scan_directory_with_boundaries,
             ) as scanner, mock.patch(
                 "organizer.reports.scan_directory",
                 side_effect=AssertionError("report builder must reuse scan metadata"),

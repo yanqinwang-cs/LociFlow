@@ -11,7 +11,8 @@ from organizer.grouping import analyze_anchor_decisions
 from organizer.ollama_client import OllamaClient
 from organizer.organization_rules import load_organization_rules
 from organizer.reports import build_scan_report, write_report
-from organizer.scanner import scan_directory
+from organizer.scan_boundary import safe_boundary_summaries
+from organizer.scanner import scan_directory_with_boundaries
 
 
 def scan_root(
@@ -21,7 +22,8 @@ def scan_root(
     refine_groups: bool = False,
     llm_client: OllamaClient | None = None,
 ) -> ScanApplicationResult:
-    metadata_items = tuple(scan_directory(root, max_depth=max_depth))
+    directory_scan = scan_directory_with_boundaries(root, max_depth=max_depth)
+    metadata_items = directory_scan.metadata_items
     organization_rules = load_organization_rules(root)
     report = build_scan_report(
         root,
@@ -48,7 +50,12 @@ def scan_root(
     )
     resolved_root = root.resolve()
     summary_data = _mapping(report.get("summary"), "report summary")
-    warnings = _string_tuple(report.get("warnings"), "report warnings")
+    report_warnings = _string_tuple(report.get("warnings"), "report warnings")
+    # Boundaries remain scan-generation state in B2-B1. The existing durable
+    # report format is unchanged until a versioned artifact contract owns them.
+    warnings = report_warnings + safe_boundary_summaries(
+        directory_scan.boundaries
+    )
     duplicates = _list(report.get("duplicates"), "report duplicates")
 
     return ScanApplicationResult(
@@ -75,6 +82,7 @@ def scan_root(
         metadata_items=metadata_items,
         standards=standards,
         organization_rules_load_result=organization_rules,
+        boundaries=directory_scan.boundaries,
     )
 
 

@@ -8,6 +8,7 @@ from typing import Any
 from organizer.application.standards_read_models import StandardsReadProjection
 from organizer.models import FileMetadata, ReviewedPlanItem
 from organizer.organization_rules import OrganizationRulesLoadResult
+from organizer.scan_boundary import ScanBoundary
 from organizer.review_session import ReviewViewState
 from organizer.review_state import ReviewState
 
@@ -37,6 +38,7 @@ class ScanApplicationResult:
     metadata_items: tuple[FileMetadata, ...] = ()
     standards: StandardsReadProjection | None = None
     organization_rules_load_result: OrganizationRulesLoadResult | None = None
+    boundaries: tuple[ScanBoundary, ...] = ()
 
 
 @dataclass(frozen=True)
