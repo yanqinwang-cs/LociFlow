@@ -44,6 +44,7 @@ class OrganizationUndoIdentityCapture:
 @dataclass(frozen=True, repr=False)
 class OrganizationUndoExecutorEvidence:
     change_id: str
+    content_identity: RegularFileContentIdentity
     stat_fingerprint: RegularFileStatFingerprint
 
     def __repr__(self) -> str:
@@ -112,6 +113,7 @@ def build_v2_organization_undo_intent(
         executor_evidence.append(
             OrganizationUndoExecutorEvidence(
                 change_id=move.change_id,
+                content_identity=capture.observed_content_identity,
                 stat_fingerprint=capture.stat_fingerprint,
             )
         )
