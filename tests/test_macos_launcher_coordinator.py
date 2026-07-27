@@ -14,15 +14,21 @@ import unittest
 from unittest import mock
 
 from organizer.application.runtime_lifecycle import RuntimeLifecycle
+from organizer.macos_launcher.application_paths import MacOSApplicationPaths
 from organizer.macos_launcher.coordinator import (
     NativeLauncherCoordinator,
     NativeMessage,
     development_diagnostic_sink,
     native_message_for,
 )
+from organizer.macos_launcher.process_lease import (
+    acquire_application_instance_lease,
+    acquire_root_process_lease,
+)
 from organizer.macos_launcher import coordinator as coordinator_module
 from organizer.web.config import WebAppConfig
 from organizer.web.launcher import LauncherDependencies, LauncherError
+from organizer.web.server import build_launcher_dependencies
 from organizer.web.signal_coordinator import (
     SignalIntent,
     SignalKind,
@@ -152,6 +158,29 @@ class _Socket:
 
     def close(self) -> None:
         self.closed = True
+
+
+class _RecordingLease:
+    def __init__(
+        self,
+        events: list[str],
+        name: str,
+        *,
+        before_release: Callable[[], None] | None = None,
+    ) -> None:
+        self._events = events
+        self._name = name
+        self._before_release = before_release
+        self.released = False
+
+    def release(self) -> bool:
+        if self.released:
+            return False
+        if self._before_release is not None:
+            self._before_release()
+        self._events.append(f"{self._name}.release")
+        self.released = True
+        return True
 
 
 class _Server:
@@ -472,6 +501,147 @@ class MacOSLauncherCoordinatorTests(unittest.TestCase):
             readiness_factory=lambda _health, _launch, _stop, _exit: _Observer(),
             manual_browser_bootstrap=lambda _url: None,
         )
+
+    def application_paths(self) -> MacOSApplicationPaths:
+        return MacOSApplicationPaths.for_home(self.root / "application-home")
+
+    def test_global_conflict_stops_before_chooser_root_or_server(self) -> None:
+        paths = self.application_paths()
+        adapter = _Adapter(str(self.root))
+        config_factory = mock.Mock()
+        dependencies_factory = mock.Mock()
+        diagnostics = []
+        with acquire_application_instance_lease(paths):
+            result = NativeLauncherCoordinator(
+                adapter,
+                application_paths=paths,
+                config_factory=config_factory,
+                dependencies_factory=dependencies_factory,
+                diagnostic_sink=diagnostics.append,
+            ).run()
+
+        self.assertEqual(result, 1)
+        self.assertEqual(
+            adapter.messages[-1].message,
+            "Loci Flow is already open.",
+        )
+        self.assertNotIn("adapter.choose", adapter.events)
+        config_factory.assert_not_called()
+        dependencies_factory.assert_not_called()
+        self.assertNotIn("adapter.browser.request", adapter.events)
+        application_diagnostic = next(
+            item for item in diagnostics if item.phase == "application_lease"
+        )
+        self.assertIsNone(application_diagnostic.traceback)
+
+    def test_root_conflict_stops_before_dependencies_config_socket_or_browser(
+        self,
+    ) -> None:
+        paths = self.application_paths()
+        adapter = _Adapter(str(self.root))
+        config_factory = mock.Mock()
+        dependencies_factory = mock.Mock()
+        diagnostics = []
+        development_dependencies = build_launcher_dependencies(
+            application_paths=paths
+        )
+        assert development_dependencies.root_lease_factory is not None
+        with development_dependencies.root_lease_factory(self.root):
+            result = NativeLauncherCoordinator(
+                adapter,
+                application_paths=paths,
+                config_factory=config_factory,
+                dependencies_factory=dependencies_factory,
+                diagnostic_sink=diagnostics.append,
+            ).run()
+
+        self.assertEqual(result, 1)
+        self.assertEqual(
+            adapter.messages[-1].message,
+            "This folder is already open in Loci Flow.",
+        )
+        self.assertIn("adapter.choose", adapter.events)
+        config_factory.assert_not_called()
+        dependencies_factory.assert_not_called()
+        self.assertNotIn("adapter.browser.request", adapter.events)
+        root_diagnostic = next(
+            item for item in diagnostics if item.phase == "root_lease"
+        )
+        self.assertIsNone(root_diagnostic.traceback)
+        self.assertNotIn(str(self.root), repr(root_diagnostic))
+        with acquire_application_instance_lease(paths):
+            pass
+
+    def test_native_lease_order_and_release_follow_complete_socket_cleanup(
+        self,
+    ) -> None:
+        paths = self.application_paths()
+        adapter = _Adapter(str(self.root))
+        events: list[str] = []
+        adapter.events = events
+        application_lease = _RecordingLease(events, "application")
+        root_lease = _RecordingLease(
+            events,
+            "root",
+            before_release=lambda: self.assertTrue(self.socket.closed),
+        )
+
+        def acquire_application(_paths: MacOSApplicationPaths):
+            events.append("application.acquire")
+            return application_lease
+
+        def acquire_root(_paths: MacOSApplicationPaths, root: Path):
+            self.assertEqual(root, self.root.resolve())
+            events.append("root.acquire")
+            return root_lease
+
+        def dependencies_factory(_browser):
+            events.append("dependencies")
+            return self.dependencies()
+
+        def config_factory(root: Path) -> WebAppConfig:
+            events.append("config")
+            return WebAppConfig(
+                root,
+                session_secret="s" * 32,
+                launch_token="t" * 32,
+                testing=True,
+            )
+
+        result = NativeLauncherCoordinator(
+            adapter,
+            application_paths=paths,
+            application_lease_factory=acquire_application,
+            root_lease_factory=acquire_root,
+            dependencies_factory=dependencies_factory,
+            config_factory=config_factory,
+        ).run()
+
+        self.assertEqual(result, 0)
+        self.assertLess(
+            events.index("application.acquire"),
+            events.index("adapter.choose"),
+        )
+        self.assertLess(events.index("root.acquire"), events.index("dependencies"))
+        self.assertLess(events.index("root.acquire"), events.index("config"))
+        self.assertEqual(events[-2:], ["root.release", "application.release"])
+
+    def test_native_startup_failure_releases_both_real_leases(self) -> None:
+        paths = self.application_paths()
+        adapter = _Adapter(str(self.root))
+
+        result = NativeLauncherCoordinator(
+            adapter,
+            application_paths=paths,
+            dependencies_factory=mock.Mock(
+                side_effect=RuntimeError("controlled dependency failure")
+            ),
+        ).run()
+
+        self.assertEqual(result, 1)
+        with acquire_application_instance_lease(paths):
+            with acquire_root_process_lease(paths, self.root):
+                pass
 
     def test_admission_completes_before_worker_creation(self) -> None:
         adapter = _Adapter(str(self.root))

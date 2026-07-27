@@ -7,11 +7,15 @@ import os
 from pathlib import Path
 import signal
 import socket
+import subprocess
+import sys
 import tempfile
 from threading import Event
 import unittest
 from unittest.mock import Mock, patch
 
+from organizer.macos_launcher.application_paths import MacOSApplicationPaths
+from organizer.macos_launcher.process_lease import acquire_root_process_lease
 from organizer.web.config import WebAppConfig
 from organizer.application.runtime_lifecycle import (
     RuntimeLifecycle,
@@ -72,6 +76,9 @@ class WebServerTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary_directory = tempfile.TemporaryDirectory()
         self.root = Path(self.temporary_directory.name).resolve()
+        self.application_paths = MacOSApplicationPaths.for_home(
+            self.root / "application-home"
+        )
         self.config = WebAppConfig(
             self.root,
             session_secret="s" * 32,
@@ -114,7 +121,10 @@ class WebServerTests(unittest.TestCase):
         stderr = StringIO()
         with patch.object(Path, "home", return_value=missing_home):
             with redirect_stderr(stderr), self.assertRaises(SystemExit) as raised:
-                server.main(["--no-browser"])
+                server.main(
+                    ["--no-browser"],
+                    application_paths=self.application_paths,
+                )
 
         self.assertEqual(raised.exception.code, 2)
         self.assertIn("Downloads", stderr.getvalue())
@@ -134,12 +144,59 @@ class WebServerTests(unittest.TestCase):
                 "bind_loopback_socket",
                 side_effect=OSError("controlled bind failure"),
             ),
+            patch.object(
+                Path,
+                "home",
+                return_value=self.application_paths.home,
+            ),
             redirect_stderr(stderr),
             self.assertRaises(SystemExit),
         ):
-            server.main(["--root", str(self.root), "--no-browser"])
+            server.main(
+                ["--root", str(self.root), "--no-browser"],
+                application_paths=self.application_paths,
+            )
 
         admission.assert_called_once_with(self.root)
+
+    def test_second_development_process_on_same_root_fails_before_url_output(
+        self,
+    ) -> None:
+        repository_root = Path(__file__).resolve().parents[1]
+        environment = os.environ.copy()
+        environment["HOME"] = str(self.application_paths.home)
+        environment["PYTHONPATH"] = str(repository_root / "src")
+        environment["PYTHONDONTWRITEBYTECODE"] = "1"
+
+        with acquire_root_process_lease(self.application_paths, self.root):
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    "-c",
+                    (
+                        "from organizer.web.server import main; "
+                        "raise SystemExit(main())"
+                    ),
+                    "--root",
+                    str(self.root),
+                    "--no-browser",
+                ],
+                cwd=repository_root,
+                env=environment,
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=False,
+            )
+
+        self.assertEqual(completed.returncode, 2)
+        self.assertIn(
+            "This folder is already open in Loci Flow.",
+            completed.stderr,
+        )
+        self.assertNotIn(str(self.root), completed.stderr)
+        self.assertNotIn("/launch/", completed.stdout)
+        self.assertNotIn("/launch/", completed.stderr)
 
     def test_dynamic_and_fixed_sockets_bind_only_to_ipv4_loopback(self) -> None:
         dynamic = _FakeBindingSocket(port=41001)
@@ -378,12 +435,64 @@ class WebServerTests(unittest.TestCase):
                     redirect_stderr(stderr),
                 ):
                     result = server.main(
-                        ["--root", str(self.root), "--no-browser"]
+                        ["--root", str(self.root), "--no-browser"],
+                        application_paths=self.application_paths,
                     )
 
                 self.assertEqual(result, expected_code)
                 self.assertEqual(stop_calls, ["stop"])
                 self.assertNotIn("Traceback", stderr.getvalue())
+
+    def test_development_lease_releases_after_shutdown_and_signal_cleanup(
+        self,
+    ) -> None:
+        events: list[str] = []
+
+        class RecordingLease:
+            def release(inner_self) -> bool:
+                events.append("lease.release")
+                return True
+
+        original_shutdown_join = server.LifecycleShutdownCoordinator.join
+        original_signal_close = server.ProcessSignalCoordinator.close
+
+        def join(shutdown) -> None:
+            original_shutdown_join(shutdown)
+            events.append("shutdown.join")
+
+        def close(signals):
+            result = original_signal_close(signals)
+            events.append("signals.close")
+            return result
+
+        with (
+            patch.object(
+                server,
+                "acquire_root_process_lease",
+                return_value=RecordingLease(),
+            ),
+            patch.object(
+                server,
+                "launch",
+                return_value=LaunchResult(0, (LaunchPhase.STOPPED,)),
+            ),
+            patch.object(
+                server.LifecycleShutdownCoordinator,
+                "join",
+                join,
+            ),
+            patch.object(server.ProcessSignalCoordinator, "close", close),
+        ):
+            result = server.main(
+                ["--root", str(self.root), "--no-browser"],
+                application_paths=self.application_paths,
+            )
+
+        self.assertEqual(result, 0)
+        self.assertEqual(
+            events[-3:],
+            ["shutdown.join", "signals.close", "lease.release"],
+        )
 
     def test_no_browser_uses_one_worker_and_always_closes_socket(self) -> None:
         fake_socket = _FakeSocket()
@@ -401,6 +510,7 @@ class WebServerTests(unittest.TestCase):
                 self.config,
                 port=43210,
                 open_browser=False,
+                application_paths=self.application_paths,
             )
 
         self.assertEqual(result, 0)
@@ -427,7 +537,11 @@ class WebServerTests(unittest.TestCase):
             redirect_stdout(StringIO()),
         ):
             with self.assertRaisesRegex(RuntimeError, "server failed"):
-                server.run_server(self.config, open_browser=False)
+                server.run_server(
+                    self.config,
+                    open_browser=False,
+                    application_paths=self.application_paths,
+                )
 
         self.assertTrue(fake_socket.closed)
 
@@ -442,7 +556,11 @@ class WebServerTests(unittest.TestCase):
             patch.object(server.uvicorn, "Server", return_value=fake_uvicorn_server),
             redirect_stdout(StringIO()),
         ):
-            result = server.run_server(self.config, open_browser=False)
+            result = server.run_server(
+                self.config,
+                open_browser=False,
+                application_paths=self.application_paths,
+            )
 
         self.assertEqual(result, 0)
         self.assertTrue(fake_socket.closed)
@@ -460,7 +578,13 @@ class WebServerTests(unittest.TestCase):
             patch.object(server, "Thread", return_value=fake_thread) as thread_type,
             redirect_stdout(stdout),
         ):
-            self.assertEqual(server.run_server(self.config), 0)
+            self.assertEqual(
+                server.run_server(
+                    self.config,
+                    application_paths=self.application_paths,
+                ),
+                0,
+            )
 
         fake_thread.start.assert_called_once_with()
         fake_thread.join.assert_called_once_with()

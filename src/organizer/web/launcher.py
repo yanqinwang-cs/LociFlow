@@ -11,8 +11,9 @@ from organizer.application.runtime_lifecycle import (
     RuntimeLifecycle,
     RuntimeSnapshot,
 )
+from organizer.macos_launcher.process_lease import ProcessLeaseError
 from organizer.web.config import WebAppConfig
-from organizer.web.root_admission import RootAdmissionError
+from organizer.web.root_admission import RootAdmissionError, admit_root
 
 
 class LaunchPhase(StrEnum):
@@ -61,6 +62,10 @@ class ServerRunner(Protocol):
     def run(self, *, sockets: list[BoundSocket]) -> None: ...
 
     def request_exit(self) -> None: ...
+
+
+class RootProcessLease(Protocol):
+    def release(self) -> bool: ...
 
 
 class LaunchStopController:
@@ -184,6 +189,7 @@ class LauncherDependencies:
     ]
     manual_browser_bootstrap: Callable[[str], None]
     runtime_lifecycle_accessor: Callable[[Any], RuntimeLifecycle] | None = None
+    root_lease_factory: Callable[[Path], RootProcessLease] | None = None
 
 
 @dataclass
@@ -214,6 +220,7 @@ def launch(
     lifecycle: LifecycleRecorder | None = None,
     stop_controller: LaunchStopController | None = None,
     runtime_handle: LaunchRuntimeHandle | None = None,
+    root_lease: RootProcessLease | None = None,
 ) -> LaunchResult:
     recorder = lifecycle or LifecycleRecorder()
     recorder.record(LaunchPhase.SELECTING_ROOT)
@@ -236,7 +243,7 @@ def launch(
         return LaunchResult(exit_code=0, phases=recorder.snapshot())
 
     try:
-        config = dependencies.config_factory(Path(raw_root))
+        admitted_root = admit_root(raw_root).path
     except RootAdmissionError as error:
         if runtime_handle is not None:
             runtime_handle.finish_lifecycle_publication()
@@ -253,18 +260,93 @@ def launch(
         )
 
     recorder.record(LaunchPhase.ROOT_ADMITTED)
-    return launch_configured(
-        config,
-        dependencies=dependencies,
-        port=port,
-        open_browser=open_browser,
-        lifecycle=recorder,
-        stop_controller=stop_controller,
-        runtime_handle=runtime_handle,
-    )
+    owns_lease = root_lease is None
+    lease = root_lease
+    if lease is None:
+        lease, lease_error = _acquire_root_lease(
+            admitted_root,
+            dependencies,
+            recorder,
+            runtime_handle,
+        )
+        if lease_error is not None:
+            return lease_error
+
+    result: LaunchResult
+    try:
+        try:
+            config = dependencies.config_factory(admitted_root)
+        except RootAdmissionError as error:
+            if runtime_handle is not None:
+                runtime_handle.finish_lifecycle_publication()
+            recorder.record(LaunchPhase.FAILED)
+            result = _result(recorder, error.code, error.safe_message)
+        except (OSError, TypeError, ValueError):
+            if runtime_handle is not None:
+                runtime_handle.finish_lifecycle_publication()
+            recorder.record(LaunchPhase.FAILED)
+            result = _result(
+                recorder,
+                "root_not_allowed",
+                "The selected folder cannot be used.",
+            )
+        else:
+            result = _launch_configured(
+                config,
+                dependencies=dependencies,
+                port=port,
+                open_browser=open_browser,
+                lifecycle=recorder,
+                stop_controller=stop_controller,
+                runtime_handle=runtime_handle,
+            )
+    finally:
+        release_error = (
+            _release_root_lease(lease) if owns_lease else None
+        )
+    return _apply_release_error(result, release_error)
 
 
 def launch_configured(
+    config: WebAppConfig,
+    *,
+    dependencies: LauncherDependencies,
+    port: int | None = None,
+    open_browser: bool = True,
+    lifecycle: LifecycleRecorder | None = None,
+    propagate_unexpected: bool = False,
+    diagnostic: LaunchDiagnostic | None = None,
+    stop_controller: LaunchStopController | None = None,
+    runtime_handle: LaunchRuntimeHandle | None = None,
+) -> LaunchResult:
+    recorder = lifecycle or LifecycleRecorder()
+    lease, lease_error = _acquire_root_lease(
+        config.root,
+        dependencies,
+        recorder,
+        runtime_handle,
+    )
+    if lease_error is not None:
+        return lease_error
+    result: LaunchResult
+    try:
+        result = _launch_configured(
+            config,
+            dependencies=dependencies,
+            port=port,
+            open_browser=open_browser,
+            lifecycle=recorder,
+            propagate_unexpected=propagate_unexpected,
+            diagnostic=diagnostic,
+            stop_controller=stop_controller,
+            runtime_handle=runtime_handle,
+        )
+    finally:
+        release_error = _release_root_lease(lease)
+    return _apply_release_error(result, release_error)
+
+
+def _launch_configured(
     config: WebAppConfig,
     *,
     dependencies: LauncherDependencies,
@@ -420,6 +502,65 @@ def launch_configured(
         exit_code=1 if error is not None else 0,
         phases=recorder.snapshot(),
         error=error,
+    )
+
+
+def _acquire_root_lease(
+    root: Path,
+    dependencies: LauncherDependencies,
+    recorder: LifecycleRecorder,
+    runtime_handle: LaunchRuntimeHandle | None,
+) -> tuple[RootProcessLease | None, LaunchResult | None]:
+    factory = dependencies.root_lease_factory
+    if factory is None:
+        return None, None
+    try:
+        return factory(root), None
+    except ProcessLeaseError as error:
+        if runtime_handle is not None:
+            runtime_handle.finish_lifecycle_publication()
+        recorder.record(LaunchPhase.FAILED)
+        if error.code == "already_held":
+            return None, _result(
+                recorder,
+                "root_already_open",
+                "This folder is already open in Loci Flow.",
+            )
+        return None, _result(
+            recorder,
+            "lease_unavailable",
+            "Loci Flow could not start safely.",
+        )
+
+
+def _release_root_lease(
+    lease: RootProcessLease | None,
+) -> ProcessLeaseError | None:
+    if lease is None:
+        return None
+    try:
+        lease.release()
+    except ProcessLeaseError as error:
+        return error
+    return None
+
+
+def _apply_release_error(
+    result: LaunchResult,
+    release_error: ProcessLeaseError | None,
+) -> LaunchResult:
+    if release_error is None or result.error is not None:
+        return result
+    phases = result.phases
+    if phases and phases[-1] is LaunchPhase.STOPPED:
+        phases = (*phases[:-1], LaunchPhase.FAILED)
+    return LaunchResult(
+        exit_code=1,
+        phases=phases,
+        error=LauncherError(
+            code="cleanup_failed",
+            safe_message="The local server did not stop cleanly.",
+        ),
     )
 
 

@@ -12,6 +12,13 @@ from threading import Event, Lock, Thread
 import traceback
 from typing import Protocol, TextIO
 
+from organizer.macos_launcher.application_paths import MacOSApplicationPaths
+from organizer.macos_launcher.process_lease import (
+    ProcessLease,
+    ProcessLeaseError,
+    acquire_application_instance_lease,
+    acquire_root_process_lease,
+)
 from organizer.macos_launcher.shutdown_coordinator import (
     NativeShutdownCoordinator,
 )
@@ -25,7 +32,7 @@ from organizer.web.launcher import (
     LaunchStopController,
     launch_configured,
 )
-from organizer.web.root_admission import RootAdmissionError
+from organizer.web.root_admission import RootAdmissionError, admit_root
 from organizer.web.server import build_launcher_dependencies
 from organizer.web.signal_coordinator import (
     ProcessSignalCoordinator,
@@ -98,6 +105,8 @@ class NativeAdapter(Protocol):
 ThreadFactory = Callable[[Callable[[], None], str], Thread]
 DependenciesFactory = Callable[[Callable[[str], bool]], LauncherDependencies]
 DiagnosticSink = Callable[[NativeDiagnostic], None]
+ApplicationLeaseFactory = Callable[[MacOSApplicationPaths], ProcessLease]
+RootLeaseFactory = Callable[[MacOSApplicationPaths, Path], ProcessLease]
 
 _PRIVATE_LAUNCH_URL = re.compile(
     r"https?://(?:127\.0\.0\.1|localhost):\d+/launch/[^\s]+"
@@ -113,6 +122,11 @@ class NativeLauncherCoordinator:
         dependencies_factory: DependenciesFactory | None = None,
         thread_factory: ThreadFactory | None = None,
         diagnostic_sink: DiagnosticSink | None = None,
+        application_paths: MacOSApplicationPaths | None = None,
+        application_lease_factory: ApplicationLeaseFactory = (
+            acquire_application_instance_lease
+        ),
+        root_lease_factory: RootLeaseFactory = acquire_root_process_lease,
     ) -> None:
         self._adapter = adapter
         self._config_factory = config_factory
@@ -121,6 +135,11 @@ class NativeLauncherCoordinator:
         )
         self._thread_factory = thread_factory or _worker_thread
         self._diagnostic_sink = diagnostic_sink
+        self._application_paths = application_paths
+        self._application_lease_factory = application_lease_factory
+        self._root_lease_factory = root_lease_factory
+        self._application_lease: ProcessLease | None = None
+        self._root_lease: ProcessLease | None = None
         self._sensitive_values: set[str] = set()
         self._terminal_result: Future[LaunchResult] = Future()
         self._stop_controller = LaunchStopController()
@@ -146,14 +165,25 @@ class NativeLauncherCoordinator:
 
     def run(self) -> int:
         try:
-            return self._run()
-        except KeyboardInterrupt:
-            return self._handle_keyboard_interrupt()
+            try:
+                result = self._run()
+            except KeyboardInterrupt:
+                result = self._handle_keyboard_interrupt()
+        finally:
+            leases_released = self._release_process_leases()
+        if leases_released:
+            return result
+        self._present_code("lease_unavailable")
+        return 1
 
     def _run(self) -> int:
         try:
             self._adapter.set_diagnostic_handler(self._record_native_event)
             self._adapter.initialize()
+            if self._application_paths is not None:
+                self._application_lease = self._application_lease_factory(
+                    self._application_paths
+                )
             self._signals = ProcessSignalCoordinator(
                 self._receive_signal,
                 terminal_completed=lambda: (
@@ -173,6 +203,17 @@ class NativeLauncherCoordinator:
                 return self._finish_pre_root(pending.exit_code)
             raw_root = self._adapter.choose_directory()
             outcome, intent = self._resolve_directory_selection(raw_root)
+        except ProcessLeaseError as error:
+            self._pre_root_terminal.set()
+            self._finish_signal_coordination(1)
+            code = (
+                "application_already_open"
+                if error.code == "already_held"
+                else "lease_unavailable"
+            )
+            self._record_lease_diagnostic("application_lease", code, error)
+            self._present_code(code)
+            return 1
         except NativeAdapterError as error:
             self._pre_root_terminal.set()
             self._finish_signal_coordination(1)
@@ -208,7 +249,7 @@ class NativeLauncherCoordinator:
         self._remember_sensitive(raw_root)
 
         try:
-            config = self._config_factory(Path(raw_root))
+            admitted_root = admit_root(Path(raw_root)).path
         except RootAdmissionError as error:
             self._pre_root_terminal.set()
             self._finish_signal_coordination(1)
@@ -221,18 +262,34 @@ class NativeLauncherCoordinator:
             self._record_diagnostic("root_admission", "root_not_allowed", error)
             self._present_code("root_not_allowed")
             return 1
-        self._remember_sensitive(str(config.root))
-        self._remember_sensitive(config.launch_token)
-        self._remember_sensitive(config.session_secret)
+        self._remember_sensitive(str(admitted_root))
 
         try:
+            if self._application_paths is not None:
+                self._root_lease = self._root_lease_factory(
+                    self._application_paths,
+                    admitted_root,
+                )
             dependencies = self._dependencies_factory(self._adapter.open_browser)
+            config = self._config_factory(admitted_root)
+            self._remember_sensitive(config.launch_token)
+            self._remember_sensitive(config.session_secret)
             self._worker = self._thread_factory(
                 lambda: self._run_worker(config, dependencies),
                 "loci-flow-server",
             )
             self._adapter.set_launch_running(True)
             self._adapter.dispatch_to_main(self._start_worker_on_main)
+        except ProcessLeaseError as error:
+            self._adapter.set_launch_running(False)
+            code = (
+                "root_already_open"
+                if error.code == "already_held"
+                else "lease_unavailable"
+            )
+            self._record_lease_diagnostic("root_lease", code, error)
+            self._present_code(code)
+            return self._finish_signal_coordination(1)
         except Exception as error:
             self._adapter.set_launch_running(False)
             self._record_diagnostic(
@@ -501,6 +558,24 @@ class NativeLauncherCoordinator:
         except Exception:
             pass
 
+    def _release_process_leases(self) -> bool:
+        succeeded = True
+        for attribute in ("_root_lease", "_application_lease"):
+            lease = getattr(self, attribute)
+            setattr(self, attribute, None)
+            if lease is None:
+                continue
+            try:
+                lease.release()
+            except ProcessLeaseError as error:
+                succeeded = False
+                self._record_lease_diagnostic(
+                    "process_lease_cleanup",
+                    "lease_unavailable",
+                    error,
+                )
+        return succeeded
+
     def _record_interrupt_diagnostic(self) -> None:
         if self._diagnostic_sink is None:
             return
@@ -586,6 +661,26 @@ class NativeLauncherCoordinator:
         except Exception:
             pass
 
+    def _record_lease_diagnostic(
+        self,
+        phase: str,
+        code: str,
+        error: ProcessLeaseError,
+    ) -> None:
+        if self._diagnostic_sink is None:
+            return
+        try:
+            self._diagnostic_sink(
+                NativeDiagnostic(
+                    phase=phase,
+                    code=code,
+                    exception_class=type(error).__name__,
+                    traceback=None,
+                )
+            )
+        except Exception:
+            pass
+
     def _record_diagnostic(
         self,
         phase: str,
@@ -633,6 +728,9 @@ class NativeLauncherCoordinator:
 
 def native_message_for(code: str) -> NativeMessage:
     messages = {
+        "application_already_open": "Loci Flow is already open.",
+        "root_already_open": "This folder is already open in Loci Flow.",
+        "lease_unavailable": "Loci Flow could not start safely.",
         "root_inaccessible": "Loci Flow can’t access that folder.",
         "app_creation_failed": "Loci Flow couldn’t start.",
         "server_failed": "Loci Flow couldn’t start.",
@@ -678,6 +776,7 @@ def _native_launcher_dependencies(
         browser_opener=browser_opener,
         fail_closed_readiness=True,
         coordinated_signals=True,
+        root_lease_factory=None,
     )
 
 

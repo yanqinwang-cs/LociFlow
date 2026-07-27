@@ -22,6 +22,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     try:
         from organizer.macos_launcher.appkit_adapter import AppKitAdapter
+        from organizer.macos_launcher.application_paths import (
+            MacOSApplicationPaths,
+        )
         from organizer.macos_launcher.coordinator import (
             NativeLauncherCoordinator,
             development_diagnostic_sink,
@@ -41,6 +44,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     return NativeLauncherCoordinator(
         adapter,
         diagnostic_sink=development_diagnostic_sink(),
+        application_paths=MacOSApplicationPaths.for_home(),
     ).run()
 
 

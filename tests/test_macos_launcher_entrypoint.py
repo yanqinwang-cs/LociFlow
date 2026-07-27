@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from contextlib import redirect_stderr
 from io import StringIO
+from pathlib import Path
 from types import ModuleType
 import sys
 import unittest
@@ -67,7 +68,11 @@ class MacOSLauncherEntrypointTests(unittest.TestCase):
         self.assertEqual(result, 7)
         adapter_type.assert_called_once_with()
         diagnostic_sink.assert_called_once_with()
-        coordinator_type.assert_called_once_with(adapter, diagnostic_sink=None)
+        coordinator_type.assert_called_once()
+        self.assertIs(coordinator_type.call_args.args[0], adapter)
+        self.assertIsNone(coordinator_type.call_args.kwargs["diagnostic_sink"])
+        paths = coordinator_type.call_args.kwargs["application_paths"]
+        self.assertEqual(paths.home.name, Path.home().name)
         coordinator.run.assert_called_once_with()
 
 

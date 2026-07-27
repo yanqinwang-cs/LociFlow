@@ -346,21 +346,35 @@ class MacOSProcessLeaseTests(unittest.TestCase):
         self.assertEqual(raised.exception.code, "unavailable")
         self.assertNotIn(str(self.root), raised.exception.safe_message)
 
-    def test_launcher_and_web_owners_do_not_import_or_acquire_leases(self) -> None:
-        protected_sources = (
+    def test_launch_composition_owns_leases_but_app_and_routes_do_not(self) -> None:
+        launch_sources = (
             REPOSITORY_ROOT / "src" / "organizer" / "macos_launcher" / "__main__.py",
             REPOSITORY_ROOT / "src" / "organizer" / "macos_launcher" / "coordinator.py",
             REPOSITORY_ROOT / "src" / "organizer" / "web" / "launcher.py",
-            REPOSITORY_ROOT / "src" / "organizer" / "web" / "app.py",
+            REPOSITORY_ROOT / "src" / "organizer" / "web" / "server.py",
         )
-        combined = "\n".join(
+        launch_combined = "\n".join(
+            path.read_text(encoding="utf-8") for path in launch_sources
+        )
+        protected_sources = [
+            REPOSITORY_ROOT / "src" / "organizer" / "web" / "app.py",
+            *(
+                REPOSITORY_ROOT / "src" / "organizer" / "web" / "routes"
+            ).glob("*.py"),
+        ]
+        protected_combined = "\n".join(
             path.read_text(encoding="utf-8") for path in protected_sources
         )
 
-        self.assertNotIn("process_lease", combined)
-        self.assertNotIn("application_paths", combined)
-        self.assertNotIn("acquire_application_instance_lease", combined)
-        self.assertNotIn("acquire_root_process_lease", combined)
+        self.assertIn("acquire_application_instance_lease", launch_combined)
+        self.assertIn("acquire_root_process_lease", launch_combined)
+        self.assertNotIn("process_lease", protected_combined)
+        self.assertNotIn("application_paths", protected_combined)
+        self.assertNotIn(
+            "acquire_application_instance_lease",
+            protected_combined,
+        )
+        self.assertNotIn("acquire_root_process_lease", protected_combined)
 
     def _child_attempt(
         self,

@@ -97,11 +97,25 @@ class WebDependencyHygieneTests(unittest.TestCase):
             source = path.read_text(encoding="utf-8")
             self.assertIsNone(restricted_import.search(source), path)
 
-        web_source = "\n".join(
-            path.read_text(encoding="utf-8")
-            for path in sorted(WEB_ROOT.rglob("*.py"))
-        )
-        self.assertNotIn("organizer.macos_launcher", web_source)
+        permitted_native_import_owners = {"launcher.py", "server.py"}
+        for path in sorted(WEB_ROOT.rglob("*.py")):
+            source = path.read_text(encoding="utf-8")
+            if "organizer.macos_launcher" not in source:
+                continue
+            self.assertIn(path.name, permitted_native_import_owners)
+            self.assertNotIn(
+                "organizer.macos_launcher.appkit_adapter",
+                source,
+            )
+            self.assertNotIn(
+                "organizer.macos_launcher.coordinator",
+                source,
+            )
+            self.assertNotIn(
+                "organizer.macos_launcher.shutdown_coordinator",
+                source,
+            )
+            self.assertIsNone(restricted_import.search(source), path)
 
     def test_package_data_covers_all_web_resources(self) -> None:
         data = tomllib.loads(

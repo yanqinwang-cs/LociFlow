@@ -7,6 +7,7 @@ import unittest
 from unittest import mock
 
 from organizer.application.runtime_lifecycle import RuntimeLifecycle
+from organizer.macos_launcher.process_lease import ProcessLeaseError
 from organizer.web.config import WebAppConfig
 from organizer.web.launcher import (
     LaunchPhase,
@@ -76,6 +77,17 @@ class _Observer:
     def join(self) -> None:
         self.events.append("readiness.join")
         self.joined = True
+
+
+class _Lease:
+    def __init__(self, events: list[str]) -> None:
+        self.events = events
+        self.released = False
+
+    def release(self) -> bool:
+        self.events.append("lease.release")
+        self.released = True
+        return True
 
 
 def _capture_runtime_wait_error(
@@ -343,6 +355,127 @@ class WebLauncherTests(unittest.TestCase):
             self.seen_launch_url,
             "http://127.0.0.1:48123/launch/" + "t" * 32,
         )
+
+    def test_root_lease_precedes_config_and_releases_after_socket_cleanup(
+        self,
+    ) -> None:
+        dependencies = self.dependencies()
+        lease = _Lease(self.events)
+        dependencies = LauncherDependencies(
+            config_factory=dependencies.config_factory,
+            socket_binder=dependencies.socket_binder,
+            app_factory=dependencies.app_factory,
+            server_factory=dependencies.server_factory,
+            readiness_factory=dependencies.readiness_factory,
+            manual_browser_bootstrap=dependencies.manual_browser_bootstrap,
+            root_lease_factory=lambda root: (
+                self.assertEqual(root, self.root.resolve()),
+                self.events.append("lease.acquire"),
+                lease,
+            )[-1],
+        )
+
+        result = launch(lambda: self.root, dependencies=dependencies)
+
+        self.assertTrue(result.succeeded)
+        self.assertLess(
+            self.events.index("lease.acquire"),
+            self.events.index("config"),
+        )
+        self.assertLess(
+            self.events.index("lease.acquire"),
+            self.events.index("bind:None"),
+        )
+        self.assertLess(
+            self.events.index("socket.close"),
+            self.events.index("lease.release"),
+        )
+        self.assertTrue(lease.released)
+
+    def test_lexical_parent_alias_uses_the_admitted_canonical_root(self) -> None:
+        child = self.root / "child"
+        child.mkdir()
+        seen_roots: list[Path] = []
+        dependencies = self.dependencies()
+        dependencies = LauncherDependencies(
+            config_factory=dependencies.config_factory,
+            socket_binder=dependencies.socket_binder,
+            app_factory=dependencies.app_factory,
+            server_factory=dependencies.server_factory,
+            readiness_factory=dependencies.readiness_factory,
+            manual_browser_bootstrap=dependencies.manual_browser_bootstrap,
+            root_lease_factory=lambda root: (
+                seen_roots.append(root),
+                _Lease(self.events),
+            )[1],
+        )
+
+        result = launch(
+            lambda: child / "..",
+            dependencies=dependencies,
+        )
+
+        self.assertTrue(result.succeeded)
+        self.assertEqual(seen_roots, [self.root.resolve()])
+
+    def test_root_conflict_prevents_config_socket_token_and_browser_work(
+        self,
+    ) -> None:
+        dependencies = self.dependencies()
+        config_factory = mock.Mock(wraps=dependencies.config_factory)
+        socket_binder = mock.Mock(wraps=dependencies.socket_binder)
+        app_factory = mock.Mock(wraps=dependencies.app_factory)
+        readiness_factory = mock.Mock(wraps=dependencies.readiness_factory)
+        dependencies = LauncherDependencies(
+            config_factory=config_factory,
+            socket_binder=socket_binder,
+            app_factory=app_factory,
+            server_factory=dependencies.server_factory,
+            readiness_factory=readiness_factory,
+            manual_browser_bootstrap=dependencies.manual_browser_bootstrap,
+            root_lease_factory=mock.Mock(
+                side_effect=ProcessLeaseError("already_held")
+            ),
+        )
+
+        result = launch(lambda: self.root, dependencies=dependencies)
+
+        self.assertEqual(result.error.code, "root_already_open")
+        self.assertEqual(
+            result.error.safe_message,
+            "This folder is already open in Loci Flow.",
+        )
+        config_factory.assert_not_called()
+        socket_binder.assert_not_called()
+        app_factory.assert_not_called()
+        readiness_factory.assert_not_called()
+        self.assertNotIn("t" * 32, result.error.safe_message)
+        self.assertNotIn(str(self.root), result.error.safe_message)
+
+    def test_lease_unavailable_is_path_free_and_prevents_startup(self) -> None:
+        dependencies = self.dependencies()
+        dependencies = LauncherDependencies(
+            config_factory=mock.Mock(wraps=dependencies.config_factory),
+            socket_binder=mock.Mock(wraps=dependencies.socket_binder),
+            app_factory=dependencies.app_factory,
+            server_factory=dependencies.server_factory,
+            readiness_factory=dependencies.readiness_factory,
+            manual_browser_bootstrap=dependencies.manual_browser_bootstrap,
+            root_lease_factory=mock.Mock(
+                side_effect=ProcessLeaseError("unsafe_lock_path")
+            ),
+        )
+
+        result = launch(lambda: self.root, dependencies=dependencies)
+
+        self.assertEqual(result.error.code, "lease_unavailable")
+        self.assertEqual(
+            result.error.safe_message,
+            "Loci Flow could not start safely.",
+        )
+        dependencies.config_factory.assert_not_called()
+        dependencies.socket_binder.assert_not_called()
+        self.assertNotIn(str(self.root), result.error.safe_message)
 
     def test_cancelled_selection_is_a_successful_side_effect_free_noop(self) -> None:
         dependencies = self.dependencies()
