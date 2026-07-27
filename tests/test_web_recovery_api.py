@@ -58,8 +58,8 @@ class WebRecoveryApiTests(unittest.IsolatedAsyncioTestCase):
     async def test_each_get_is_fresh_and_exposes_only_safe_fields(self) -> None:
         service = mock.Mock()
         service.current.side_effect = (
-            BrowserRecoveryProjection("needs_attention", "First", "Review.", 1),
-            BrowserRecoveryProjection("clear", "Clear", "Nothing to review.", 0),
+            BrowserRecoveryProjection("needs_attention", "First", "Review.", 1, True),
+            BrowserRecoveryProjection("clear", "Clear", "Nothing to review.", 0, False),
         )
         self.app.state.recovery_projection_service = service
         lifecycle_before = self.app.state.runtime_lifecycle.snapshot()
@@ -73,13 +73,15 @@ class WebRecoveryApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(service.current.call_count, 2)
         self.assertEqual(self.app.state.runtime_lifecycle.snapshot(), lifecycle_before)
         self.assertEqual(
-            set(first.json()), {"state", "title", "message", "affected_items"}
+            set(first.json()),
+            {"state", "title", "message", "affected_items", "can_check_result"},
         )
+        self.assertTrue(first.json()["can_check_result"])
 
     async def test_home_uses_current_coarse_status_without_detail_inspection(self) -> None:
         service = mock.Mock()
         service.current.return_value = BrowserRecoveryProjection(
-            "clear", "Clear", "Nothing to review.", 0
+            "clear", "Clear", "Nothing to review.", 0, False
         )
         self.app.state.recovery_projection_service = service
         with mock.patch.object(
@@ -135,6 +137,7 @@ class WebRecoveryApiTests(unittest.IsolatedAsyncioTestCase):
         _operation(self.root, (b"recorded",))
         async with _client(self.app) as client:
             csrf = await _authenticate(client, self.token)
+            eligible = await client.get("/api/recovery/current")
             context = await client.post(
                 "/api/recovery/check-context",
                 data={"csrf_token": csrf},
@@ -151,6 +154,12 @@ class WebRecoveryApiTests(unittest.IsolatedAsyncioTestCase):
             )
             current = await client.get("/api/recovery/current")
 
+        self.assertEqual(eligible.status_code, 200)
+        self.assertTrue(eligible.json()["can_check_result"])
+        self.assertEqual(
+            eligible.json()["message"],
+            "Loci Flow can check what happened before you continue.",
+        )
         self.assertEqual(context.status_code, 200)
         self.assertEqual(
             set(context.json()),
@@ -166,9 +175,10 @@ class WebRecoveryApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(result.json()["recovery_attention"])
         self.assertEqual(
             set(current.json()),
-            {"state", "title", "message", "affected_items"},
+            {"state", "title", "message", "affected_items", "can_check_result"},
         )
-        for response in (context, result, current):
+        self.assertFalse(current.json()["can_check_result"])
+        for response in (eligible, context, result, current):
             self.assertEqual(response.headers["cache-control"], "no-store")
         serialized = context.text + result.text
         for secret in (

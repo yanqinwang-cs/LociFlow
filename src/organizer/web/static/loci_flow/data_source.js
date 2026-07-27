@@ -11,6 +11,15 @@ const MAX_CONFIRMATION_TOKEN_LENGTH = 512;
 const RECOVERY_STATES = new Set([
   "clear", "needs_attention", "cannot_continue_automatically",
 ]);
+const RECOVERY_RESULT_STATES = new Set([
+  "confirmed", "not_confirmed", "could_not_check",
+]);
+const RECOVERY_STALE_CODES = new Set([
+  "recovery_check_unavailable",
+  "recovery_context_unavailable",
+  "recovery_details_changed",
+  "application_stopping",
+]);
 const MOVEMENT_CONFIRMATION = "MOVE APPROVED FILES";
 const UNDO_CONFIRMATION = "UNDO FILE MOVE";
 const DUPLICATE_BIN_MOVEMENT_CONFIRMATION = "MOVE COPIES TO DUPLICATE BIN";
@@ -249,7 +258,7 @@ export function validateRecoveryResponse(rawPayload) {
     throw recoveryContractError();
   }
   const keys = Object.keys(rawPayload).sort();
-  const expected = ["affected_items", "message", "state", "title"];
+  const expected = ["affected_items", "can_check_result", "message", "state", "title"];
   if (JSON.stringify(keys) !== JSON.stringify(expected)) throw recoveryContractError();
   if (!RECOVERY_STATES.has(rawPayload.state)) throw recoveryContractError();
   for (const value of [rawPayload.title, rawPayload.message]) {
@@ -260,13 +269,78 @@ export function validateRecoveryResponse(rawPayload) {
   if (!Number.isSafeInteger(rawPayload.affected_items) || rawPayload.affected_items < 0) {
     throw recoveryContractError();
   }
+  if (typeof rawPayload.can_check_result !== "boolean") throw recoveryContractError();
   if (
     new Set(["clear", "cannot_continue_automatically"]).has(rawPayload.state)
-    && rawPayload.affected_items !== 0
+    && (rawPayload.affected_items !== 0 || rawPayload.can_check_result)
   ) {
     throw recoveryContractError();
   }
   return deepFreeze(clone(rawPayload));
+}
+
+function requireRecoveryUuid(value) {
+  if (
+    typeof value !== "string"
+    || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value)
+  ) {
+    throw recoveryContractError();
+  }
+  return value;
+}
+
+export function validateRecoveryCheckContext(rawPayload) {
+  if (!rawPayload || typeof rawPayload !== "object" || Array.isArray(rawPayload)) {
+    throw recoveryContractError();
+  }
+  const keys = Object.keys(rawPayload).sort();
+  const expected = ["action_id", "case_id", "expires_at", "label"];
+  if (JSON.stringify(keys) !== JSON.stringify(expected)) throw recoveryContractError();
+  requireRecoveryUuid(rawPayload.case_id);
+  requireRecoveryUuid(rawPayload.action_id);
+  if (
+    typeof rawPayload.expires_at !== "string"
+    || rawPayload.expires_at.length === 0
+    || rawPayload.expires_at.length > 128
+    || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(
+      rawPayload.expires_at,
+    )
+    || !Number.isFinite(Date.parse(rawPayload.expires_at))
+    || rawPayload.label !== "Check result"
+  ) {
+    throw recoveryContractError();
+  }
+  return deepFreeze(clone(rawPayload));
+}
+
+export function validateRecoveryCheckResult(rawPayload) {
+  if (!rawPayload || typeof rawPayload !== "object" || Array.isArray(rawPayload)) {
+    throw recoveryContractError();
+  }
+  const keys = Object.keys(rawPayload).sort();
+  const expected = ["message", "recovery_attention", "state", "title"];
+  if (JSON.stringify(keys) !== JSON.stringify(expected)) throw recoveryContractError();
+  if (!RECOVERY_RESULT_STATES.has(rawPayload.state)) throw recoveryContractError();
+  for (const value of [rawPayload.title, rawPayload.message]) {
+    if (typeof value !== "string" || value.length === 0 || value.length > 512) {
+      throw recoveryContractError();
+    }
+  }
+  if (typeof rawPayload.recovery_attention !== "boolean") throw recoveryContractError();
+  return deepFreeze(clone(rawPayload));
+}
+
+function normalizeRecoveryCheckError(error) {
+  if (error instanceof LociFlowApiError && RECOVERY_STALE_CODES.has(error.code)) {
+    return new OrganizationDataError(
+      error.code,
+      "The recovery details changed. Open the review again.",
+    );
+  }
+  return new OrganizationDataError(
+    "recovery_check_failed",
+    "Loci Flow could not check the result. Review the folder and try again.",
+  );
 }
 
 function requireMovementToken(value) {
@@ -1795,6 +1869,44 @@ export function createBackendDataSource({
     }
   }
 
+  async function createRecoveryCheckContext() {
+    assertActive();
+    try {
+      if (typeof apiClient.createRecoveryCheckContext !== "function") {
+        throw new TypeError("recovery Check API is unavailable");
+      }
+      return validateRecoveryCheckContext(
+        await apiClient.createRecoveryCheckContext(csrfToken),
+      );
+    } catch (error) {
+      if (error instanceof OrganizationDataError) throw error;
+      throw normalizeRecoveryCheckError(error);
+    }
+  }
+
+  async function checkRecoveryResult(caseId, actionId) {
+    assertActive();
+    try {
+      requireRecoveryUuid(caseId);
+      requireRecoveryUuid(actionId);
+      if (typeof apiClient.checkRecoveryResult !== "function") {
+        throw new TypeError("recovery Check API is unavailable");
+      }
+      return validateRecoveryCheckResult(await apiClient.checkRecoveryResult(
+        { caseId, actionId },
+        csrfToken,
+      ));
+    } catch (error) {
+      if (
+        error instanceof OrganizationDataError
+        && error.code !== "invalid_recovery_contract"
+      ) {
+        throw error;
+      }
+      throw normalizeRecoveryCheckError(error);
+    }
+  }
+
   async function loadStandards() {
     assertActive();
     try {
@@ -2077,6 +2189,8 @@ export function createBackendDataSource({
     confirmDuplicateBinRestore,
     loadActivity,
     loadRecoveryProjection,
+    createRecoveryCheckContext,
+    checkRecoveryResult,
     loadStandards,
     loadStandardsCreationContext,
     clearStandardsCreationContext,

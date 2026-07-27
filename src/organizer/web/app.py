@@ -160,9 +160,6 @@ def create_app(config: WebAppConfig) -> FastAPI:
     app.state.recovery_evidence_inspector = RecoveryEvidenceInspector(
         app.state.filesystem_operation_inspector
     )
-    app.state.recovery_projection_service = RecoveryProjectionService(
-        app.state.recovery_evidence_inspector
-    )
     app.state.filesystem_operation_admission = FilesystemOperationAdmission(
         app.state.filesystem_operation_inspector
     )
@@ -197,6 +194,10 @@ def create_app(config: WebAppConfig) -> FastAPI:
         app.state.recovery_evidence_inspector,
         app.state.organization_operations,
         app.state.organization_undos,
+    )
+    app.state.recovery_projection_service = RecoveryProjectionService(
+        app.state.recovery_evidence_inspector,
+        app.state.recovery_check_eligibility,
     )
     app.state.recovery_check_service = RecoveryCheckService(
         app.state.runtime_lifecycle,

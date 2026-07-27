@@ -1,5 +1,7 @@
 const CURRENT_ORGANIZATION_URL = "/api/organization/current";
 const CURRENT_RECOVERY_URL = "/api/recovery/current";
+const RECOVERY_CHECK_CONTEXT_URL = "/api/recovery/check-context";
+const RECOVERY_CHECK_RESULT_URL = "/api/recovery/check-result";
 const DECISIONS_URL = "/api/organization/decisions";
 const APPROVAL_URL = "/api/organization/approval";
 const MOVEMENT_PREVIEW_URL = "/api/organization/move/preview";
@@ -128,6 +130,42 @@ export async function getCurrentRecovery(fetchImpl = defaultFetch) {
     method: "GET",
   });
   return responseJson(response);
+}
+
+export async function createRecoveryCheckContext(
+  fetchImpl = defaultFetch,
+  csrfToken,
+) {
+  return postJson(
+    RECOVERY_CHECK_CONTEXT_URL,
+    { csrf_token: requiredToken(csrfToken) },
+    fetchImpl,
+  );
+}
+
+export async function checkRecoveryResult(
+  payload,
+  fetchImpl = defaultFetch,
+  csrfToken,
+) {
+  if (
+    !isCanonicalOperationId(payload?.caseId)
+    || !isCanonicalOperationId(payload?.actionId)
+  ) {
+    throw new LociFlowApiError(
+      "invalid_recovery_contract",
+      "Recovery information is invalid.",
+    );
+  }
+  return postJson(
+    RECOVERY_CHECK_RESULT_URL,
+    {
+      csrf_token: requiredToken(csrfToken),
+      case_id: payload.caseId,
+      action_id: payload.actionId,
+    },
+    fetchImpl,
+  );
 }
 
 export async function startScan({ csrfToken }, fetchImpl = defaultFetch) {
@@ -512,6 +550,12 @@ export function createLociFlowApiClient(fetchImpl = defaultFetch) {
   return Object.freeze({
     getCurrentOrganization: () => getCurrentOrganization(fetchImpl),
     getCurrentRecovery: () => getCurrentRecovery(fetchImpl),
+    createRecoveryCheckContext: (csrfToken) => (
+      createRecoveryCheckContext(fetchImpl, csrfToken)
+    ),
+    checkRecoveryResult: (payload, csrfToken) => (
+      checkRecoveryResult(payload, fetchImpl, csrfToken)
+    ),
     startScan: (payload) => startScan(payload, fetchImpl),
     updateRecommendationDecision: (payload, csrfToken) => (
       updateRecommendationDecision(payload, fetchImpl, csrfToken)

@@ -35,7 +35,7 @@ const elements = {
 };
 
 const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || "";
-const recoveryAttention = (
+let recoveryAttention = (
   document.querySelector('meta[name="recovery-attention"]')?.content === "true"
 );
 const dataSource = createBackendDataSource({
@@ -183,6 +183,9 @@ let activityLoadPromise = null;
 let duplicateBinLoadPromise = null;
 let standardsLoadPromise = null;
 let recoveryLoadPending = false;
+let recoveryCheckPending = false;
+let recoveryDialogGeneration = 0;
+let recoveryCheckContext = null;
 
 function routeFromHash() {
   const value = window.location.hash.startsWith("#/") ? window.location.hash.slice(2) : "home";
@@ -362,6 +365,9 @@ function navigate(route, options = {}) {
   }
   if (state.activeDialog === "recovery" && route !== previousRoute) {
     closeDialog({ restoreFocus: false });
+  } else if (recoveryLoadPending && route !== previousRoute) {
+    recoveryDialogGeneration += 1;
+    recoveryCheckContext = null;
   }
   state.route = route;
   if (window.location.hash !== `#/${route}`) window.location.hash = `#/${route}`;
@@ -412,6 +418,10 @@ function closeDialog({ restoreFocus = true } = {}) {
     resetDuplicateRestoreConfirmation();
   }
   if (state.activeDialog === "standard-builder") resetStandardBuilder();
+  if (state.activeDialog === "recovery") {
+    recoveryDialogGeneration += 1;
+    recoveryCheckContext = null;
+  }
   if (elements.dialog.open) elements.dialog.close();
   state.activeDialog = null;
   dialogPayload = {};
@@ -424,20 +434,30 @@ const SAFE_RECOVERY_FAILURE = Object.freeze({
   title: "Loci Flow can’t continue this file operation automatically.",
   message: "New file changes remain paused. Get help before changing these files.",
   affected_items: 0,
+  can_check_result: false,
 });
 
 async function reviewRecovery(trigger) {
-  if (recoveryLoadPending) return;
+  if (recoveryLoadPending || recoveryCheckPending) return;
   recoveryLoadPending = true;
   trigger.disabled = true;
   const openingRoute = state.route;
+  const generation = ++recoveryDialogGeneration;
   try {
     const projection = await dataSource.loadRecoveryProjection();
-    if (state.route === openingRoute && state.route === "home") {
+    if (
+      generation === recoveryDialogGeneration
+      && state.route === openingRoute
+      && state.route === "home"
+    ) {
       openRecoveryDialog(projection, trigger);
     }
   } catch {
-    if (state.route === openingRoute && state.route === "home") {
+    if (
+      generation === recoveryDialogGeneration
+      && state.route === openingRoute
+      && state.route === "home"
+    ) {
       openRecoveryDialog(SAFE_RECOVERY_FAILURE, trigger);
     }
   } finally {
@@ -446,7 +466,11 @@ async function reviewRecovery(trigger) {
   }
 }
 
-function openRecoveryDialog(projection, trigger = document.activeElement) {
+function openRecoveryDialog(
+  projection,
+  trigger = document.activeElement,
+  { resultOnly = false } = {},
+) {
   const view = buildRecoveryDialogViewModel(projection);
   state.activeDialog = "recovery";
   dialogPayload = projection;
@@ -470,9 +494,114 @@ function openRecoveryDialog(projection, trigger = document.activeElement) {
   close.className = "button button-secondary";
   close.dataset.action = "close-dialog";
   close.textContent = view.closeLabel;
-  elements.dialogActions.replaceChildren(close);
+  if (view.canCheckResult && !resultOnly) {
+    const check = document.createElement("button");
+    check.type = "button";
+    check.className = "button button-primary";
+    check.dataset.action = "check-recovery-result";
+    check.textContent = view.checkLabel;
+    check.disabled = recoveryCheckPending;
+    elements.dialogActions.replaceChildren(check, close);
+  } else {
+    elements.dialogActions.replaceChildren(close);
+  }
   if (!elements.dialog.open) elements.dialog.showModal();
-  window.requestAnimationFrame(() => close.focus());
+  window.requestAnimationFrame(() => {
+    elements.dialogActions.querySelector("button:not([disabled])")?.focus();
+  });
+}
+
+const SAFE_RECOVERY_CHECK_FAILURE = Object.freeze({
+  state: "could_not_check",
+  title: "Loci Flow could not check the result.",
+  message: "Review the folder and try again.",
+  recovery_attention: true,
+});
+
+const SAFE_RECOVERY_STALE = Object.freeze({
+  state: "could_not_check",
+  title: "The recovery details changed.",
+  message: "Open the review again.",
+  recovery_attention: true,
+});
+
+async function refreshAfterRecoveryCheck() {
+  await Promise.allSettled([
+    dataSource.loadRecoveryProjection(),
+    loadCurrent(),
+    loadActivity({ force: true, refresh: true }),
+  ]);
+}
+
+async function checkRecoveryResult() {
+  if (
+    recoveryCheckPending
+    || state.activeDialog !== "recovery"
+    || dialogPayload?.can_check_result !== true
+  ) return;
+  const generation = recoveryDialogGeneration;
+  recoveryCheckPending = true;
+  recoveryCheckContext = null;
+  const checkButton = elements.dialogActions.querySelector(
+    '[data-action="check-recovery-result"]',
+  );
+  if (checkButton) {
+    checkButton.disabled = true;
+    checkButton.textContent = "Checking…";
+  }
+  announce("Checking the file result…");
+  try {
+    const context = await dataSource.createRecoveryCheckContext();
+    if (generation !== recoveryDialogGeneration) return;
+    recoveryCheckContext = {
+      caseId: context.case_id,
+      actionId: context.action_id,
+    };
+    const result = await dataSource.checkRecoveryResult(
+      recoveryCheckContext.caseId,
+      recoveryCheckContext.actionId,
+    );
+    if (generation !== recoveryDialogGeneration) return;
+    recoveryCheckContext = null;
+    recoveryAttention = result.recovery_attention;
+    openRecoveryDialog(
+      {
+        state: result.state,
+        title: result.title,
+        message: result.message,
+        affected_items: 0,
+        can_check_result: false,
+      },
+      dialogTrigger,
+      { resultOnly: true },
+    );
+    announce(result.message);
+    await refreshAfterRecoveryCheck();
+  } catch (error) {
+    if (generation !== recoveryDialogGeneration) return;
+    recoveryCheckContext = null;
+    recoveryAttention = true;
+    const result = new Set([
+      "recovery_check_unavailable",
+      "recovery_context_unavailable",
+      "recovery_details_changed",
+      "application_stopping",
+    ]).has(error?.code) ? SAFE_RECOVERY_STALE : SAFE_RECOVERY_CHECK_FAILURE;
+    openRecoveryDialog(
+      {
+        ...result,
+        affected_items: 0,
+        can_check_result: false,
+      },
+      dialogTrigger,
+      { resultOnly: true },
+    );
+    announce(`${result.title} ${result.message}`);
+    await refreshAfterRecoveryCheck();
+  } finally {
+    recoveryCheckContext = null;
+    recoveryCheckPending = false;
+  }
 }
 
 function resetStandardBuilder() {
@@ -1755,6 +1884,7 @@ function actionFor(target) {
   if (action === "open-activity") return navigate("activity", { focusMain: true });
   if (action === "open-standards") return navigate("standards", { focusMain: true });
   if (action === "review-recovery") return reviewRecovery(target);
+  if (action === "check-recovery-result") return checkRecoveryResult();
   if (action === "check-files" || action === "check-again") return checkFiles();
   if (action === "reload-choices") {
     discardMovementConfirmation();
@@ -1958,6 +2088,9 @@ window.addEventListener("hashchange", () => {
   }
   if (state.activeDialog === "recovery" && nextRoute !== previousRoute) {
     closeDialog({ restoreFocus: false });
+  } else if (recoveryLoadPending && nextRoute !== previousRoute) {
+    recoveryDialogGeneration += 1;
+    recoveryCheckContext = null;
   }
   state.route = nextRoute;
   render({ focusMain: true });

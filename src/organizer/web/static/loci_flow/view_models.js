@@ -1074,6 +1074,8 @@ export function buildRecoveryDialogViewModel(projection) {
     title: projection.title,
     description: projection.message,
     affectedItems: projection.affected_items,
+    canCheckResult: projection.can_check_result === true,
+    checkLabel: "Check result",
     closeLabel: "Close",
   };
 }
