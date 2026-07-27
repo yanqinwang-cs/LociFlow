@@ -28,11 +28,21 @@ from organizer.application.execution_coordinator import OrganizationExecutionCoo
 from organizer.application.current_recovery_admission_status import (
     CurrentRecoveryAdmissionStatus,
 )
+from organizer.application.identity_verification_publication import (
+    OrganizationIdentityVerificationPublicationService,
+)
 from organizer.application.filesystem_operation_admission import (
     FilesystemOperationAdmission,
     FilesystemOperationInspector,
 )
 from organizer.application.recovery_evidence import RecoveryEvidenceInspector
+from organizer.application.recovery_check_context import (
+    RecoveryCheckContextStore,
+)
+from organizer.application.recovery_check_service import (
+    RecoveryCheckEligibilityInspector,
+    RecoveryCheckService,
+)
 from organizer.application.recovery_projection_service import RecoveryProjectionService
 from organizer.application.duplicate_bin_repository import DuplicateBinRepository
 from organizer.application.duplicate_bin_authorization_repository import (
@@ -59,6 +69,9 @@ from organizer.application.organization_undo_identity_orchestration import (
 )
 from organizer.application.organization_undo_repository import (
     OrganizationUndoRepository,
+)
+from organizer.application.undo_identity_verification_publication import (
+    OrganizationUndoIdentityVerificationPublicationService,
 )
 from organizer.application.runtime_lifecycle import RuntimeLifecycle
 from organizer.application.standards_creation_application_service import (
@@ -144,8 +157,11 @@ def create_app(config: WebAppConfig) -> FastAPI:
     app.state.recovery_admission_snapshot = (
         app.state.current_recovery_admission_status.snapshot()
     )
+    app.state.recovery_evidence_inspector = RecoveryEvidenceInspector(
+        app.state.filesystem_operation_inspector
+    )
     app.state.recovery_projection_service = RecoveryProjectionService(
-        RecoveryEvidenceInspector(app.state.filesystem_operation_inspector)
+        app.state.recovery_evidence_inspector
     )
     app.state.filesystem_operation_admission = FilesystemOperationAdmission(
         app.state.filesystem_operation_inspector
@@ -173,6 +189,28 @@ def create_app(config: WebAppConfig) -> FastAPI:
                 app.state.current_recovery_admission_status.refresh
             ),
         )
+    )
+    app.state.recovery_check_contexts = RecoveryCheckContextStore(
+        app.state.organization_operations.configured_root_identity
+    )
+    app.state.recovery_check_eligibility = RecoveryCheckEligibilityInspector(
+        app.state.recovery_evidence_inspector,
+        app.state.organization_operations,
+        app.state.organization_undos,
+    )
+    app.state.recovery_check_service = RecoveryCheckService(
+        app.state.runtime_lifecycle,
+        app.state.organization_execution,
+        app.state.recovery_check_eligibility,
+        app.state.recovery_check_contexts,
+        OrganizationIdentityVerificationPublicationService(
+            app.state.organization_operations
+        ),
+        OrganizationUndoIdentityVerificationPublicationService(
+            app.state.organization_operations,
+            app.state.organization_undos,
+        ),
+        app.state.current_recovery_admission_status,
     )
     app.state.organization_decisions = OrganizationDecisionStore(
         app.state.duplicate_bin_batches,

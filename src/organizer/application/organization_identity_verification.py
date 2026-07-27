@@ -90,8 +90,10 @@ def verify_identity_organization_operation(
     """
 
     _validate_chunk_size(chunk_size)
-    resolved_root = _eligible_root(record, root)
-    _validate_record(record)
+    resolved_root = require_identity_organization_verification_eligible(
+        record,
+        root,
+    )
 
     mismatch_categories: set[IdentityMismatchCategory] = set()
     verified_count = 0
@@ -129,6 +131,17 @@ def verify_identity_organization_operation(
         verified_count=verified_count,
         mismatch_categories=ordered,
     )
+
+
+def require_identity_organization_verification_eligible(
+    record: OrganizationOperationRecord,
+    root: Path,
+) -> Path:
+    """Validate a v2 verification candidate without inspecting its files."""
+
+    resolved_root = _eligible_root(record, root)
+    _validate_record(record)
+    return resolved_root
 
 
 def _eligible_root(record: OrganizationOperationRecord, root: Path) -> Path:

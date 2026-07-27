@@ -91,12 +91,11 @@ def verify_identity_organization_undo(
     """Inspect a complete v2 Undo without changing filesystem or durable state."""
 
     _validate_chunk_size(chunk_size)
-    resolved_root, root_identity = _eligible_root(
+    resolved_root = require_identity_organization_undo_verification_eligible(
         undo_record,
         parent_record,
         root,
     )
-    _validate_records(undo_record, parent_record, root_identity)
 
     mismatch_categories: set[IdentityUndoMismatchCategory] = set()
     verified_count = 0
@@ -134,6 +133,22 @@ def verify_identity_organization_undo(
         verified_count=verified_count,
         mismatch_categories=ordered,
     )
+
+
+def require_identity_organization_undo_verification_eligible(
+    undo_record: OrganizationUndoRecord,
+    parent_record: OrganizationOperationRecord,
+    root: Path,
+) -> Path:
+    """Validate a v2 Undo verification pair without inspecting its files."""
+
+    resolved_root, root_identity = _eligible_root(
+        undo_record,
+        parent_record,
+        root,
+    )
+    _validate_records(undo_record, parent_record, root_identity)
+    return resolved_root
 
 
 def _eligible_root(
