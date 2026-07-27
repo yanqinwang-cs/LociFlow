@@ -5,6 +5,7 @@ build/
 dist/
 packaging/macos/build/
 packaging/macos/dist/
+packaging/macos/release-staging/
 wheels/
 *.egg-info
 
