@@ -22,7 +22,11 @@ class DependencyHygieneTests(unittest.TestCase):
         self.assertFalse(any("python-dotenv" in dependency for dependency in dependencies))
         self.assertEqual(
             set(project["optional-dependencies"]),
-            {"web", "web-test", "macos-launcher"},
+            {"web", "web-test", "macos-launcher", "macos-build"},
+        )
+        self.assertEqual(
+            project["optional-dependencies"]["macos-build"],
+            ["pyinstaller==6.16.0"],
         )
         self.assertEqual(data["tool"]["setuptools"]["package-dir"], {"": "src"})
         self.assertEqual(data["tool"]["setuptools"]["packages"]["find"]["where"], ["src"])

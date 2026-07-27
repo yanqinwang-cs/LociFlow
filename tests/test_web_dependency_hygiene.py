@@ -43,6 +43,10 @@ class WebDependencyHygieneTests(unittest.TestCase):
                 "pyobjc-framework-Cocoa==12.2.1; sys_platform == 'darwin'",
             ],
         )
+        self.assertEqual(
+            project["optional-dependencies"]["macos-build"],
+            ["pyinstaller==6.16.0"],
+        )
         self.assertNotIn(
             "pyobjc",
             "\n".join(project["optional-dependencies"]["web"]).lower(),
