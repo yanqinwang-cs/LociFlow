@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
 import re
 from typing import Final
 
@@ -38,5 +40,23 @@ def validate_release_metadata() -> None:
         raise ValueError("supported architecture is invalid")
 
 
-validate_release_metadata()
+def write_runtime_identity(path: Path) -> None:
+    validate_release_metadata()
+    payload = {
+        "application_version": SEMANTIC_VERSION,
+        "build_number": BUILD_NUMBER,
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            payload,
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="ascii",
+    )
 
+
+validate_release_metadata()

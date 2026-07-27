@@ -4,6 +4,7 @@ from collections.abc import Callable
 from concurrent.futures import Future
 from contextlib import redirect_stderr
 from io import StringIO
+import json
 import os
 from pathlib import Path
 from queue import Empty, Queue
@@ -24,6 +25,10 @@ from organizer.macos_launcher.coordinator import (
 from organizer.macos_launcher.process_lease import (
     acquire_application_instance_lease,
     acquire_root_process_lease,
+)
+from organizer.macos_launcher.packaged_diagnostics import (
+    PackagedDiagnosticSink,
+    PackagedReleaseIdentity,
 )
 from organizer.macos_launcher import coordinator as coordinator_module
 from organizer.web.config import WebAppConfig
@@ -1337,6 +1342,51 @@ class MacOSLauncherCoordinatorTests(unittest.TestCase):
 
         self.assertEqual(result, 1)
         self.assertEqual(stderr.getvalue(), "")
+
+    def test_packaged_sink_projects_launch_and_shutdown_failures_boundedly(
+        self,
+    ) -> None:
+        paths = self.application_paths()
+        sink = PackagedDiagnosticSink(
+            paths,
+            identity=PackagedReleaseIdentity("0.1.0-beta.1", 1),
+        )
+        coordinator = NativeLauncherCoordinator(
+            _Adapter(None),
+            diagnostic_sink=sink,
+        )
+
+        coordinator._record_launch_diagnostic(
+            coordinator_module.LaunchPhase.WAITING_FOR_READY,
+            LauncherError("readiness_failed", "private safe message"),
+            RuntimeError(f"private path {self.root}"),
+        )
+        coordinator._record_launch_diagnostic(
+            coordinator_module.LaunchPhase.BROWSER_BOOTSTRAPPED,
+            LauncherError("browser_open_failed", "private URL"),
+            RuntimeError("http://127.0.0.1:1234/launch/private-token"),
+        )
+        coordinator._record_shutdown_diagnostic(
+            "worker_failed",
+            RuntimeError("private shutdown detail"),
+        )
+
+        content = (paths.logs_directory / "launcher.log").read_text(
+            encoding="ascii"
+        )
+        payloads = [json.loads(line) for line in content.splitlines()]
+        self.assertEqual(
+            [payload["code"] for payload in payloads],
+            [
+                "readiness_failed",
+                "browser_launch_failed",
+                "coordinated_shutdown_failed",
+            ],
+        )
+        self.assertNotIn(str(self.root), content)
+        self.assertNotIn("private-token", content)
+        self.assertNotIn("private shutdown", content)
+        self.assertNotIn("Traceback", content)
 
     def test_native_appkit_event_trace_is_safe_and_debug_only(self) -> None:
         output = StringIO()

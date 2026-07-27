@@ -8,7 +8,11 @@ import shutil
 import subprocess
 import sys
 
-from release_metadata import APP_NAME, SUPPORTED_ARCHITECTURE
+from release_metadata import (
+    APP_NAME,
+    SUPPORTED_ARCHITECTURE,
+    write_runtime_identity,
+)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -17,6 +21,7 @@ SPEC_PATH = PACKAGING_ROOT / "loci_flow.spec"
 BUILD_PATH = PACKAGING_ROOT / "build"
 DIST_PATH = PACKAGING_ROOT / "dist"
 APP_PATH = DIST_PATH / f"{APP_NAME}.app"
+RUNTIME_IDENTITY_PATH = BUILD_PATH / "release_identity.json"
 
 
 def main() -> int:
@@ -41,6 +46,8 @@ def main() -> int:
     for output in (BUILD_PATH, DIST_PATH):
         if output.exists():
             shutil.rmtree(output)
+
+    write_runtime_identity(RUNTIME_IDENTITY_PATH)
 
     from generate_icon import IconGenerationError, generate_icon
 

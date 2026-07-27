@@ -9,6 +9,7 @@ import unittest
 from unittest import mock
 
 from organizer.macos_launcher import __main__ as native_main
+from organizer.macos_launcher.coordinator import NativeDiagnostic
 
 
 class MacOSLauncherEntrypointTests(unittest.TestCase):
@@ -51,6 +52,33 @@ class MacOSLauncherEntrypointTests(unittest.TestCase):
         self.assertNotIn("Traceback", output)
         self.assertNotIn("ModuleNotFoundError", output)
 
+    def test_missing_pyobjc_emits_only_bounded_diagnostic_to_injected_sink(
+        self,
+    ) -> None:
+        class MissingAdapter:
+            def __init__(self) -> None:
+                raise ModuleNotFoundError(
+                    "private AppKit import failure",
+                    name="AppKit",
+                )
+
+        sink = mock.Mock()
+        with (
+            mock.patch.object(sys, "platform", "darwin"),
+            _native_modules(MissingAdapter, mock.Mock()),
+        ):
+            result = native_main.main(diagnostic_sink=sink)
+
+        self.assertEqual(result, 2)
+        sink.assert_called_once_with(
+            NativeDiagnostic(
+                phase="startup",
+                code="native_dependency_unavailable",
+                exception_class="ModuleNotFoundError",
+                traceback=None,
+            )
+        )
+
     def test_macos_entrypoint_delegates_exactly_once(self) -> None:
         adapter = object()
         adapter_type = mock.Mock(return_value=adapter)
@@ -75,6 +103,42 @@ class MacOSLauncherEntrypointTests(unittest.TestCase):
         self.assertEqual(paths.home.name, Path.home().name)
         coordinator.run.assert_called_once_with()
 
+    def test_injected_packaged_sink_and_paths_replace_development_defaults(
+        self,
+    ) -> None:
+        adapter = object()
+        coordinator = mock.Mock()
+        coordinator.run.return_value = 0
+        coordinator_type = mock.Mock(return_value=coordinator)
+        development_sink = mock.Mock()
+        packaged_sink = mock.Mock()
+        paths = object()
+
+        with (
+            mock.patch.object(sys, "platform", "darwin"),
+            _native_modules(
+                mock.Mock(return_value=adapter),
+                coordinator_type,
+                development_sink,
+            ),
+        ):
+            result = native_main.main(
+                [],
+                diagnostic_sink=packaged_sink,
+                application_paths=paths,
+            )
+
+        self.assertEqual(result, 0)
+        development_sink.assert_not_called()
+        self.assertIs(
+            coordinator_type.call_args.kwargs["diagnostic_sink"],
+            packaged_sink,
+        )
+        self.assertIs(
+            coordinator_type.call_args.kwargs["application_paths"],
+            paths,
+        )
+
 
 class _native_modules:
     def __init__(
@@ -90,11 +154,20 @@ class _native_modules:
         self.coordinator_module = ModuleType(
             "organizer.macos_launcher.coordinator"
         )
-        self.coordinator_module.NativeLauncherCoordinator = (  # type: ignore[attr-defined]
-            coordinator_type
+        setattr(
+            self.coordinator_module,
+            "NativeLauncherCoordinator",
+            coordinator_type,
         )
-        self.coordinator_module.development_diagnostic_sink = (  # type: ignore[attr-defined]
-            diagnostic_sink or mock.Mock(return_value=None)
+        setattr(
+            self.coordinator_module,
+            "NativeDiagnostic",
+            NativeDiagnostic,
+        )
+        setattr(
+            self.coordinator_module,
+            "development_diagnostic_sink",
+            diagnostic_sink or mock.Mock(return_value=None),
         )
         self.patch = mock.patch.dict(
             sys.modules,

@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 import importlib.util
+import json
 import subprocess
+import tempfile
 import tomllib
 import unittest
 
@@ -94,6 +96,27 @@ class MacOSPackagingContractTests(unittest.TestCase):
             '"13.0"',
         ):
             self.assertNotIn(duplicated, source)
+
+    def test_runtime_identity_is_generated_from_centralized_metadata(self) -> None:
+        metadata = _release_metadata()
+        with tempfile.TemporaryDirectory() as directory:
+            destination = Path(directory) / "release_identity.json"
+
+            metadata.write_runtime_identity(destination)
+
+            self.assertEqual(
+                json.loads(destination.read_text(encoding="ascii")),
+                {
+                    "application_version": metadata.SEMANTIC_VERSION,
+                    "build_number": metadata.BUILD_NUMBER,
+                },
+            )
+        build_source = BUILD_SCRIPT.read_text(encoding="utf-8")
+        spec_source = SPEC.read_text(encoding="utf-8")
+        self.assertIn("write_runtime_identity", build_source)
+        self.assertIn("RUNTIME_IDENTITY_PATH", build_source)
+        self.assertIn("RUNTIME_IDENTITY_PATH", spec_source)
+        self.assertIn('"organizer/macos_launcher"', spec_source)
 
     def test_spec_uses_generated_lf_icon_not_pyinstaller_default(self) -> None:
         source = SPEC.read_text(encoding="utf-8")

@@ -83,6 +83,32 @@ Open the application locally and select a disposable folder. Confirm that one
 browser window opens, Home loads, a second native instance is rejected, and
 Quit completes before another process can acquire the selected-root lease.
 
+## Packaged launcher diagnostics
+
+Normal windowed application launches keep a local, bounded launcher log at:
+
+```text
+~/Library/Logs/Loci Flow/launcher.log
+```
+
+The active file is limited to 256 KiB. Rotation retains three files total:
+`launcher.log`, `launcher.log.1`, and `launcher.log.2`. The log directory and
+files are private to the current macOS user.
+
+Records contain only a UTC timestamp, application version, build number,
+bounded launch phase and failure code, and an allowlisted exception class when
+useful. They do not contain selected-root paths, filenames, browser URLs,
+tokens, secrets, content hashes, operation identifiers, tracebacks, exception
+messages, or workflow records. Unknown values are replaced with generic
+categories.
+
+There is no telemetry, networking, or automatic upload. A tester may
+voluntarily provide these launcher log files when reporting a startup problem;
+selected folders and `AI_Review` records should not be supplied by default.
+The diagnostics are troubleshooting evidence only and are never workflow
+authority. If the log cannot be created or written safely, launch and shutdown
+continue without it.
+
 This unsigned artifact is for local acceptance only. macOS may report that it
 is from an unidentified developer. Do not disable Gatekeeper globally. Signed
 closed-beta distribution requires the later signing, Hardened Runtime,

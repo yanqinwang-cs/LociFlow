@@ -69,6 +69,10 @@ class MacOSApplicationPaths:
     def application_instance_lock(self) -> Path:
         return self.locks / "application-instance.lock"
 
+    @property
+    def logs_directory(self) -> Path:
+        return self.logs
+
     def root_lock_path(self, root_key: str) -> Path:
         if (
             len(root_key) != 64
@@ -84,6 +88,9 @@ class MacOSApplicationPaths:
             self.locks,
             self.root_locks,
         )
+
+    def create_logs_directory(self) -> None:
+        self._create_owned_directories(self.logs)
 
     def create(self) -> None:
         self._create_owned_directories(

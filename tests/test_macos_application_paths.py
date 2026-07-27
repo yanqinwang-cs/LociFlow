@@ -41,6 +41,7 @@ class MacOSApplicationPathsTests(unittest.TestCase):
             paths.logs,
             home / "Library" / "Logs" / "Loci Flow",
         )
+        self.assertEqual(paths.logs_directory, paths.logs)
         self.assertTrue(all(path.is_absolute() for path in paths.__dict__.values()))
 
     def test_injected_home_is_cwd_independent_and_relative_home_is_rejected(
@@ -99,6 +100,19 @@ class MacOSApplicationPathsTests(unittest.TestCase):
             self.assertTrue(paths.root_locks.is_dir())
             self.assertFalse(paths.caches.exists())
             self.assertFalse(paths.logs.exists())
+
+    def test_log_only_creation_does_not_create_other_application_storage(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            paths = MacOSApplicationPaths.for_home(Path(directory) / "home")
+
+            paths.create_logs_directory()
+
+            self.assertTrue(paths.logs.is_dir())
+            self.assertEqual(stat.S_IMODE(paths.logs.stat().st_mode), 0o700)
+            self.assertFalse(paths.application_support.exists())
+            self.assertFalse(paths.caches.exists())
 
     def test_unsafe_or_unavailable_application_path_fails_safely(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
