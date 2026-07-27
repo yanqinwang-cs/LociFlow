@@ -45,6 +45,7 @@ from organizer.executor_identity import (
     IdentityMovePlanItem,
     StrictExecutorError,
     StrictExecutorInterrupted,
+    validate_same_volume_identity_move_plan,
 )
 from organizer.file_identity import RegularFileStatFingerprint
 from organizer.models import MovePlanItem, MoveResult, OperationLog
@@ -99,6 +100,7 @@ def execute_v2_organization_undo_intent(
     undo_repository: OrganizationUndoRepository,
     clock: Callable[[], str] | None = None,
     executor: Callable[..., OperationLog] = apply_same_volume_identity_move_plan,
+    post_create: Callable[[], bool] | None = None,
 ) -> IdentityUndoExecutionResult:
     """Persist complete v2 Undo intent, then execute its strict reverse batch."""
 
@@ -121,15 +123,56 @@ def execute_v2_organization_undo_intent(
         raise OrganizationIdentityUndoExecutionError("invalid_intent") from error
 
     try:
-        undo_repository.create(intent.record)
-    except Exception as error:
-        raise OrganizationIdentityUndoExecutionError("durable_intent_failed") from error
+        plan = _strict_reverse_plan(intent, parent, root)
+        validate_same_volume_identity_move_plan(plan, root)
+    except StrictExecutorError:
+        raise OrganizationIdentityUndoExecutionError("invalid_intent") from None
 
     try:
-        plan = _strict_reverse_plan(intent, parent, root)
-    except StrictExecutorError:
-        failed = _persist_preflight_failure(intent.record, undo_repository, now)
-        return _result(failed)
+        undo_repository.create(intent.record)
+    except Exception as error:
+        if not os.path.lexists(
+            undo_repository.directory / f"{intent.record.undo_id}.json"
+        ):
+            raise OrganizationIdentityUndoExecutionError(
+                "durable_intent_failed"
+            ) from error
+        if post_create is not None:
+            try:
+                post_create()
+            except (KeyboardInterrupt, SystemExit):
+                raise
+            except Exception:
+                pass
+        interrupted = _persist_interrupted_or_raise(
+            undo_repository,
+            intent.record.undo_id,
+            now,
+            operation_log=None,
+            recovery_required=False,
+            primary=error,
+        )
+        return _result(interrupted)
+
+    if post_create is not None:
+        try:
+            consumed = post_create()
+        except (KeyboardInterrupt, SystemExit):
+            raise
+        except Exception:
+            consumed = False
+        if consumed is not True:
+            interrupted = _persist_interrupted_or_raise(
+                undo_repository,
+                intent.record.undo_id,
+                now,
+                operation_log=None,
+                recovery_required=False,
+                primary=OrganizationIdentityUndoExecutionError(
+                    "recovery_required"
+                ),
+            )
+            return _result(interrupted)
 
     recorder = _V2UndoMovementRecorder(
         intent.record,

@@ -181,7 +181,7 @@ class OrganizationUndoIdentityExecutionTests(unittest.TestCase):
             executor.assert_not_called()
             self.assertEqual(undos.list_records(), ())
 
-    def test_preflight_collision_fails_without_restored_claim(self) -> None:
+    def test_preflight_collision_rejects_before_durable_intent(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             operations, undos, _parent, intent = _intent(root, (b"alpha", b"beta"))
@@ -189,20 +189,16 @@ class OrganizationUndoIdentityExecutionTests(unittest.TestCase):
             target.parent.mkdir(parents=True)
             target.write_bytes(b"occupied")
 
-            result = execute_v2_organization_undo_intent(
-                intent=intent,
-                operation_repository=operations,
-                undo_repository=undos,
-                clock=lambda: _TIME,
-            )
+            with self.assertRaises(OrganizationIdentityUndoExecutionError) as raised:
+                execute_v2_organization_undo_intent(
+                    intent=intent,
+                    operation_repository=operations,
+                    undo_repository=undos,
+                    clock=lambda: _TIME,
+                )
 
-            self.assertEqual(result.state, IdentityUndoExecutionState.FAILED)
-            persisted = undos.load(intent.record.undo_id)
-            self.assertEqual(persisted.status, UNDO_FAILED)
-            self.assertEqual(
-                tuple(item.result_state for item in persisted.expected_restores),
-                (UNDO_ITEM_UNATTEMPTED, UNDO_ITEM_UNATTEMPTED),
-            )
+            self.assertEqual(raised.exception.code, "invalid_intent")
+            self.assertEqual(undos.list_records(), ())
             self.assertEqual(target.read_bytes(), b"occupied")
             self.assertTrue((root / "Documents/item-1.txt").exists())
 
