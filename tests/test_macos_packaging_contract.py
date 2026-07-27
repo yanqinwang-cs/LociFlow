@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import importlib.util
 import subprocess
 import tomllib
 import unittest
@@ -11,6 +12,18 @@ SPEC = REPOSITORY_ROOT / "packaging" / "macos" / "loci_flow.spec"
 BUILD_SCRIPT = (
     REPOSITORY_ROOT / "packaging" / "macos" / "build_unsigned_app.py"
 )
+METADATA = REPOSITORY_ROOT / "packaging" / "macos" / "release_metadata.py"
+
+
+def _release_metadata():
+    specification = importlib.util.spec_from_file_location(
+        "loci_flow_release_metadata_test",
+        METADATA,
+    )
+    assert specification is not None and specification.loader is not None
+    module = importlib.util.module_from_spec(specification)
+    specification.loader.exec_module(module)
+    return module
 
 
 class MacOSPackagingContractTests(unittest.TestCase):
@@ -23,7 +36,7 @@ class MacOSPackagingContractTests(unittest.TestCase):
         self.assertEqual(project["dependencies"], [])
         self.assertEqual(
             project["optional-dependencies"]["macos-build"],
-            ["pyinstaller==6.16.0"],
+            ["pillow==12.3.0", "pyinstaller==6.16.0"],
         )
         self.assertNotIn(
             "pyinstaller",
@@ -41,26 +54,54 @@ class MacOSPackagingContractTests(unittest.TestCase):
 
         self.assertIn("COLLECT(", source)
         self.assertIn("BUNDLE(", source)
-        self.assertIn('name="Loci Flow.app"', source)
+        self.assertIn('name=f"{APP_NAME}.app"', source)
         self.assertIn("console=False", source)
         self.assertIn("exclude_binaries=True", source)
         self.assertIn("upx=False", source)
-        self.assertIn("target_arch=None", source)
+        self.assertIn("target_arch=SUPPORTED_ARCHITECTURE", source)
         self.assertIn("codesign_identity=None", source)
         self.assertNotIn("--onefile", source)
 
-    def test_bundle_metadata_is_exact(self) -> None:
+    def test_release_metadata_is_centralized_valid_and_exact(self) -> None:
+        metadata = _release_metadata()
+        self.assertEqual(metadata.APP_NAME, "Loci Flow")
+        self.assertEqual(
+            metadata.BUNDLE_IDENTIFIER,
+            "com.yanqinwang.lociflow",
+        )
+        self.assertEqual(metadata.SEMANTIC_VERSION, "0.1.0-beta.1")
+        self.assertEqual(metadata.BUILD_NUMBER, 1)
+        self.assertIsInstance(metadata.BUILD_NUMBER, int)
+        self.assertEqual(metadata.MINIMUM_MACOS_VERSION, "13.0")
+        self.assertEqual(metadata.SUPPORTED_ARCHITECTURE, "arm64")
+        metadata.validate_release_metadata()
+
+    def test_bundle_spec_consumes_centralized_metadata(self) -> None:
         source = SPEC.read_text(encoding="utf-8")
         for expected in (
-            'bundle_identifier="com.yanqinwang.lociflow"',
-            '"CFBundleName": "Loci Flow"',
-            '"CFBundleDisplayName": "Loci Flow"',
-            '"CFBundleShortVersionString": "0.1.0-beta.1"',
-            '"CFBundleVersion": "1"',
-            '"LSMinimumSystemVersion": "13.0"',
+            "bundle_identifier=BUNDLE_IDENTIFIER",
+            '"CFBundleName": APP_NAME',
+            '"CFBundleDisplayName": APP_NAME',
+            '"CFBundleShortVersionString": SEMANTIC_VERSION',
+            '"CFBundleVersion": str(BUILD_NUMBER)',
+            '"LSMinimumSystemVersion": MINIMUM_MACOS_VERSION',
             '"NSHighResolutionCapable": True',
         ):
             self.assertIn(expected, source)
+        for duplicated in (
+            "com.yanqinwang.lociflow",
+            "0.1.0-beta.1",
+            '"13.0"',
+        ):
+            self.assertNotIn(duplicated, source)
+
+    def test_spec_uses_generated_lf_icon_not_pyinstaller_default(self) -> None:
+        source = SPEC.read_text(encoding="utf-8")
+        self.assertIn('"build" / "LociFlow.icns"', source)
+        self.assertIn("icon=str(ICON_PATH)", source)
+        self.assertIn('"CFBundleIconFile": ICON_PATH.name', source)
+        self.assertNotIn("icon=None", source)
+        self.assertNotIn("icon-windowed.icns", source)
 
     def test_spec_collects_production_closure_and_required_resources(
         self,
@@ -100,6 +141,11 @@ class MacOSPackagingContractTests(unittest.TestCase):
         self.assertIn('PACKAGING_ROOT / "build"', source)
         self.assertIn('PACKAGING_ROOT / "dist"', source)
         self.assertIn('"PyInstaller"', source)
+        self.assertIn("generate_icon()", source)
+        self.assertLess(
+            source.index("generate_icon()"),
+            source.index('"PyInstaller"', source.index("generate_icon()")),
+        )
         self.assertNotIn('"--clean"', source)
         self.assertNotIn("git clean", source)
         self.assertNotIn("codesign", source)
@@ -108,6 +154,8 @@ class MacOSPackagingContractTests(unittest.TestCase):
 
         for relative in (
             "packaging/macos/build/example",
+            "packaging/macos/build/LociFlow.iconset/icon_16x16.png",
+            "packaging/macos/build/LociFlow.icns",
             "packaging/macos/dist/Loci Flow.app",
         ):
             checked = subprocess.run(
@@ -132,6 +180,14 @@ class MacOSPackagingContractTests(unittest.TestCase):
                 for path in tracked
             )
         )
+        source_icon = "packaging/macos/icon/loci-flow-app-icon-1024.png"
+        self.assertTrue((REPOSITORY_ROOT / source_icon).is_file())
+        ignored = subprocess.run(
+            ["git", "check-ignore", "-q", source_icon],
+            cwd=REPOSITORY_ROOT,
+            check=False,
+        )
+        self.assertNotEqual(ignored.returncode, 0)
 
 
 if __name__ == "__main__":

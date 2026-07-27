@@ -1,13 +1,26 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 from pathlib import Path
+import sys
 
 from PyInstaller.utils.hooks import collect_submodules
 
 
-PROJECT_ROOT = Path(SPECPATH).resolve().parents[1]
+PACKAGING_ROOT = Path(SPECPATH).resolve()
+PROJECT_ROOT = PACKAGING_ROOT.parents[1]
 SOURCE_ROOT = PROJECT_ROOT / "src"
 WEB_ROOT = SOURCE_ROOT / "organizer" / "web"
+ICON_PATH = PACKAGING_ROOT / "build" / "LociFlow.icns"
+
+sys.path.insert(0, str(PACKAGING_ROOT))
+from release_metadata import (  # noqa: E402
+    APP_NAME,
+    BUILD_NUMBER,
+    BUNDLE_IDENTIFIER,
+    MINIMUM_MACOS_VERSION,
+    SEMANTIC_VERSION,
+    SUPPORTED_ARCHITECTURE,
+)
 
 required_resources = (
     WEB_ROOT / "templates",
@@ -20,6 +33,8 @@ required_resources = (
 missing_resources = [path for path in required_resources if not path.exists()]
 if missing_resources:
     raise SystemExit("Required Loci Flow resources are unavailable.")
+if not ICON_PATH.is_file():
+    raise SystemExit("Generated Loci Flow icon is unavailable.")
 
 datas = [
     (str(WEB_ROOT / "templates"), "organizer/web/templates"),
@@ -63,13 +78,13 @@ executable = EXE(
     analysis.scripts,
     [],
     exclude_binaries=True,
-    name="Loci Flow",
+    name=APP_NAME,
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=False,
     console=False,
-    target_arch=None,
+    target_arch=SUPPORTED_ARCHITECTURE,
     codesign_identity=None,
     entitlements_file=None,
 )
@@ -79,19 +94,20 @@ collected = COLLECT(
     analysis.datas,
     strip=False,
     upx=False,
-    name="Loci Flow",
+    name=APP_NAME,
 )
 app = BUNDLE(
     collected,
-    name="Loci Flow.app",
-    icon=None,
-    bundle_identifier="com.yanqinwang.lociflow",
+    name=f"{APP_NAME}.app",
+    icon=str(ICON_PATH),
+    bundle_identifier=BUNDLE_IDENTIFIER,
     info_plist={
-        "CFBundleName": "Loci Flow",
-        "CFBundleDisplayName": "Loci Flow",
-        "CFBundleShortVersionString": "0.1.0-beta.1",
-        "CFBundleVersion": "1",
-        "LSMinimumSystemVersion": "13.0",
+        "CFBundleName": APP_NAME,
+        "CFBundleDisplayName": APP_NAME,
+        "CFBundleShortVersionString": SEMANTIC_VERSION,
+        "CFBundleVersion": str(BUILD_NUMBER),
+        "CFBundleIconFile": ICON_PATH.name,
+        "LSMinimumSystemVersion": MINIMUM_MACOS_VERSION,
         "NSHighResolutionCapable": True,
     },
 )

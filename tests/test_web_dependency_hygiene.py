@@ -45,7 +45,7 @@ class WebDependencyHygieneTests(unittest.TestCase):
         )
         self.assertEqual(
             project["optional-dependencies"]["macos-build"],
-            ["pyinstaller==6.16.0"],
+            ["pillow==12.3.0", "pyinstaller==6.16.0"],
         )
         self.assertNotIn(
             "pyobjc",

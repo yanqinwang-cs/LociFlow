@@ -22,6 +22,7 @@ macos-launcher = [
     "pyobjc-framework-Cocoa==12.2.1; sys_platform == 'darwin'",
 ]
 macos-build = [
+    "pillow==12.3.0",
     "pyinstaller==6.16.0",
 ]
 

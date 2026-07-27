@@ -3,9 +3,12 @@ from __future__ import annotations
 import importlib.util
 import os
 from pathlib import Path
+import platform
 import shutil
 import subprocess
 import sys
+
+from release_metadata import APP_NAME, SUPPORTED_ARCHITECTURE
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -13,23 +16,39 @@ PACKAGING_ROOT = PROJECT_ROOT / "packaging" / "macos"
 SPEC_PATH = PACKAGING_ROOT / "loci_flow.spec"
 BUILD_PATH = PACKAGING_ROOT / "build"
 DIST_PATH = PACKAGING_ROOT / "dist"
-APP_PATH = DIST_PATH / "Loci Flow.app"
+APP_PATH = DIST_PATH / f"{APP_NAME}.app"
 
 
 def main() -> int:
     if sys.platform != "darwin":
         print("The unsigned Loci Flow application can only be built on macOS.")
         return 2
-    if importlib.util.find_spec("PyInstaller") is None:
+    if (
+        importlib.util.find_spec("PyInstaller") is None
+        or importlib.util.find_spec("PIL") is None
+    ):
         print('Install the build extra with: uv sync --extra macos-build')
         return 2
     if not SPEC_PATH.is_file():
         print("The checked-in Loci Flow packaging specification is unavailable.")
         return 1
+    if platform.machine() != SUPPORTED_ARCHITECTURE:
+        print(
+            "The build host does not match the declared Loci Flow architecture."
+        )
+        return 2
 
     for output in (BUILD_PATH, DIST_PATH):
         if output.exists():
             shutil.rmtree(output)
+
+    from generate_icon import IconGenerationError, generate_icon
+
+    try:
+        generate_icon()
+    except IconGenerationError:
+        print("The Loci Flow application icon could not be generated.")
+        return 1
 
     environment = os.environ.copy()
     environment["PYTHONHASHSEED"] = "0"
