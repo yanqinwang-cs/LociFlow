@@ -151,6 +151,7 @@ class OrganizationIdentityExecutionService:
         ) = None,
         operation_id_factory: Callable[[], str] | None = None,
         clock: Callable[[], datetime] | None = None,
+        refresh_recovery_status: Callable[[], object] | None = None,
     ) -> None:
         root = operation_repository.root
         volume = volume_admission or OrganizationVolumeAdmission(root)
@@ -172,6 +173,7 @@ class OrganizationIdentityExecutionService:
                 now=self._clock,
             ).publish
         )
+        self._refresh_recovery_status = refresh_recovery_status
 
     def execute(
         self,
@@ -246,59 +248,77 @@ class OrganizationIdentityExecutionService:
             raise OrganizationIdentityExecutionError(
                 "durable_intent_failed"
             ) from error
+        self._refresh_status()
 
         try:
-            consumed = self._consume_authorization(
-                authorization.authorization_id
-            )
-        except Exception:
-            consumed = False
-        if consumed is not True:
-            return self._interrupted_result(intent.record)
-
-        recorder = DurableOrganizationMovementRecorder(
-            intent.record,
-            self.root,
-            self.operation_repository,
-            clock=self._timestamp,
-        )
-        try:
-            self._executor(strict_plan, self.root, recorder=recorder)
-        except StrictExecutorInterrupted:
-            self._try_publish_interrupted(intent.record)
-            raise
-        except StrictExecutorError as error:
-            if error.recovery_required or error.filesystem_changed:
+            try:
+                consumed = self._consume_authorization(
+                    authorization.authorization_id
+                )
+            except Exception:
+                consumed = False
+            if consumed is not True:
                 return self._interrupted_result(intent.record)
-            return self._failed_result(intent.record)
-        except MovementRecordingError as error:
-            return self._interrupted_result(
+
+            recorder = DurableOrganizationMovementRecorder(
                 intent.record,
-                operation_log=error.operation_log,
+                self.root,
+                self.operation_repository,
+                clock=self._timestamp,
             )
-        except (KeyboardInterrupt, SystemExit):
-            raise
-        except Exception:
-            return self._interrupted_result(intent.record)
+            try:
+                self._executor(strict_plan, self.root, recorder=recorder)
+            except StrictExecutorInterrupted:
+                self._try_publish_interrupted(intent.record)
+                raise
+            except StrictExecutorError as error:
+                if error.recovery_required or error.filesystem_changed:
+                    return self._interrupted_result(intent.record)
+                return self._failed_result(intent.record)
+            except MovementRecordingError as error:
+                return self._interrupted_result(
+                    intent.record,
+                    operation_log=error.operation_log,
+                )
+            except (KeyboardInterrupt, SystemExit):
+                raise
+            except Exception:
+                return self._interrupted_result(intent.record)
+            finally:
+                self._refresh_status()
 
-        try:
-            executed = self.operation_repository.load(intent.record.operation_id)
-        except Exception:
-            return self._interrupted_result(intent.record)
-        if executed.status != STATUS_MOVED_UNVERIFIED:
-            return _result(executed)
+            try:
+                executed = self.operation_repository.load(
+                    intent.record.operation_id
+                )
+            except Exception:
+                return self._interrupted_result(intent.record)
+            if executed.status != STATUS_MOVED_UNVERIFIED:
+                return _result(executed)
 
+            try:
+                self._publish_verification(executed.operation_id)
+            except (KeyboardInterrupt, SystemExit):
+                raise
+            except Exception:
+                return _result(executed)
+            finally:
+                self._refresh_status()
+            try:
+                published = self.operation_repository.load(executed.operation_id)
+            except Exception:
+                return _result(executed)
+            return _result(published)
+        finally:
+            self._refresh_status()
+
+    def _refresh_status(self) -> None:
+        if self._refresh_recovery_status is None:
+            return
         try:
-            self._publish_verification(executed.operation_id)
-        except (KeyboardInterrupt, SystemExit):
-            raise
+            self._refresh_recovery_status()
         except Exception:
-            return _result(executed)
-        try:
-            published = self.operation_repository.load(executed.operation_id)
-        except Exception:
-            return _result(executed)
-        return _result(published)
+            pass
 
     def _validate_authoritative_inputs(
         self,

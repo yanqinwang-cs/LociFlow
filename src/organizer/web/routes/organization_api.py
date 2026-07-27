@@ -131,6 +131,7 @@ _MOVEMENT_ERRORS = {
         409,
         SAFE_UNSAFE_VOLUME_PATH_MESSAGE,
     ),
+    "operation_record_failed": (409, "The file move needs attention."),
 }
 
 
@@ -409,6 +410,12 @@ def create_organization_api_router() -> APIRouter:
                 operation_repository=request.app.state.organization_operations,
                 filesystem_operation_admission=(
                     request.app.state.filesystem_operation_admission
+                ),
+                identity_execution_service=(
+                    request.app.state.organization_identity_execution
+                ),
+                recovery_status=(
+                    request.app.state.current_recovery_admission_status
                 ),
             )
         except FilesystemOperationBlockedError as error:

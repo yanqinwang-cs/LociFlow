@@ -559,22 +559,20 @@ class OrganizationIdentityExecutionTests(unittest.TestCase):
                 "moved_unverified",
             )
 
-    def test_new_owner_remains_disconnected_and_uses_no_legacy_execution_or_verifier(
+    def test_production_service_connects_owner_without_legacy_execution(
         self,
     ) -> None:
         source_root = Path(__file__).parents[1] / "src" / "organizer"
-        production = (
+        connected = (
             source_root / "application" / "organization_movement_service.py",
-            source_root / "application" / "undo_service.py",
-            source_root / "application" / "activity_service.py",
             source_root / "web" / "app.py",
         )
-        for path in production:
+        for path in connected:
             source = path.read_text(encoding="utf-8")
-            self.assertNotIn("organization_identity_execution", source)
+            self.assertIn("organization_identity_execution", source)
         for path in (source_root / "web" / "routes").glob("*.py"):
             self.assertNotIn(
-                "organization_identity_execution",
+                "from organizer.application.organization_identity_execution",
                 path.read_text(encoding="utf-8"),
             )
 

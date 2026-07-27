@@ -68,22 +68,27 @@ class WebRecoveryApiTests(unittest.IsolatedAsyncioTestCase):
             set(first.json()), {"state", "title", "message", "affected_items"}
         )
 
-    async def test_home_uses_stable_startup_flag_and_never_runs_detail_inspection(self) -> None:
+    async def test_home_uses_current_coarse_status_without_detail_inspection(self) -> None:
         service = mock.Mock()
         service.current.return_value = BrowserRecoveryProjection(
             "clear", "Clear", "Nothing to review.", 0
         )
         self.app.state.recovery_projection_service = service
-        self.app.state.recovery_admission_snapshot = SimpleNamespace(is_blocked=True)
-        async with _client(self.app) as client:
-            await client.get(f"/launch/{self.token}", follow_redirects=False)
-            before = await client.get("/loci-flow")
-            detail = await client.get("/api/recovery/current")
-            after = await client.get("/loci-flow")
+        with mock.patch.object(
+            self.app.state.current_recovery_admission_status,
+            "snapshot",
+            return_value=SimpleNamespace(is_blocked=True),
+        ) as snapshot:
+            async with _client(self.app) as client:
+                await client.get(f"/launch/{self.token}", follow_redirects=False)
+                before = await client.get("/loci-flow")
+                detail = await client.get("/api/recovery/current")
+                after = await client.get("/loci-flow")
 
         self.assertIn('<meta name="recovery-attention" content="true">', before.text)
         self.assertEqual(detail.json()["state"], "clear")
         self.assertIn('<meta name="recovery-attention" content="true">', after.text)
+        self.assertEqual(snapshot.call_count, 2)
         self.assertEqual(service.current.call_count, 1)
 
     async def test_unexpected_service_error_is_bounded_json(self) -> None:

@@ -7,11 +7,12 @@ from organizer.application.execution_coordinator import (
     OrganizationExecutionCoordinator,
     approved_plan_identity,
 )
+from organizer.application.current_recovery_admission_status import (
+    CurrentRecoveryAdmissionStatus,
+)
 from organizer.application.execution_service import (
     CONFIRM_MOVE_APPROVED_FILES,
-    OrganizationExecutionError,
     _issue_movement_authorization,
-    move_approved_organization,
 )
 from organizer.application.filesystem_operation_admission import (
     FilesystemOperationAdmission,
@@ -24,6 +25,11 @@ from organizer.application.organization_decision_models import (
 from organizer.application.organization_movement_models import (
     OrganizationExecutionState,
     OrganizationMovementPreview,
+)
+from organizer.application.organization_identity_execution import (
+    IdentityOrganizationExecutionResult,
+    OrganizationIdentityExecutionError,
+    OrganizationIdentityExecutionService,
 )
 from organizer.application.organization_operation_models import (
     MOVE_FAILED,
@@ -203,8 +209,12 @@ def execute_organization_movement(
     operation_repository: OrganizationOperationRepository,
     filesystem_operation_admission: FilesystemOperationAdmission | None = None,
     volume_admission: OrganizationVolumeAdmission | None = None,
+    identity_execution_service: (
+        OrganizationIdentityExecutionService | None
+    ) = None,
+    recovery_status: CurrentRecoveryAdmissionStatus | None = None,
 ) -> OrganizationExecutionState:
-    """Revalidate server state and delegate movement to the durable D1 owner."""
+    """Revalidate server state and execute the identity-safe v2 movement path."""
 
     _validate_authorization_id(confirmation_token)
     _validate_current_approval(
@@ -228,40 +238,78 @@ def execute_organization_movement(
         or authorization.approved_plan_identity != approved_plan_identity(approved_plan)
     ):
         raise OrganizationMovementError("invalid_confirmation_token")
+    if not coordinator.try_acquire(RuntimeOperationKind.ORGANIZATION_MOVEMENT):
+        raise OrganizationMovementError("movement_or_undo_in_progress")
     try:
-        outcome = move_approved_organization(
-            approved_plan=approved_plan,
-            current_scan_generation=current_scan_generation,
-            root=operation_repository.root,
-            authorization=authorization,
-            coordinator=coordinator,
-            operation_repository=operation_repository,
-            confirmation=confirmation,
-            filesystem_operation_admission=filesystem_operation_admission,
-            volume_admission=volume_admission,
-        )
-    except OrganizationExecutionError as error:
-        if error.code == "movement_already_started":
-            try:
-                existing = operation_repository.find_for_plan(
-                    approved_plan.scan_generation,
-                    approved_plan.decision_revision,
-                )
-            except ValueError:
-                existing = None
-            code = (
-                "movement_already_started"
-                if existing is not None
+        try:
+            existing = operation_repository.find_for_plan(
+                approved_plan.scan_generation,
+                approved_plan.decision_revision,
+            )
+            blocking = operation_repository.blocking_record()
+        except ValueError as error:
+            raise OrganizationMovementError(
+                "movement_recovery_required"
+            ) from error
+        if existing is not None:
+            if existing.authorization_id != authorization.authorization_id:
+                raise OrganizationMovementError("movement_already_started")
+            if existing.status in {
+                "verified",
+                "partial_movement",
+                "movement_failed",
+                "verification_failed",
+            }:
+                return _record_state(existing)
+            raise OrganizationMovementError(
+                "movement_recovery_required"
+                if existing.status == STATUS_INTERRUPTED
+                else "movement_already_started"
+            )
+        if blocking is not None:
+            raise OrganizationMovementError(
+                "movement_recovery_required"
+                if blocking.status == STATUS_INTERRUPTED
                 else "movement_or_undo_in_progress"
             )
-            raise OrganizationMovementError(code) from error
-        mapping = {
-            "confirmation_required": "invalid_confirmation",
-            "approved_plan_not_found": "approved_plan_not_found",
-            "approved_plan_stale": "approved_plan_stale",
-        }
-        raise OrganizationMovementError(mapping.get(error.code, error.code)) from error
-    return _outcome_state(outcome)
+        admission = filesystem_operation_admission or FilesystemOperationAdmission(
+            FilesystemOperationInspector(operation_repository.root)
+        )
+        if admission.root != operation_repository.root:
+            raise OrganizationMovementError("approved_plan_stale")
+        admission.inspect_and_require_clear()
+        service = identity_execution_service or OrganizationIdentityExecutionService(
+            operation_repository,
+            consume_authorization=coordinator.consume,
+            volume_admission=volume_admission,
+            refresh_recovery_status=(
+                recovery_status.refresh if recovery_status is not None else None
+            ),
+        )
+        try:
+            result = service.execute(
+                approved_plan=approved_plan,
+                authorization=authorization,
+            )
+        except OrganizationIdentityExecutionError as error:
+            coordinator.invalidate(authorization.authorization_id)
+            mapping = {
+                "identity_capture_failed": "source_changed",
+                "strict_plan_invalid": "approved_plan_stale",
+                "invalid_intent": "approved_plan_stale",
+                "durable_intent_failed": "operation_record_failed",
+            }
+            raise OrganizationMovementError(
+                mapping.get(error.code, error.code)
+            ) from error
+        return _identity_result_state(result)
+    finally:
+        if recovery_status is not None:
+            try:
+                recovery_status.refresh()
+            except Exception:
+                pass
+        coordinator.release()
 
 
 def _validate_current_approval(
@@ -322,6 +370,22 @@ def _outcome_state(outcome: OrganizationOperationOutcome) -> OrganizationExecuti
         verification_status=outcome.verification_status,
         started_at=outcome.started_at,
         completed_at=outcome.completed_at,
+    )
+
+
+def _identity_result_state(
+    result: IdentityOrganizationExecutionResult,
+) -> OrganizationExecutionState:
+    return OrganizationExecutionState(
+        status=result.state.value,
+        operation_id=result.operation_id,
+        files_expected=result.files_expected,
+        files_moved=result.files_moved,
+        files_failed=result.files_failed,
+        files_unattempted=result.files_unattempted,
+        verification_status=result.verification_status,
+        started_at=result.started_at,
+        completed_at=result.completed_at,
     )
 
 

@@ -14,7 +14,6 @@ from organizer.application.execution_coordinator import (
     OrganizationExecutionCoordinator,
     approved_plan_identity,
 )
-from organizer.application.execution_service import move_approved_organization
 from organizer.application.filesystem_operation_admission import (
     SAFE_RECOVERY_MESSAGE,
     FilesystemOperationBlockedError,
@@ -26,6 +25,10 @@ from organizer.application.organization_movement_service import (
     preview_organization_movement,
     project_organization_execution,
 )
+from organizer.application.organization_identity_execution import (
+    OrganizationIdentityExecutionService,
+)
+from organizer.executor_identity import StrictExecutorError
 from organizer.application.organization_operation_repository import (
     OrganizationOperationRepository,
 )
@@ -353,19 +356,31 @@ class OrganizationMovementServiceTests(unittest.TestCase):
             repository = OrganizationOperationRepository(root)
             token = _preview(plan, coordinator, repository).confirmation_token
 
-            with mock.patch(
-                "organizer.application.organization_movement_service.move_approved_organization",
-                wraps=move_approved_organization,
+            service = OrganizationIdentityExecutionService(
+                repository,
+                consume_authorization=coordinator.consume,
+            )
+            with mock.patch.object(
+                service,
+                "execute",
+                wraps=service.execute,
             ) as owner:
-                result = _execute(plan, coordinator, repository, token)
+                result = _execute(
+                    plan,
+                    coordinator,
+                    repository,
+                    token,
+                    identity_execution_service=service,
+                )
                 replay = _execute(
                     plan,
                     coordinator,
                     OrganizationOperationRepository(root),
                     token,
+                    identity_execution_service=service,
                 )
 
-            self.assertEqual(owner.call_count, 2)
+            self.assertEqual(owner.call_count, 1)
             self.assertEqual(result.status, "verified")
             self.assertEqual(replay, result)
             self.assertEqual(len(repository.list_records()), 1)
@@ -422,18 +437,34 @@ class OrganizationMovementServiceTests(unittest.TestCase):
             repository = OrganizationOperationRepository(root)
             token = _preview(plan, coordinator, repository).confirmation_token
 
-            with mock.patch(
-                "organizer.executor.shutil.move",
-                side_effect=OSError("injected internal failure"),
-            ) as movement:
-                result = _execute(plan, coordinator, repository, token)
-                replay = _execute(plan, coordinator, repository, token)
+            movement = mock.Mock(
+                side_effect=StrictExecutorError("source_identity_changed")
+            )
+            service = OrganizationIdentityExecutionService(
+                repository,
+                consume_authorization=coordinator.consume,
+                executor=movement,
+            )
+            result = _execute(
+                plan,
+                coordinator,
+                repository,
+                token,
+                identity_execution_service=service,
+            )
+            replay = _execute(
+                plan,
+                coordinator,
+                repository,
+                token,
+                identity_execution_service=service,
+            )
 
             self.assertEqual(movement.call_count, 1)
             self.assertEqual(result.status, "movement_failed")
             self.assertEqual(replay, result)
-            self.assertEqual(result.files_failed, 1)
-            self.assertEqual(result.files_unattempted, 1)
+            self.assertEqual(result.files_failed, 0)
+            self.assertEqual(result.files_unattempted, 2)
             self.assertTrue((root / "a.txt").is_file())
             self.assertTrue((root / "b.txt").is_file())
 
@@ -497,6 +528,7 @@ def _execute(
     browser_session_id="browser-one",
     confirmation="MOVE APPROVED FILES",
     filesystem_operation_admission=None,
+    identity_execution_service=None,
 ):
     return execute_organization_movement(
         approved_plan=plan,
@@ -508,6 +540,7 @@ def _execute(
         coordinator=coordinator,
         operation_repository=repository,
         filesystem_operation_admission=filesystem_operation_admission,
+        identity_execution_service=identity_execution_service,
     )
 
 

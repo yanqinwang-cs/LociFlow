@@ -50,6 +50,7 @@ from organizer.application.organization_operation_models import (
     MOVE_PENDING,
     MOVE_UNATTEMPTED,
     ORGANIZATION_OPERATION_SCHEMA_VERSION,
+    ORGANIZATION_OPERATION_SCHEMA_VERSION_V2,
     STATUS_INTERRUPTED,
     STATUS_MOVED_UNVERIFIED,
     STATUS_MOVEMENT_FAILED,
@@ -60,6 +61,11 @@ from organizer.application.organization_operation_models import (
     STATUS_VERIFIED,
     VERIFICATION_PASSED,
     OrganizationOperationRecord,
+)
+from organizer.application.organization_undo_identity_eligibility import (
+    IdentityUndoEligibilityReason,
+    IdentityUndoEligibilityState,
+    OrganizationUndoIdentityEligibilityInspector,
 )
 from organizer.application.organization_operation_repository import (
     OrganizationOperationRepository,
@@ -153,6 +159,25 @@ def calculate_undo_eligibility(
     candidate = meaningful[-1]
     if requested_operation_id is not None and requested_operation_id != candidate.operation_id:
         return _ineligible(requested_operation_id, "operation_superseded")
+    if candidate.schema_version == ORGANIZATION_OPERATION_SCHEMA_VERSION_V2:
+        identity = OrganizationUndoIdentityEligibilityInspector(
+            operation_repository,
+            undo_repository,
+        ).inspect(candidate.operation_id)
+        if identity.state is IdentityUndoEligibilityState.ELIGIBLE:
+            return UndoEligibility(
+                operation_id=candidate.operation_id,
+                undoable=True,
+                error_code=None,
+                files_to_restore=len(identity.captures),
+                legacy_log_path=None,
+            )
+        return _ineligible(
+            candidate.operation_id,
+            _identity_undo_error(identity.reason, undo_repository, candidate),
+        )
+    if candidate.schema_version != ORGANIZATION_OPERATION_SCHEMA_VERSION:
+        return _ineligible(candidate.operation_id, "operation_not_undoable")
     if not _is_complete_verified(candidate):
         return _ineligible(candidate.operation_id, "operation_not_undoable")
     linked = undo_repository.linked_records(candidate.operation_id)
@@ -174,6 +199,36 @@ def calculate_undo_eligibility(
         files_to_restore=len(candidate.expected_moves),
         legacy_log_path=str(log_path),
     )
+
+
+def _identity_undo_error(
+    reason: IdentityUndoEligibilityReason | None,
+    undo_repository: OrganizationUndoRepository,
+    candidate: OrganizationOperationRecord,
+) -> str:
+    if reason is IdentityUndoEligibilityReason.PARENT_SUPERSEDED:
+        return "operation_superseded"
+    if reason is IdentityUndoEligibilityReason.EXISTING_UNDO:
+        try:
+            completed = any(
+                record.status == UNDO_RESTORED
+                for record in undo_repository.linked_records(
+                    candidate.operation_id
+                )
+            )
+        except ValueError:
+            completed = False
+        return "undo_already_completed" if completed else "undo_already_started"
+    mapping = {
+        IdentityUndoEligibilityReason.RESTORE_TARGET_OCCUPIED: (
+            "undo_destination_occupied"
+        ),
+        IdentityUndoEligibilityReason.SOURCE_MISSING: "undo_source_missing",
+        IdentityUndoEligibilityReason.CONTENT_CHANGED: "undo_source_changed",
+        IdentityUndoEligibilityReason.SOURCE_UNSAFE: "unsafe_undo_path",
+        IdentityUndoEligibilityReason.UNSAFE_RESTORE_PATH: "unsafe_undo_path",
+    }
+    return mapping.get(reason, "operation_not_undoable")
 
 
 class ActivityEligibilityError(ValueError):

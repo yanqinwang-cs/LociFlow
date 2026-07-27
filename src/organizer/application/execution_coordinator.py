@@ -11,6 +11,7 @@ from organizer.application.organization_decision_models import ApprovedOrganizat
 from organizer.application.organization_operation_models import (
     AUTHORIZATION_AVAILABLE,
     AUTHORIZATION_CONSUMED,
+    AUTHORIZATION_INVALIDATED,
     MovementAuthorization,
 )
 from organizer.application.organization_undo_models import (
@@ -155,6 +156,17 @@ class OrganizationExecutionCoordinator:
                 current,
                 status=AUTHORIZATION_CONSUMED,
                 consumed_at=consumed_at or _utc_timestamp(),
+            )
+            return True
+
+    def invalidate(self, authorization_id: str) -> bool:
+        with self._authorization_lock:
+            current = self._authorizations.get(authorization_id)
+            if current is None or current.status != AUTHORIZATION_AVAILABLE:
+                return False
+            self._authorizations[authorization_id] = replace(
+                current,
+                status=AUTHORIZATION_INVALIDATED,
             )
             return True
 

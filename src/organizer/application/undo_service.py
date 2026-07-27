@@ -7,13 +7,20 @@ from pathlib import Path
 import uuid
 
 from organizer.application.activity_service import calculate_undo_eligibility
+from organizer.application.current_recovery_admission_status import (
+    CurrentRecoveryAdmissionStatus,
+)
 from organizer.application.execution_coordinator import OrganizationExecutionCoordinator
 from organizer.application.filesystem_operation_admission import (
     FilesystemOperationAdmission,
     FilesystemOperationInspector,
 )
 from organizer.application.runtime_lifecycle import RuntimeOperationKind
-from organizer.application.organization_operation_models import OrganizationOperationRecord
+from organizer.application.organization_operation_models import (
+    ORGANIZATION_OPERATION_SCHEMA_VERSION,
+    ORGANIZATION_OPERATION_SCHEMA_VERSION_V2,
+    OrganizationOperationRecord,
+)
 from organizer.application.organization_operation_repository import OrganizationOperationRepository
 from organizer.application.organization_undo_models import (
     UNDO_AUTHORIZATION_AVAILABLE,
@@ -40,6 +47,18 @@ from organizer.application.organization_undo_models import (
     UndoVerificationResult,
 )
 from organizer.application.organization_undo_repository import OrganizationUndoRepository
+from organizer.application.organization_undo_identity_orchestration import (
+    IdentityUndoConfirmationState,
+    IdentityUndoPreviewState,
+    OrganizationIdentityUndoOrchestrationError,
+    OrganizationIdentityUndoOrchestrationService,
+)
+from organizer.application.organization_undo_identity_authorization import (
+    V2UndoAuthorizationError,
+)
+from organizer.application.organization_undo_identity_eligibility import (
+    IdentityUndoEligibilityReason,
+)
 from organizer.executor import UndoRecordingError, undo_operation_log
 from organizer.models import MoveResult, OperationLog
 from organizer.organization_verify import (
@@ -66,6 +85,9 @@ def preview_organization_undo(
     operation_repository: OrganizationOperationRepository,
     undo_repository: OrganizationUndoRepository,
     filesystem_operation_admission: FilesystemOperationAdmission | None = None,
+    identity_orchestration_service: (
+        OrganizationIdentityUndoOrchestrationService | None
+    ) = None,
 ) -> UndoPreview:
     with coordinator.runtime_lifecycle.begin_operation(
         RuntimeOperationKind.STATE_MUTATION
@@ -73,7 +95,37 @@ def preview_organization_undo(
         if not coordinator.try_acquire():
             raise OrganizationUndoError("movement_or_undo_in_progress")
         try:
-            _load_operation(operation_id, operation_repository)
+            record = _load_operation(operation_id, operation_repository)
+            if (
+                record.schema_version
+                == ORGANIZATION_OPERATION_SCHEMA_VERSION_V2
+            ):
+                if identity_orchestration_service is None:
+                    raise OrganizationUndoError("operation_not_undoable")
+                try:
+                    preview = identity_orchestration_service.preview(
+                        parent_operation_id=operation_id,
+                        browser_session_id=browser_session_id,
+                    )
+                except V2UndoAuthorizationError as error:
+                    raise OrganizationUndoError(
+                        "operation_not_undoable"
+                    ) from error
+                if (
+                    preview.state is not IdentityUndoPreviewState.READY
+                    or preview.authorization_id is None
+                ):
+                    raise OrganizationUndoError(
+                        _identity_preview_error(preview.reason)
+                    )
+                return UndoPreview(
+                    operation_id=operation_id,
+                    files_to_restore=preview.item_count,
+                    confirmation_required=CONFIRM_UNDO_FILE_MOVE,
+                    confirmation_token=preview.authorization_id,
+                )
+            if record.schema_version != ORGANIZATION_OPERATION_SCHEMA_VERSION:
+                raise OrganizationUndoError("operation_not_undoable")
             eligibility = calculate_undo_eligibility(
                 operation_repository=operation_repository,
                 undo_repository=undo_repository,
@@ -119,11 +171,50 @@ def undo_organization_operation(
     operation_repository: OrganizationOperationRepository,
     undo_repository: OrganizationUndoRepository,
     filesystem_operation_admission: FilesystemOperationAdmission | None = None,
+    identity_orchestration_service: (
+        OrganizationIdentityUndoOrchestrationService | None
+    ) = None,
+    recovery_status: CurrentRecoveryAdmissionStatus | None = None,
 ) -> OrganizationUndoOutcome:
     if not coordinator.try_acquire(RuntimeOperationKind.ACTIVITY_UNDO):
         raise OrganizationUndoError("movement_or_undo_in_progress")
     try:
         record = _load_operation(operation_id, operation_repository)
+        if record.schema_version == ORGANIZATION_OPERATION_SCHEMA_VERSION_V2:
+            if identity_orchestration_service is None:
+                raise OrganizationUndoError("operation_not_undoable")
+            try:
+                identity_result = identity_orchestration_service.confirm(
+                    parent_operation_id=operation_id,
+                    authorization_id=confirmation_token,
+                    browser_session_id=browser_session_id,
+                    confirmation=confirmation,
+                )
+            except OrganizationIdentityUndoOrchestrationError as error:
+                mapping = {
+                    "invalid_confirmation": "operation_not_undoable",
+                    "authorization_rejected": "operation_not_undoable",
+                    "durable_intent_failed": "undo_failed",
+                    "recovery_required": "undo_failed",
+                }
+                raise OrganizationUndoError(
+                    mapping.get(error.code, "operation_not_undoable")
+                ) from error
+            if identity_result.state in {
+                IdentityUndoConfirmationState.STALE,
+                IdentityUndoConfirmationState.EXPIRED,
+            }:
+                raise OrganizationUndoError("operation_not_undoable")
+            if identity_result.undo_id is None:
+                raise OrganizationUndoError("undo_failed")
+            try:
+                return _safe_outcome(
+                    undo_repository.load(identity_result.undo_id)
+                )
+            except ValueError as error:
+                raise OrganizationUndoError("undo_failed") from error
+        if record.schema_version != ORGANIZATION_OPERATION_SCHEMA_VERSION:
+            raise OrganizationUndoError("operation_not_undoable")
         authorization = coordinator.undo_authorization_snapshot(confirmation_token)
         if authorization is None:
             raise OrganizationUndoError("operation_not_undoable")
@@ -231,6 +322,11 @@ def undo_organization_operation(
         )
         return _safe_outcome(verified)
     finally:
+        if recovery_status is not None:
+            try:
+                recovery_status.refresh()
+            except Exception:
+                pass
         coordinator.release()
 
 
@@ -266,6 +362,23 @@ def inspect_incomplete_organization_undo(
         likely_not_restored=likely_not_restored,
         recovery_required=recovery_required,
     )
+
+
+def _identity_preview_error(
+    reason: IdentityUndoEligibilityReason | None,
+) -> str:
+    mapping = {
+        IdentityUndoEligibilityReason.RESTORE_TARGET_OCCUPIED: (
+            "undo_destination_occupied"
+        ),
+        IdentityUndoEligibilityReason.SOURCE_MISSING: "undo_source_missing",
+        IdentityUndoEligibilityReason.CONTENT_CHANGED: "undo_source_changed",
+        IdentityUndoEligibilityReason.SOURCE_UNSAFE: "unsafe_undo_path",
+        IdentityUndoEligibilityReason.UNSAFE_RESTORE_PATH: "unsafe_undo_path",
+        IdentityUndoEligibilityReason.PARENT_SUPERSEDED: "operation_superseded",
+        IdentityUndoEligibilityReason.EXISTING_UNDO: "undo_already_started",
+    }
+    return mapping.get(reason, "operation_not_undoable")
 
 
 class _DurableUndoRecorder:

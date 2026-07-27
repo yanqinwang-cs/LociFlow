@@ -25,6 +25,9 @@ from organizer.web.review_explorer import ReviewExplorerStore
 from organizer.web.organization_decision_store import OrganizationDecisionStore
 from organizer.web.scan_jobs import ScanJobController
 from organizer.application.execution_coordinator import OrganizationExecutionCoordinator
+from organizer.application.current_recovery_admission_status import (
+    CurrentRecoveryAdmissionStatus,
+)
 from organizer.application.filesystem_operation_admission import (
     FilesystemOperationAdmission,
     FilesystemOperationInspector,
@@ -44,6 +47,15 @@ from organizer.application.duplicate_bin_restore_repository import (
 from organizer.web.routes.duplicate_bin_api import create_duplicate_bin_api_router
 from organizer.application.organization_operation_repository import (
     OrganizationOperationRepository,
+)
+from organizer.application.organization_identity_execution import (
+    OrganizationIdentityExecutionService,
+)
+from organizer.application.organization_undo_identity_authorization import (
+    V2UndoAuthorizationStore,
+)
+from organizer.application.organization_undo_identity_orchestration import (
+    OrganizationIdentityUndoOrchestrationService,
 )
 from organizer.application.organization_undo_repository import (
     OrganizationUndoRepository,
@@ -124,14 +136,43 @@ def create_app(config: WebAppConfig) -> FastAPI:
         duplicate_bin_operations=app.state.duplicate_bin_operations,
         duplicate_bin_restores=app.state.duplicate_bin_restores,
     )
+    app.state.current_recovery_admission_status = (
+        CurrentRecoveryAdmissionStatus(
+            app.state.filesystem_operation_inspector
+        )
+    )
     app.state.recovery_admission_snapshot = (
-        app.state.filesystem_operation_inspector.inspect()
+        app.state.current_recovery_admission_status.snapshot()
     )
     app.state.recovery_projection_service = RecoveryProjectionService(
         RecoveryEvidenceInspector(app.state.filesystem_operation_inspector)
     )
     app.state.filesystem_operation_admission = FilesystemOperationAdmission(
         app.state.filesystem_operation_inspector
+    )
+    app.state.organization_identity_execution = (
+        OrganizationIdentityExecutionService(
+            app.state.organization_operations,
+            consume_authorization=app.state.organization_execution.consume,
+            refresh_recovery_status=(
+                app.state.current_recovery_admission_status.refresh
+            ),
+        )
+    )
+    app.state.organization_identity_undo_authorizations = (
+        V2UndoAuthorizationStore(
+            app.state.organization_operations.configured_root_identity
+        )
+    )
+    app.state.organization_identity_undo = (
+        OrganizationIdentityUndoOrchestrationService(
+            app.state.organization_operations,
+            app.state.organization_undos,
+            app.state.organization_identity_undo_authorizations,
+            refresh_recovery_status=(
+                app.state.current_recovery_admission_status.refresh
+            ),
+        )
     )
     app.state.organization_decisions = OrganizationDecisionStore(
         app.state.duplicate_bin_batches,

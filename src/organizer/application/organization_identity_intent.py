@@ -125,7 +125,11 @@ def build_v2_organization_intent(
         ):
             raise ValueError("identity capture does not match preflight evidence")
         versioned_moves.append(
-            replace(move, content_identity=capture.content_identity)
+            replace(
+                move,
+                operation="move",
+                content_identity=capture.content_identity,
+            )
         )
         executor_evidence.append(
             OrganizationMoveIdentityEvidence(

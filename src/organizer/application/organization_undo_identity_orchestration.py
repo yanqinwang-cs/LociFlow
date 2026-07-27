@@ -17,6 +17,7 @@ from organizer.application.organization_undo_identity_authorization import (
     canonical_reverse_evidence_digest,
 )
 from organizer.application.organization_undo_identity_eligibility import (
+    IdentityUndoEligibilityReason,
     IdentityUndoEligibilityState,
     OrganizationUndoIdentityEligibilityInspector,
 )
@@ -62,6 +63,7 @@ class IdentityUndoConfirmationState(str, Enum):
 class IdentityUndoPreviewResult:
     state: IdentityUndoPreviewState
     item_count: int
+    reason: IdentityUndoEligibilityReason | None = None
     confirmation_phrase: str | None = None
     authorization_id: str | None = None
     expires_at: str | None = None
@@ -121,6 +123,7 @@ class OrganizationIdentityUndoOrchestrationService:
         now: Callable[[], datetime] | None = None,
         id_source: Callable[[], str] | None = None,
         executor: Callable[..., object] | None = None,
+        refresh_recovery_status: Callable[[], object] | None = None,
     ) -> None:
         if (
             operation_repository.root != undo_repository.root
@@ -146,6 +149,7 @@ class OrganizationIdentityUndoOrchestrationService:
         self._now = now or (lambda: datetime.now(timezone.utc))
         self._id_source = id_source or (lambda: str(uuid.uuid4()))
         self._executor = executor
+        self._refresh_recovery_status = refresh_recovery_status
 
     def preview(
         self,
@@ -162,6 +166,7 @@ class OrganizationIdentityUndoOrchestrationService:
                     else IdentityUndoPreviewState.UNAVAILABLE
                 ),
                 item_count=0,
+                reason=eligibility.reason,
             )
         if eligibility.parent is None:
             return IdentityUndoPreviewResult(
@@ -180,6 +185,7 @@ class OrganizationIdentityUndoOrchestrationService:
         return IdentityUndoPreviewResult(
             state=IdentityUndoPreviewState.READY,
             item_count=len(eligibility.captures),
+            reason=None,
             confirmation_phrase=UNDO_FILE_MOVE_CONFIRMATION,
             authorization_id=authorization.authorization_id,
             expires_at=authorization.expires_at,
@@ -249,6 +255,7 @@ class OrganizationIdentityUndoOrchestrationService:
 
         def consume_after_create() -> bool:
             nonlocal consumption_failed
+            self._refresh_status()
             try:
                 consumed = self.authorization_store.consume(authorization_id)
             except Exception:
@@ -278,12 +285,17 @@ class OrganizationIdentityUndoOrchestrationService:
             raise OrganizationIdentityUndoOrchestrationError(
                 "recovery_required"
             ) from error
+        finally:
+            self._refresh_status()
         if consumption_failed:
             return self._execution_result(execution)
         if execution.state is IdentityUndoExecutionState.RESTORED_UNVERIFIED:
-            publication = self.verification_publisher.publish(
-                execution.undo_id
-            )
+            try:
+                publication = self.verification_publisher.publish(
+                    execution.undo_id
+                )
+            finally:
+                self._refresh_status()
             if (
                 publication.state
                 is IdentityUndoVerificationPublicationState.PUBLISHED_RESTORED
@@ -304,6 +316,14 @@ class OrganizationIdentityUndoOrchestrationService:
                 execution.undo_id,
             )
         return self._execution_result(execution)
+
+    def _refresh_status(self) -> None:
+        if self._refresh_recovery_status is None:
+            return
+        try:
+            self._refresh_recovery_status()
+        except Exception:
+            pass
 
     def _execution_result(
         self,

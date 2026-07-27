@@ -160,7 +160,7 @@ class WebOrganizationMovementTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn(str(self.root), response.text)
         self.assertEqual(
             self.app.state.organization_execution.authorization_snapshot(token).status,
-            "consumed",
+            "invalidated",
         )
         self.assertEqual(self.app.state.organization_operations.list_records(), ())
         self.assertTrue((self.root / "EvoSim_project_slides.pptx").is_file())
@@ -204,7 +204,8 @@ class WebOrganizationMovementTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.app.state.organization_operations.list_records(), ())
 
     async def test_preview_execute_lost_response_replay_activity_and_undo_are_durable(self) -> None:
-        real_move = shutil.move
+        strict_owner = self.app.state.organization_identity_execution
+        real_move = strict_owner._executor
         async with _client(self.app) as client:
             csrf = await _authenticate(client, self.token)
             initial = await client.get("/api/organization/current")
@@ -223,8 +224,9 @@ class WebOrganizationMovementTests(unittest.IsolatedAsyncioTestCase):
                 (self.root / "EvoSim_project_slides.pptx").read_bytes(),
                 (self.root / "EvoSim_project_slides_final.pptx").read_bytes(),
             )
-            with mock.patch(
-                "organizer.executor.shutil.move",
+            with mock.patch.object(
+                strict_owner,
+                "_executor",
                 wraps=real_move,
             ) as movement:
                 moved = await client.post(
@@ -278,16 +280,26 @@ class WebOrganizationMovementTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(preview.json()["files_to_move"], 2)
         self.assertEqual(preview.json()["confirmation"], "MOVE APPROVED FILES")
-        self.assertEqual(movement.call_count, 2)
+        self.assertEqual(movement.call_count, 1)
         operation = moved.json()["operation"]
         self.assertEqual(operation["status"], "verified")
         self.assertEqual(operation["files_moved"], 2)
         self.assertEqual(replay.json()["operation"], operation)
         self.assertEqual(len(self.app.state.organization_operations.list_records()), 1)
+        self.assertEqual(
+            self.app.state.organization_operations.load(operation["id"]).schema_version,
+            2,
+        )
         self.assertEqual(current.json()["execution"]["status"], "verified")
         self.assertEqual(current.json()["execution"]["operation_id"], operation["id"])
         self.assertTrue(activity.json()["activity"][0]["undoable"])
         self.assertEqual(undo.json()["undo"]["status"], "restored")
+        self.assertEqual(
+            self.app.state.organization_undos.load(
+                undo.json()["undo"]["undo_id"]
+            ).schema_version,
+            2,
+        )
         self.assertEqual(
             (self.root / "EvoSim_project_slides.pptx").read_bytes(),
             before_sources[0],

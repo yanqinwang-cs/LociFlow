@@ -118,6 +118,9 @@ def create_activity_api_router() -> APIRouter:
                     filesystem_operation_admission=(
                         request.app.state.filesystem_operation_admission
                     ),
+                    identity_orchestration_service=(
+                        request.app.state.organization_identity_undo
+                    ),
                 )
         except FilesystemOperationBlockedError as error:
             return _error_response(error.code, str(error), 409)
@@ -182,6 +185,12 @@ def create_activity_api_router() -> APIRouter:
                     undo_repository=request.app.state.organization_undos,
                     filesystem_operation_admission=(
                         request.app.state.filesystem_operation_admission
+                    ),
+                    identity_orchestration_service=(
+                        request.app.state.organization_identity_undo
+                    ),
+                    recovery_status=(
+                        request.app.state.current_recovery_admission_status
                     ),
                 )
                 outcome_id = outcome.undo_id

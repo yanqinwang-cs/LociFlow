@@ -308,7 +308,7 @@ class IdentityVerificationPublicationTests(unittest.TestCase):
             self.assertEqual(len(after.activity), 1)
             self.assertEqual(after.activity[0].id, before.activity[0].id)
             self.assertEqual(after.activity[0].status, STATUS_VERIFIED)
-            self.assertFalse(after.activity[0].undoable)
+            self.assertTrue(after.activity[0].undoable)
             self.assertEqual(
                 result.state,
                 IdentityVerificationPublicationState.PUBLISHED_VERIFIED,

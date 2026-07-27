@@ -173,13 +173,11 @@ class OrganizationUndoIdentityIntentTests(unittest.TestCase):
             capture.assert_not_called()
             self.assertEqual(undos.list_records(), original_records)
 
-    def test_production_services_do_not_import_v2_undo_owners(self) -> None:
+    def test_application_service_owns_v2_undo_dispatch_not_routes(self) -> None:
         repository_root = Path(__file__).resolve().parents[1]
         protected = (
-            repository_root / "src/organizer/application/undo_service.py",
-            repository_root / "src/organizer/application/activity_service.py",
-            repository_root / "src/organizer/application/execution_service.py",
-            repository_root / "src/organizer/application/organization_movement_service.py",
+            repository_root / "src/organizer/web/routes/activity_api.py",
+            repository_root / "src/organizer/web/routes/organization_api.py",
         )
         forbidden = (
             "organization_undo_identity_eligibility",
@@ -189,6 +187,10 @@ class OrganizationUndoIdentityIntentTests(unittest.TestCase):
             source = path.read_text(encoding="utf-8")
             for name in forbidden:
                 self.assertNotIn(name, source)
+        undo_service = (
+            repository_root / "src/organizer/application/undo_service.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn("OrganizationIdentityUndoOrchestrationService", undo_service)
 
 
 def _build(

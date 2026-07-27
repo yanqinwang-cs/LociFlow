@@ -360,17 +360,20 @@ class OrganizationIdentityUndoOrchestrationTests(unittest.TestCase):
             )
             executor.assert_not_called()
 
-    def test_live_v1_activity_and_routes_remain_disconnected(self) -> None:
+    def test_live_services_connect_v2_while_routes_avoid_schema_owner(self) -> None:
         repository_root = Path(__file__).resolve().parents[1]
         for relative in (
             "src/organizer/application/undo_service.py",
-            "src/organizer/application/activity_service.py",
-            "src/organizer/application/organization_movement_service.py",
             "src/organizer/web/app.py",
-            "src/organizer/web/routes/activity_api.py",
         ):
             source = (repository_root / relative).read_text(encoding="utf-8")
-            self.assertNotIn("organization_undo_identity_orchestration", source)
+            self.assertIn("organization_undo_identity_orchestration", source)
+        activity_route = (
+            repository_root / "src/organizer/web/routes/activity_api.py"
+        ).read_text(encoding="utf-8")
+        self.assertNotIn(
+            "organization_undo_identity_orchestration", activity_route
+        )
         activity = (
             repository_root / "src/organizer/application/activity_service.py"
         ).read_text(encoding="utf-8")
