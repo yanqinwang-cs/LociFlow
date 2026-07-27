@@ -6,7 +6,9 @@ from pathlib import Path
 import sys
 
 _PACKAGING_SMOKE_ARGUMENT = "--packaging-smoke-test"
+_FROZEN_WORKFLOW_ARGUMENT = "--packaging-workflow-acceptance"
 _PACKAGING_FAILURE_MESSAGE = "Loci Flow packaging check failed."
+_WORKFLOW_FAILURE_MESSAGE = "Loci Flow frozen workflow acceptance failed."
 _STARTUP_FAILURE_MESSAGE = "Loci Flow could not start safely."
 
 
@@ -18,6 +20,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         except Exception:
             print(_PACKAGING_FAILURE_MESSAGE, file=sys.stderr)
             return 1
+    if arguments == (_FROZEN_WORKFLOW_ARGUMENT,):
+        if not getattr(sys, "frozen", False):
+            print(_WORKFLOW_FAILURE_MESSAGE, file=sys.stderr)
+            return 1
+        return _frozen_workflow_acceptance()
     if not getattr(sys, "frozen", False):
         try:
             from organizer.macos_launcher.__main__ import main as native_main
@@ -104,6 +111,71 @@ def _packaging_smoke_test() -> int:
         print(_PACKAGING_FAILURE_MESSAGE, file=sys.stderr)
         return 1
     return 0
+
+
+def _frozen_workflow_acceptance() -> int:
+    diagnostic_sink = None
+    try:
+        import tempfile
+
+        from organizer.macos_launcher.application_paths import (
+            MacOSApplicationPaths,
+        )
+        from organizer.macos_launcher.frozen_acceptance import (
+            format_frozen_workflow_report,
+            run_frozen_workflow_acceptance,
+        )
+        from organizer.macos_launcher.packaged_diagnostics import (
+            PackagedDiagnosticInput,
+            create_packaged_diagnostic_sink,
+        )
+
+        with tempfile.TemporaryDirectory(
+            prefix="loci-flow-frozen-acceptance-"
+        ) as directory:
+            temporary = Path(directory).resolve()
+            selected_root = temporary / "selected-root"
+            different_root = temporary / "different-root"
+            (selected_root / "Inbox").mkdir(parents=True)
+            different_root.mkdir()
+            (selected_root / "Inbox" / "alpha.txt").write_text(
+                "alpha\n",
+                encoding="utf-8",
+            )
+            paths = MacOSApplicationPaths.for_home(
+                temporary / "application-home"
+            )
+            diagnostic_sink = create_packaged_diagnostic_sink(paths)
+            diagnostic_sink(
+                PackagedDiagnosticInput(
+                    phase="startup",
+                    code="launcher_started",
+                )
+            )
+            _verify_packaged_resources(include_runtime_identity=True)
+            report = run_frozen_workflow_acceptance(
+                selected_root=selected_root,
+                different_root=different_root,
+                application_paths=paths,
+                diagnostic_sink=diagnostic_sink,
+            )
+            print(format_frozen_workflow_report(report))
+        return 0
+    except Exception as error:
+        if diagnostic_sink is not None:
+            diagnostic_sink(
+                PackagedDiagnosticInput(
+                    phase="startup",
+                    code=(
+                        "packaged_resource_missing"
+                        if isinstance(error, _PackagedResourceError)
+                        else "unknown_launcher_failure"
+                    ),
+                    exception_class=type(error).__name__,
+                )
+            )
+        print(_WORKFLOW_FAILURE_MESSAGE, file=sys.stderr)
+        return 1
 
 
 class _PackagedResourceError(RuntimeError):

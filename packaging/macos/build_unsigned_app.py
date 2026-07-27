@@ -13,6 +13,11 @@ from release_metadata import (
     SUPPORTED_ARCHITECTURE,
     write_runtime_identity,
 )
+from validate_app_bundle import (
+    BundleValidationError,
+    format_validation_report,
+    validate_app_bundle,
+)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -47,8 +52,6 @@ def main() -> int:
         if output.exists():
             shutil.rmtree(output)
 
-    write_runtime_identity(RUNTIME_IDENTITY_PATH)
-
     from generate_icon import IconGenerationError, generate_icon
 
     try:
@@ -56,6 +59,7 @@ def main() -> int:
     except IconGenerationError:
         print("The Loci Flow application icon could not be generated.")
         return 1
+    write_runtime_identity(RUNTIME_IDENTITY_PATH)
 
     environment = os.environ.copy()
     environment["PYTHONHASHSEED"] = "0"
@@ -79,6 +83,12 @@ def main() -> int:
     if completed.returncode != 0 or not APP_PATH.is_dir():
         print("The unsigned Loci Flow application could not be built.")
         return 1
+    try:
+        validation = validate_app_bundle(APP_PATH)
+    except BundleValidationError:
+        print("The unsigned Loci Flow application did not pass validation.")
+        return 1
+    print(format_validation_report(validation))
     print(APP_PATH)
     return 0
 

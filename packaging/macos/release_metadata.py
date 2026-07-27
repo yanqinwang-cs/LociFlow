@@ -8,6 +8,7 @@ from typing import Final
 
 APP_NAME: Final = "Loci Flow"
 BUNDLE_IDENTIFIER: Final = "com.yanqinwang.lociflow"
+ICON_FILE_NAME: Final = "LociFlow.icns"
 SEMANTIC_VERSION: Final = "0.1.0-beta.1"
 BUILD_NUMBER: Final = 1
 MINIMUM_MACOS_VERSION: Final = "13.0"
@@ -23,6 +24,8 @@ _MACOS_VERSION = re.compile(r"(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)")
 def validate_release_metadata() -> None:
     if not APP_NAME:
         raise ValueError("application name must not be empty")
+    if ICON_FILE_NAME != "LociFlow.icns":
+        raise ValueError("application icon filename is invalid")
     if not re.fullmatch(
         r"[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+",
         BUNDLE_IDENTIFIER,

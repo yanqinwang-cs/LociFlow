@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from contextlib import redirect_stderr
+from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 from pathlib import Path
 import sys
@@ -81,6 +81,61 @@ class MacOSFrozenEntryTests(unittest.TestCase):
             self.assertEqual(result, 0)
             create_sink.assert_not_called()
             self.assertFalse(home.exists())
+
+    def test_workflow_acceptance_is_frozen_only(self) -> None:
+        stderr = StringIO()
+        with redirect_stderr(stderr):
+            result = frozen_main.main(["--packaging-workflow-acceptance"])
+
+        self.assertEqual(result, 1)
+        self.assertEqual(
+            stderr.getvalue().strip(),
+            "Loci Flow frozen workflow acceptance failed.",
+        )
+
+    def test_frozen_workflow_uses_disposable_paths_sink_and_preflight(
+        self,
+    ) -> None:
+        sink = mock.Mock()
+        report = object()
+        stdout = StringIO()
+        with (
+            mock.patch.object(sys, "frozen", True, create=True),
+            mock.patch(
+                "organizer.macos_launcher.packaged_diagnostics."
+                "create_packaged_diagnostic_sink",
+                return_value=sink,
+            ),
+            mock.patch.object(
+                frozen_main,
+                "_verify_packaged_resources",
+            ) as preflight,
+            mock.patch(
+                "organizer.macos_launcher.frozen_acceptance."
+                "run_frozen_workflow_acceptance",
+                return_value=report,
+            ) as run_workflow,
+            mock.patch(
+                "organizer.macos_launcher.frozen_acceptance."
+                "format_frozen_workflow_report",
+                return_value='{"acceptance":"passed"}',
+            ),
+            redirect_stdout(stdout),
+        ):
+            result = frozen_main.main(
+                ["--packaging-workflow-acceptance"]
+            )
+
+        self.assertEqual(result, 0)
+        preflight.assert_called_once_with(include_runtime_identity=True)
+        self.assertEqual(sink.call_args_list[0].args[0].code, "launcher_started")
+        run_workflow.assert_called_once()
+        call = run_workflow.call_args.kwargs
+        self.assertIs(call["diagnostic_sink"], sink)
+        self.assertNotEqual(call["selected_root"], call["different_root"])
+        self.assertFalse(call["selected_root"].exists())
+        self.assertFalse(call["application_paths"].home.exists())
+        self.assertEqual(stdout.getvalue().strip(), '{"acceptance":"passed"}')
 
     def test_frozen_launch_activates_sink_before_preflight_and_injects_it(
         self,

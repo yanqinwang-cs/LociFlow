@@ -10,7 +10,6 @@ PACKAGING_ROOT = Path(SPECPATH).resolve()
 PROJECT_ROOT = PACKAGING_ROOT.parents[1]
 SOURCE_ROOT = PROJECT_ROOT / "src"
 WEB_ROOT = SOURCE_ROOT / "organizer" / "web"
-ICON_PATH = PACKAGING_ROOT / "build" / "LociFlow.icns"
 RUNTIME_IDENTITY_PATH = PACKAGING_ROOT / "build" / "release_identity.json"
 
 sys.path.insert(0, str(PACKAGING_ROOT))
@@ -18,10 +17,12 @@ from release_metadata import (  # noqa: E402
     APP_NAME,
     BUILD_NUMBER,
     BUNDLE_IDENTIFIER,
+    ICON_FILE_NAME,
     MINIMUM_MACOS_VERSION,
     SEMANTIC_VERSION,
     SUPPORTED_ARCHITECTURE,
 )
+ICON_PATH = PACKAGING_ROOT / "build" / ICON_FILE_NAME
 
 required_resources = (
     WEB_ROOT / "templates",

@@ -67,6 +67,7 @@ class MacOSPackagingContractTests(unittest.TestCase):
     def test_release_metadata_is_centralized_valid_and_exact(self) -> None:
         metadata = _release_metadata()
         self.assertEqual(metadata.APP_NAME, "Loci Flow")
+        self.assertEqual(metadata.ICON_FILE_NAME, "LociFlow.icns")
         self.assertEqual(
             metadata.BUNDLE_IDENTIFIER,
             "com.yanqinwang.lociflow",
@@ -120,7 +121,7 @@ class MacOSPackagingContractTests(unittest.TestCase):
 
     def test_spec_uses_generated_lf_icon_not_pyinstaller_default(self) -> None:
         source = SPEC.read_text(encoding="utf-8")
-        self.assertIn('"build" / "LociFlow.icns"', source)
+        self.assertIn('"build" / ICON_FILE_NAME', source)
         self.assertIn("icon=str(ICON_PATH)", source)
         self.assertIn('"CFBundleIconFile": ICON_PATH.name', source)
         self.assertNotIn("icon=None", source)
@@ -169,6 +170,12 @@ class MacOSPackagingContractTests(unittest.TestCase):
             source.index("generate_icon()"),
             source.index('"PyInstaller"', source.index("generate_icon()")),
         )
+        self.assertLess(
+            source.index('"PyInstaller"', source.index("generate_icon()")),
+            source.index("validate_app_bundle(APP_PATH)"),
+        )
+        self.assertIn("format_validation_report(validation)", source)
+        self.assertNotIn("--packaging-smoke-test", source)
         self.assertNotIn('"--clean"', source)
         self.assertNotIn("git clean", source)
         self.assertNotIn("codesign", source)
@@ -187,6 +194,30 @@ class MacOSPackagingContractTests(unittest.TestCase):
                 check=False,
             )
             self.assertEqual(checked.returncode, 0, relative)
+
+    def test_bundle_validator_is_release_tooling_not_product_runtime(self) -> None:
+        validator = (
+            REPOSITORY_ROOT
+            / "packaging"
+            / "macos"
+            / "validate_app_bundle.py"
+        )
+        source = validator.read_text(encoding="utf-8")
+        self.assertIn('["file", "-b", str(file_path)]', source)
+        self.assertIn('["lipo", "-archs", str(file_path)]', source)
+        self.assertIn('record.architectures != _EXPECTED_ARCHITECTURES', source)
+        self.assertIn('_EXPECTED_ARCHITECTURES: Final = ("arm64",)', source)
+        self.assertNotIn("x86_64 build", source)
+        runtime_sources = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in (
+                REPOSITORY_ROOT
+                / "src"
+                / "organizer"
+                / "macos_launcher"
+            ).glob("*.py")
+        )
+        self.assertNotIn("validate_app_bundle", runtime_sources)
 
     def test_build_outputs_are_not_tracked(self) -> None:
         tracked = subprocess.run(
