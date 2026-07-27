@@ -52,23 +52,20 @@ from organizer.application.organization_operation_models import (
 from organizer.application.organization_operation_repository import (
     OrganizationOperationRepository,
 )
+from organizer.application.organization_movement_preflight import (
+    OrganizationMovementPreflightError,
+    preflight_organization_movement,
+)
+from organizer.application.organization_movement_recorder import (
+    DurableOrganizationMovementRecorder as _DurableMovementRecorder,
+)
 from organizer.executor import MovementRecordingError, apply_move_plan
-from organizer.models import MovePlanItem, MoveResult, OperationLog, ReviewedPlanItem
+from organizer.models import OperationLog
 from organizer.organization_verify import (
     OrganizationOperationVerificationItem,
     verify_organization_operation,
 )
-from organizer.review_session import (
-    CATEGORY_ORGANIZATION,
-    DECISION_APPROVED,
-    find_approved_move_conflicts,
-)
 from organizer.safety import validate_under_root
-from organizer.scanner import scan_directory
-from organizer.scope import (
-    evaluate_actionable_source_path,
-    is_actionable_destination_path,
-)
 
 
 CONFIRM_MOVE_APPROVED_FILES = "MOVE APPROVED FILES"
@@ -200,12 +197,19 @@ def move_approved_organization(
         if volume.root != resolved_root:
             raise OrganizationExecutionError("approved_plan_stale")
         try:
-            volume.inspect_and_require_allowed(approved_plan)
+            preflight = preflight_organization_movement(
+                approved_plan,
+                resolved_root,
+                volume_admission=volume,
+            )
         except VolumeAdmissionError as error:
             coordinator.consume(authorization.authorization_id)
             raise OrganizationExecutionError(error.code) from error
+        except OrganizationMovementPreflightError as error:
+            raise OrganizationExecutionError(error.code) from error
 
-        plan_items, expected_moves = _preflight(approved_plan, resolved_root)
+        plan_items = list(preflight.plan_items)
+        expected_moves = preflight.expected_moves
         now = _utc_timestamp()
         record = OrganizationOperationRecord(
             operation_id=str(uuid.uuid4()),
@@ -348,105 +352,6 @@ def inspect_incomplete_organization_operation(
     )
 
 
-class _DurableMovementRecorder:
-    def __init__(
-        self,
-        record: OrganizationOperationRecord,
-        root: Path,
-        repository: OrganizationOperationRepository,
-    ) -> None:
-        self.record = record
-        self.root = root
-        self.repository = repository
-
-    def before_batch(self, plan_items: tuple[MovePlanItem, ...]) -> None:
-        if len(plan_items) != len(self.record.expected_moves):
-            raise ValueError("approved move batch changed")
-        for plan_item, expected in zip(plan_items, self.record.expected_moves):
-            if (
-                _relative(plan_item.source, self.root) != expected.source
-                or _relative(plan_item.destination, self.root) != expected.destination
-            ):
-                raise ValueError("approved move batch changed")
-        self.record = replace(
-            self.record,
-            status=STATUS_MOVING,
-            started_at=_utc_timestamp(),
-        )
-        self.repository.save(self.record)
-
-    def before_move(self, index: int, item: MovePlanItem) -> None:
-        self._update_move(index, MOVE_ATTEMPTING)
-
-    def after_success(
-        self,
-        index: int,
-        item: MovePlanItem,
-        result: MoveResult,
-    ) -> None:
-        self._update_move(index, MOVE_MOVED)
-
-    def after_failure(
-        self,
-        index: int,
-        item: MovePlanItem,
-        result: MoveResult,
-    ) -> None:
-        self._update_move(index, MOVE_FAILED, failure_code="movement_failed")
-
-    def after_batch(self, operation_log: OperationLog) -> None:
-        moves = tuple(
-            replace(move, result_state=MOVE_UNATTEMPTED)
-            if move.result_state == MOVE_PENDING
-            else move
-            for move in self.record.expected_moves
-        )
-        moved = sum(move.result_state == MOVE_MOVED for move in moves)
-        failed = sum(move.result_state == MOVE_FAILED for move in moves)
-        unattempted = sum(move.result_state == MOVE_UNATTEMPTED for move in moves)
-        if moved == len(moves):
-            status = STATUS_MOVED_UNVERIFIED
-            completed_at = None
-        elif moved:
-            status = STATUS_PARTIAL_MOVEMENT
-            completed_at = _utc_timestamp()
-        else:
-            status = STATUS_MOVEMENT_FAILED
-            completed_at = _utc_timestamp()
-        self.record = replace(
-            self.record,
-            status=status,
-            completed_at=completed_at,
-            expected_moves=moves,
-            legacy_operation_log=_relative(operation_log.log_path, self.root),
-            failure_code=(
-                None
-                if status == STATUS_MOVED_UNVERIFIED
-                else "partial_movement"
-                if moved and (failed or unattempted)
-                else "movement_failed"
-            ),
-        )
-        self.repository.save(self.record)
-
-    def _update_move(
-        self,
-        index: int,
-        state: str,
-        *,
-        failure_code: str | None = None,
-    ) -> None:
-        moves = list(self.record.expected_moves)
-        moves[index] = replace(
-            moves[index],
-            result_state=state,
-            failure_code=failure_code,
-        )
-        updated = replace(self.record, expected_moves=tuple(moves))
-        self.repository.save(updated)
-        self.record = updated
-
-
 def _validate_approved_plan(
     approved_plan: ApprovedOrganizationPlan,
     current_scan_generation: str,
@@ -500,116 +405,6 @@ def _require_available_authorization(
         or current.status != AUTHORIZATION_AVAILABLE
     ):
         raise OrganizationExecutionError("movement_already_started")
-
-
-def _preflight(
-    approved_plan: ApprovedOrganizationPlan,
-    root: Path,
-) -> tuple[list[MovePlanItem], tuple[OrganizationExpectedMove, ...]]:
-    reviewed = approved_plan.reviewed_move_items
-    fingerprints = approved_plan.source_fingerprints
-    if len(reviewed) != len(fingerprints):
-        raise OrganizationExecutionError("approved_plan_stale")
-    if (
-        len({item.id for item in reviewed}) != len(reviewed)
-        or len({item.item_id for item in fingerprints}) != len(fingerprints)
-    ):
-        raise OrganizationExecutionError("approved_plan_stale")
-    try:
-        if find_approved_move_conflicts(list(reviewed), root):
-            raise OrganizationExecutionError("approved_plan_stale")
-        frozen_sources = {
-            validate_under_root(item.plan_item.source.resolve(strict=False), root)
-            for item in reviewed
-        }
-        frozen_destinations = {
-            validate_under_root(item.plan_item.destination.resolve(strict=False), root)
-            for item in reviewed
-        }
-    except OrganizationExecutionError:
-        raise
-    except (OSError, ValueError):
-        raise OrganizationExecutionError("approved_plan_stale") from None
-    if len(frozen_sources) != len(reviewed) or len(frozen_destinations) != len(reviewed):
-        raise OrganizationExecutionError("approved_plan_stale")
-    if frozen_sources & frozen_destinations:
-        raise OrganizationExecutionError("approved_plan_stale")
-
-    metadata = tuple(scan_directory(root))
-    plan_items: list[MovePlanItem] = []
-    expected_moves: list[OrganizationExpectedMove] = []
-    source_paths: set[Path] = set()
-    destination_paths: set[Path] = set()
-
-    for reviewed_item, fingerprint in zip(reviewed, fingerprints):
-        _validate_reviewed_item(reviewed_item)
-        plan_item = reviewed_item.plan_item
-        source = plan_item.source
-        destination = plan_item.destination
-        if source.is_symlink() or not source.exists() or not source.is_file():
-            raise OrganizationExecutionError("source_changed")
-        try:
-            resolved_source = validate_under_root(source.resolve(), root)
-            source_relative = resolved_source.relative_to(root)
-            fingerprint_path = _safe_relative_path(fingerprint.relative_path)
-            expected_source = (root / fingerprint_path).resolve(strict=False)
-            if resolved_source != expected_source:
-                raise ValueError("approved source changed")
-            stat = source.stat()
-        except (OSError, ValueError):
-            raise OrganizationExecutionError("source_changed") from None
-        if (
-            stat.st_size != fingerprint.size_bytes
-            or stat.st_mtime != fingerprint.modified_time
-        ):
-            raise OrganizationExecutionError("source_changed")
-        if not evaluate_actionable_source_path(source_relative, metadata).allowed:
-            raise OrganizationExecutionError("protected_item_selected")
-
-        try:
-            resolved_destination = validate_under_root(
-                destination.resolve(strict=False),
-                root,
-            )
-            destination_relative = resolved_destination.relative_to(root)
-            existing_parent = _nearest_existing_parent(destination.parent)
-            validate_under_root(existing_parent.resolve(), root)
-            if not existing_parent.is_dir():
-                raise ValueError("destination parent is not a directory")
-            if not is_actionable_destination_path(destination_relative, metadata):
-                raise ValueError("destination is protected")
-        except (OSError, ValueError):
-            raise OrganizationExecutionError("unsafe_destination") from None
-        if os.path.lexists(destination):
-            raise OrganizationExecutionError("overwrite_detected")
-
-        normalized_source = resolved_source.resolve(strict=False)
-        normalized_destination = resolved_destination.resolve(strict=False)
-        source_paths.add(normalized_source)
-        destination_paths.add(normalized_destination)
-        plan_items.append(plan_item)
-        expected_moves.append(
-            OrganizationExpectedMove(
-                change_id=reviewed_item.id,
-                source=source_relative.as_posix(),
-                destination=destination_relative.as_posix(),
-                source_size_bytes=fingerprint.size_bytes,
-                source_modified_time=fingerprint.modified_time,
-                reason=plan_item.reason,
-                confidence=plan_item.confidence,
-                operation=plan_item.operation,
-                overwrite_risk=plan_item.overwrite_risk,
-            )
-        )
-
-    if source_paths != frozen_sources or destination_paths != frozen_destinations:
-        raise OrganizationExecutionError("approved_plan_stale")
-    return plan_items, tuple(expected_moves)
-
-
-def _validate_reviewed_item(item: ReviewedPlanItem) -> None:
-    if item.category != CATEGORY_ORGANIZATION or item.decision != DECISION_APPROVED:
-        raise OrganizationExecutionError("approved_plan_stale")
 
 
 def _verify_and_finish(
@@ -789,24 +584,8 @@ def _frozen_moves_match(
     )
 
 
-def _safe_relative_path(path: Path) -> Path:
-    if path.is_absolute() or any(part in {"", ".", ".."} for part in path.parts):
-        raise ValueError("unsafe relative path")
-    return path
-
-
 def _relative(path: Path, root: Path) -> str:
     return validate_under_root(path.resolve(strict=False), root).relative_to(root).as_posix()
-
-
-def _nearest_existing_parent(path: Path) -> Path:
-    current = path
-    while not os.path.lexists(current):
-        parent = current.parent
-        if parent == current:
-            break
-        current = parent
-    return current
 
 
 def _utc_timestamp() -> str:

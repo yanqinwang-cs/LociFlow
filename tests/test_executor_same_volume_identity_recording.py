@@ -459,7 +459,7 @@ class SameVolumeIdentityRecordingTests(unittest.TestCase):
                 self.assertEqual(evidence.actionability, RecoveryActionability.INSPECT_ONLY)
                 self.assertEqual(evidence.case.available_action_kinds, ())
 
-    def test_only_disconnected_v2_undo_owner_imports_public_strict_api(self) -> None:
+    def test_only_disconnected_v2_owners_import_public_strict_api(self) -> None:
         source_root = Path(__file__).parents[1] / "src" / "organizer"
         callers = []
         for path in source_root.rglob("*.py"):
@@ -471,7 +471,10 @@ class SameVolumeIdentityRecordingTests(unittest.TestCase):
                 callers.append(path.relative_to(source_root))
         self.assertEqual(
             callers,
-            [Path("application/organization_undo_identity_execution.py")],
+            [
+                Path("application/organization_undo_identity_execution.py"),
+                Path("application/organization_identity_execution.py"),
+            ],
         )
 
 
