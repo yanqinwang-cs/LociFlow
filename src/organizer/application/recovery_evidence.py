@@ -38,6 +38,7 @@ from organizer.application.organization_operation_models import (
     STATUS_INTERRUPTED,
     STATUS_MOVED_UNVERIFIED,
     STATUS_MOVING,
+    STATUS_PARTIAL_MOVEMENT,
     STATUS_PREPARED,
 )
 from organizer.application.organization_undo_models import (
@@ -45,6 +46,7 @@ from organizer.application.organization_undo_models import (
     UNDO_ITEM_ATTEMPTING,
     UNDO_ITEM_PENDING,
     UNDO_ITEM_RESTORED,
+    UNDO_PARTIAL,
     UNDO_PREPARED,
     UNDO_RESTORED_UNVERIFIED,
     UNDO_UNDOING,
@@ -290,6 +292,7 @@ class RecoveryEvidenceInspector:
                     STATUS_MOVING,
                     STATUS_MOVED_UNVERIFIED,
                     STATUS_INTERRUPTED,
+                    STATUS_PARTIAL_MOVEMENT,
                 }
             ]
             + [
@@ -301,6 +304,7 @@ class RecoveryEvidenceInspector:
                     UNDO_UNDOING,
                     UNDO_RESTORED_UNVERIFIED,
                     UNDO_INTERRUPTED,
+                    UNDO_PARTIAL,
                 }
             ]
             + [
@@ -341,6 +345,28 @@ class RecoveryEvidenceInspector:
     ) -> RecoveryEvidenceCase:
         family = unresolved.family
         record = unresolved.record
+        if (
+            family is RecoveryOperationFamily.ORGANIZATION_MOVEMENT
+            and record.status == STATUS_PARTIAL_MOVEMENT
+        ):
+            return _partial_case(
+                self.inspector.organization_operations.configured_root_identity,
+                family,
+                record.operation_id,
+                record,
+                len(record.expected_moves),
+            )
+        if (
+            family is RecoveryOperationFamily.ORGANIZATION_UNDO
+            and record.status == UNDO_PARTIAL
+        ):
+            return _partial_case(
+                self.inspector.organization_operations.configured_root_identity,
+                family,
+                record.undo_id,
+                record,
+                len(record.expected_restores),
+            )
         if family is RecoveryOperationFamily.ORGANIZATION_MOVEMENT:
             items = tuple(
                 self._item(
@@ -530,6 +556,36 @@ class RecoveryEvidenceInspector:
             disposition,
             fingerprint,
         )
+
+
+def _partial_case(
+    root_identity: str,
+    family: RecoveryOperationFamily,
+    record_identity: str,
+    record: object,
+    affected_items: int,
+) -> RecoveryEvidenceCase:
+    """Project terminal-but-blocking partial history without inspecting paths."""
+
+    return RecoveryEvidenceCase(
+        family=family,
+        record_identity=record_identity,
+        durable_status=record.status,
+        affected_items=affected_items,
+        actionability=RecoveryActionability.INSPECT_ONLY,
+        available_action_kinds=(),
+        items=(),
+        digest=RecoveryEvidenceDigest(
+            _digest(
+                root_identity,
+                family,
+                record_identity,
+                record,
+                (),
+                (),
+            )
+        ),
+    )
 
 
 def _classify(

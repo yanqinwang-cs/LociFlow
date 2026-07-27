@@ -50,6 +50,7 @@ from organizer.application.organization_operation_models import (
     STATUS_INTERRUPTED,
     STATUS_MOVED_UNVERIFIED,
     STATUS_MOVING,
+    STATUS_PARTIAL_MOVEMENT,
     STATUS_PREPARED,
     VERIFICATION_NOT_RUN,
     ORGANIZATION_OPERATION_SCHEMA_VERSION_V2,
@@ -61,6 +62,7 @@ from organizer.application.organization_undo_models import (
     UNDO_ITEM_ATTEMPTING,
     UNDO_ITEM_PENDING,
     UNDO_ITEM_RESTORED,
+    UNDO_PARTIAL,
     UNDO_PREPARED,
     UNDO_RESTORED_UNVERIFIED,
     UNDO_UNDOING,
@@ -73,6 +75,12 @@ from organizer.application.recovery_evidence import (
     RecoveryEvidenceInspector,
     RecoveryEvidenceState,
     RecoveryOperationFamily,
+)
+from organizer.application.recovery_check_service import (
+    RecoveryCheckEligibilityInspector,
+)
+from organizer.application.recovery_projection_service import (
+    RecoveryProjectionService,
 )
 from organizer.web.app import create_app
 from organizer.web.config import WebAppConfig
@@ -99,6 +107,101 @@ class RecoveryEvidenceTests(unittest.TestCase):
             self.assertEqual(result.state, RecoveryEvidenceState.CLEAR)
             self.assertIsNone(result.case)
             self.assertEqual(tuple(root.iterdir()), ())
+
+    def test_partial_movement_is_generic_inspect_only_without_path_inspection(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            _ordinary_movement(
+                root,
+                STATUS_PARTIAL_MOVEMENT,
+                "complete",
+                count=2,
+            )
+
+            with mock.patch(
+                "organizer.application.recovery_evidence.hash_file",
+                side_effect=AssertionError("partial movement inspected a path"),
+            ):
+                result = _inspect(root)
+
+            self._assert_partial_inspect_only(result, affected_items=2)
+            self.assertEqual(
+                result.case.family,
+                RecoveryOperationFamily.ORGANIZATION_MOVEMENT,
+            )
+
+    def test_partial_undo_is_generic_inspect_only_without_path_inspection(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            _ordinary_undo_state(root, UNDO_PARTIAL, "complete", count=2)
+
+            with mock.patch(
+                "organizer.application.recovery_evidence.hash_file",
+                side_effect=AssertionError("partial Undo inspected a path"),
+            ):
+                result = _inspect(root)
+
+            self._assert_partial_inspect_only(result, affected_items=2)
+            self.assertEqual(
+                result.case.family,
+                RecoveryOperationFamily.ORGANIZATION_UNDO,
+            )
+
+    def test_partial_outcomes_project_read_only_copy_without_d1_check(self) -> None:
+        for family in ("movement", "undo"):
+            with self.subTest(family=family), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory).resolve()
+                if family == "movement":
+                    _ordinary_movement(
+                        root,
+                        STATUS_PARTIAL_MOVEMENT,
+                        "complete",
+                    )
+                else:
+                    _ordinary_undo_state(root, UNDO_PARTIAL, "complete")
+                inspector = FilesystemOperationInspector(root)
+                evidence = RecoveryEvidenceInspector(inspector)
+                eligibility = RecoveryCheckEligibilityInspector(
+                    evidence,
+                    inspector.organization_operations,
+                    inspector.organization_undos,
+                )
+
+                with mock.patch(
+                    "organizer.application.recovery_evidence.hash_file",
+                    side_effect=AssertionError("partial outcome inspected a path"),
+                ):
+                    projection = RecoveryProjectionService(
+                        evidence,
+                        eligibility,
+                    ).current()
+
+                self.assertEqual(projection.state, "needs_attention")
+                self.assertEqual(projection.title, "File changes need attention.")
+                self.assertEqual(
+                    projection.message,
+                    "Review what happened before continuing.",
+                )
+                self.assertFalse(projection.can_check_result)
+
+    def _assert_partial_inspect_only(self, result, *, affected_items: int) -> None:
+        self.assertEqual(result.state, RecoveryEvidenceState.UNRESOLVED)
+        self.assertEqual(result.unresolved_count, 1)
+        self.assertEqual(result.actionability, RecoveryActionability.INSPECT_ONLY)
+        self.assertEqual(result.case.affected_items, affected_items)
+        self.assertEqual(result.case.items, ())
+        self.assertEqual(result.case.available_action_kinds, ())
+        projection = result.safe_projection()
+        self.assertEqual(
+            projection.message,
+            "Review what happened before continuing.",
+        )
+        self.assertFalse(projection.is_actionable)
+        self.assertEqual(projection.available_action_kinds, ())
 
     def test_one_record_is_detailed_but_multiple_are_aggregate_only(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

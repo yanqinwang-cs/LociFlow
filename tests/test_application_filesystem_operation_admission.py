@@ -48,6 +48,7 @@ from organizer.application.organization_operation_models import (
     STATUS_INTERRUPTED,
     STATUS_MOVED_UNVERIFIED,
     STATUS_MOVING,
+    STATUS_PARTIAL_MOVEMENT,
     STATUS_PREPARED,
     STATUS_VERIFIED,
     VERIFICATION_NOT_RUN,
@@ -100,8 +101,10 @@ class FilesystemOperationInspectorTests(unittest.TestCase):
             self.assertFalse(snapshot.is_blocked)
             self.assertEqual(tuple(root.iterdir()), ())
 
-    def test_ordinary_movement_terminal_states_are_clear(self) -> None:
-        for status in sorted(REPLAYABLE_TERMINAL_STATUSES):
+    def test_ordinary_movement_clear_terminal_states_remain_clear(self) -> None:
+        for status in sorted(
+            REPLAYABLE_TERMINAL_STATUSES - {STATUS_PARTIAL_MOVEMENT}
+        ):
             with self.subTest(status=status), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory).resolve()
                 repository, record = _ordinary_operation(root)
@@ -111,6 +114,17 @@ class FilesystemOperationInspectorTests(unittest.TestCase):
                     FilesystemOperationInspector(root).inspect().state,
                     RecoveryAdmissionState.CLEAR,
                 )
+
+    def test_partial_movement_is_terminal_but_blocks_new_filesystem_work(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            repository, record = _ordinary_operation(root)
+            repository.save(replace(record, status=STATUS_PARTIAL_MOVEMENT))
+
+            self.assertEqual(
+                FilesystemOperationInspector(root).inspect().state,
+                RecoveryAdmissionState.BLOCKED_UNFINISHED_OPERATION,
+            )
 
     def test_every_unfinished_ordinary_movement_status_blocks(self) -> None:
         for status in (
@@ -138,7 +152,7 @@ class FilesystemOperationInspectorTests(unittest.TestCase):
                 )
 
     def test_ordinary_undo_terminal_and_unfinished_states(self) -> None:
-        terminal = (UNDO_RESTORED, UNDO_PARTIAL, UNDO_FAILED, UNDO_VERIFICATION_FAILED)
+        terminal = (UNDO_RESTORED, UNDO_FAILED, UNDO_VERIFICATION_FAILED)
         unfinished = (
             UNDO_PREPARED,
             UNDO_UNDOING,
@@ -162,6 +176,22 @@ class FilesystemOperationInspectorTests(unittest.TestCase):
                     expected,
                 )
                 self.assertEqual(operation_repository.load(operation.operation_id), operation)
+
+    def test_partial_undo_is_terminal_but_blocks_new_filesystem_work(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            operation_repository, operation = _ordinary_operation(root)
+            undo_repository, undo = _ordinary_undo(root, operation)
+            undo_repository.save(replace(undo, status=UNDO_PARTIAL))
+
+            self.assertEqual(
+                FilesystemOperationInspector(root).inspect().state,
+                RecoveryAdmissionState.BLOCKED_UNFINISHED_OPERATION,
+            )
+            self.assertEqual(
+                operation_repository.load(operation.operation_id),
+                operation,
+            )
 
     def test_missing_or_incompatible_undo_parent_is_inconsistent(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 import tempfile
 from threading import Event, Thread
@@ -20,10 +21,16 @@ from organizer.application.duplicate_bin_restore_service import (
 from organizer.application.execution_coordinator import OrganizationExecutionCoordinator
 from organizer.application.execution_service import issue_movement_authorization
 from organizer.application.filesystem_operation_admission import (
+    FilesystemOperationAdmission,
     FilesystemOperationBlockedError,
+    FilesystemOperationInspector,
     RecoveryAdmissionSnapshot,
     RecoveryAdmissionState,
 )
+from organizer.application.organization_operation_models import (
+    STATUS_PARTIAL_MOVEMENT,
+)
+from organizer.application.organization_undo_models import UNDO_PARTIAL
 from organizer.application.organization_movement_service import (
     OrganizationMovementError,
     execute_organization_movement,
@@ -45,6 +52,10 @@ from tests.test_application_duplicate_bin_movement_service import (
 )
 from tests.test_application_duplicate_bin_restore_service import _moved
 from tests.test_application_execution_service import _approved_plan
+from tests.test_application_filesystem_operation_admission import (
+    _ordinary_operation,
+    _ordinary_undo,
+)
 from tests.test_application_undo_service import _verified_operation
 
 
@@ -90,6 +101,37 @@ class _PausingAdmission(_Admission):
 
 
 class FilesystemCapabilityAdmissionTests(unittest.TestCase):
+    def test_partial_movement_and_undo_block_capability_issuance(self):
+        for family in ("movement", "undo"):
+            with self.subTest(family=family), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory).resolve()
+                operations, operation = _ordinary_operation(root)
+                if family == "movement":
+                    operations.save(
+                        replace(operation, status=STATUS_PARTIAL_MOVEMENT)
+                    )
+                else:
+                    undos, undo = _ordinary_undo(root, operation)
+                    undos.save(replace(undo, status=UNDO_PARTIAL))
+                coordinator = OrganizationExecutionCoordinator()
+                admission = FilesystemOperationAdmission(
+                    FilesystemOperationInspector(root)
+                )
+                plan = _approved_plan(root, ("new.txt",))
+
+                with self.assertRaises(FilesystemOperationBlockedError):
+                    issue_movement_authorization(
+                        plan,
+                        coordinator,
+                        filesystem_operation_admission=admission,
+                        configured_root_identity=(
+                            operations.configured_root_identity
+                        ),
+                    )
+
+                self.assertEqual(coordinator._authorizations, {})
+                self._released(coordinator)
+
     def test_authorization_write_exception_releases_coordinator_and_lifecycle(self):
         with tempfile.TemporaryDirectory() as directory:
             owners = _owners(Path(directory).resolve(), selected=1)

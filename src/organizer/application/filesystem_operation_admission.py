@@ -35,6 +35,7 @@ from organizer.application.duplicate_bin_restore_repository import (
 )
 from organizer.application.organization_operation_models import (
     BLOCKING_OPERATION_STATUSES,
+    STATUS_PARTIAL_MOVEMENT,
     STATUS_VERIFIED,
 )
 from organizer.application.organization_operation_repository import (
@@ -42,6 +43,7 @@ from organizer.application.organization_operation_repository import (
 )
 from organizer.application.organization_undo_models import (
     UNDO_INTERRUPTED,
+    UNDO_PARTIAL,
     UNDO_PREPARED,
     UNDO_RESTORED_UNVERIFIED,
     UNDO_UNDOING,
@@ -117,8 +119,15 @@ class _InconsistentOperationState(ValueError):
 
 
 _UNDO_UNFINISHED = frozenset(
-    {UNDO_PREPARED, UNDO_UNDOING, UNDO_RESTORED_UNVERIFIED, UNDO_INTERRUPTED}
+    {
+        UNDO_PREPARED,
+        UNDO_UNDOING,
+        UNDO_RESTORED_UNVERIFIED,
+        UNDO_INTERRUPTED,
+    }
 )
+_MOVEMENT_BLOCKING_TERMINAL = frozenset({STATUS_PARTIAL_MOVEMENT})
+_UNDO_BLOCKING_TERMINAL = frozenset({UNDO_PARTIAL})
 
 
 class FilesystemOperationInspector:
@@ -187,9 +196,16 @@ class FilesystemOperationInspector:
                 RecoveryAdmissionState.BLOCKED_MALFORMED_OPERATION_STATE
             )
 
-        has_unfinished = (
-            any(item.status in BLOCKING_OPERATION_STATUSES for item in organization)
-            or any(item.status in _UNDO_UNFINISHED for item in undos)
+        has_blocking_state = (
+            any(
+                item.status
+                in BLOCKING_OPERATION_STATUSES | _MOVEMENT_BLOCKING_TERMINAL
+                for item in organization
+            )
+            or any(
+                item.status in _UNDO_UNFINISHED | _UNDO_BLOCKING_TERMINAL
+                for item in undos
+            )
             or any(item.status not in OP_TERMINAL_STATUSES for item in duplicate_moves)
             or any(item.status not in RESTORE_TERMINAL for item in restores)
         )
@@ -210,10 +226,10 @@ class FilesystemOperationInspector:
         except _InconsistentOperationState:
             return RecoveryAdmissionSnapshot(
                 RecoveryAdmissionState.BLOCKED_UNFINISHED_OPERATION
-                if has_unfinished
+                if has_blocking_state
                 else RecoveryAdmissionState.BLOCKED_INCONSISTENT_OPERATION_STATE
             )
-        if has_unfinished:
+        if has_blocking_state:
             return RecoveryAdmissionSnapshot(
                 RecoveryAdmissionState.BLOCKED_UNFINISHED_OPERATION
             )

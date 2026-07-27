@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 import tempfile
 from threading import Barrier, Thread
@@ -14,9 +15,65 @@ from organizer.application.filesystem_operation_admission import (
     RecoveryAdmissionSnapshot,
     RecoveryAdmissionState,
 )
+from organizer.application.organization_operation_models import (
+    STATUS_PARTIAL_MOVEMENT,
+)
+from organizer.application.organization_undo_models import UNDO_PARTIAL
+from tests.test_application_filesystem_operation_admission import (
+    _ordinary_operation,
+    _ordinary_undo,
+)
 
 
 class CurrentRecoveryAdmissionStatusTests(unittest.TestCase):
+    def test_same_process_refresh_publishes_partial_attention(self) -> None:
+        for family in ("movement", "undo"):
+            with self.subTest(family=family), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory).resolve()
+                operations, operation = _ordinary_operation(root)
+                inspector = FilesystemOperationInspector(root)
+                status = CurrentRecoveryAdmissionStatus(inspector)
+                self.assertFalse(status.snapshot().is_blocked)
+
+                if family == "movement":
+                    operations.save(
+                        replace(operation, status=STATUS_PARTIAL_MOVEMENT)
+                    )
+                else:
+                    undos, undo = _ordinary_undo(root, operation)
+                    undos.save(replace(undo, status=UNDO_PARTIAL))
+
+                self.assertTrue(status.refresh().is_blocked)
+                self.assertEqual(
+                    status.snapshot().state,
+                    RecoveryAdmissionState.BLOCKED_UNFINISHED_OPERATION,
+                )
+
+    def test_restart_initialization_sees_partial_movement_and_undo_attention(
+        self,
+    ) -> None:
+        for family in ("movement", "undo"):
+            with self.subTest(family=family), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory).resolve()
+                operations, operation = _ordinary_operation(root)
+                if family == "movement":
+                    operations.save(
+                        replace(operation, status=STATUS_PARTIAL_MOVEMENT)
+                    )
+                else:
+                    undos, undo = _ordinary_undo(root, operation)
+                    undos.save(replace(undo, status=UNDO_PARTIAL))
+
+                status = CurrentRecoveryAdmissionStatus(
+                    FilesystemOperationInspector(root)
+                )
+
+                self.assertTrue(status.snapshot().is_blocked)
+                self.assertEqual(
+                    status.snapshot().state,
+                    RecoveryAdmissionState.BLOCKED_UNFINISHED_OPERATION,
+                )
+
     def test_initializes_and_refreshes_from_coarse_inspector(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             inspector = FilesystemOperationInspector(Path(directory))
