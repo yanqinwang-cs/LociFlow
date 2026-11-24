@@ -575,11 +575,12 @@ save
 quit
 ```
 
-Expected outcome: a reviewed-plan JSON file appears under `AI_Review/review_sessions/`, and no files move.
+Expected outcome: every row starts `undecided`, a reviewed-plan JSON file appears under `AI_Review/review_sessions/`, and no files move.
 
 Run review mode again and test wrong confirmation:
 
 ```text
+approve D1
 apply
 WRONG
 quit
@@ -590,6 +591,7 @@ Expected outcome: the command refuses to apply and no files move.
 Run review mode again and test confirmed apply:
 
 ```text
+approve D1 O2
 reject O1
 apply
 APPLY_REVIEWED_PLAN
@@ -616,6 +618,7 @@ PYTHONPATH=src python3 -m organizer.cli /path/to/temp-folder --review-plans
 In the review session, reject at least one ID, save the reviewed plan, and quit:
 
 ```text
+approve D1 O2
 reject O1
 save
 quit
@@ -693,6 +696,7 @@ PYTHONPATH=src python3 -m organizer.cli /path/to/temp-folder --review-plans
 In the review session, try:
 
 ```text
+approve <the duplicate and review-candidate IDs that share a source>
 summary
 conflicts
 apply
@@ -751,7 +755,7 @@ PYTHONPATH=src python3 -m organizer.cli /path/to/temp-folder --review-plans --ig
 
 Expected outcome: rows start from current suggestions, not remembered decisions. The state file is not an operation log and cannot be used with `--undo-log`.
 
-If a source file changes after a decision is remembered, run review mode again. Expected outcome: the row is marked as a stale prior decision and keeps the current default decision until reviewed again.
+If a source file changes after a decision is remembered, run review mode again. Expected outcome: the row is marked as a stale prior decision and returns to `undecided` until reviewed again.
 
 ## Stage 10.5 Existing Organization Pattern Inference
 

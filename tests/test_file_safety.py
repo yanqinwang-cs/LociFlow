@@ -219,6 +219,46 @@ class StartedBatchAlwaysLeavesLogTests(unittest.TestCase):
             self.assertTrue((root / "one.txt").exists())
 
 
+class OperationLogIsNeverPartialTests(unittest.TestCase):
+    def test_log_is_complete_json_whenever_the_next_move_starts(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            for name in ("one", "two", "three"):
+                (root / f"{name}.txt").write_text(name, encoding="utf-8")
+            seen: list[int] = []
+
+            class Inspect:
+                def before_batch(self, plan_items) -> None: ...
+
+                def before_move(self, index, item) -> None:
+                    if index:
+                        log = next(
+                            (root / "AI_Review" / "operation_logs").glob("operation_log_*.json")
+                        )
+                        seen.append(
+                            len(json.loads(log.read_text(encoding="utf-8"))["operations"])
+                        )
+
+                def after_success(self, index, item, result) -> None: ...
+
+                def after_failure(self, index, item, result) -> None: ...
+
+                def after_batch(self, operation_log) -> None: ...
+
+            apply_move_plan(
+                [
+                    plan_item(root / f"{name}.txt", root / "a" / f"{name}.txt")
+                    for name in ("one", "two", "three")
+                ],
+                root,
+                recorder=Inspect(),
+            )
+
+            self.assertEqual(seen, [1, 2])
+            leftovers = list((root / "AI_Review" / "operation_logs").iterdir())
+            self.assertEqual(len(leftovers), 1)
+
+
 class UndoWorksForDotFolderTests(unittest.TestCase):
     def test_apply_with_dot_folder_can_be_undone_from_any_directory(self) -> None:
         with tempfile.TemporaryDirectory() as directory, tempfile.TemporaryDirectory() as elsewhere:
@@ -348,6 +388,19 @@ class ReviewApplyRefusesProtectedPathsTests(unittest.TestCase):
                 )
 
             self.assertTrue((logs / "operation_log_1.json").exists())
+
+    def test_file_inside_a_code_project_cannot_be_moved(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            project = root / "MyRepo"
+            (project / "src").mkdir(parents=True)
+            (project / "pyproject.toml").write_text("[project]", encoding="utf-8")
+            (project / "src" / "main.py").write_text("print()", encoding="utf-8")
+
+            with self.assertRaisesRegex(ValueError, "protected"):
+                self._apply(root, "MyRepo/src/main.py", "Organized/main.py")
+
+            self.assertTrue((project / "src" / "main.py").exists())
 
     def test_ordinary_row_still_applies(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

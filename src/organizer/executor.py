@@ -1143,13 +1143,6 @@ def _reject_colliding_batch_paths(items: list[MovePlanItem]) -> None:
                 f"destination collides with another move: {item.destination}"
             )
         destinations[key] = item.destination
-    for item in items:
-        key = _collision_key(item.source)
-        if key in destinations and key != _collision_key(item.destination):
-            raise ValueError(
-                f"destination collides with another move's source: "
-                f"{destinations[key]}"
-            )
 
 
 def _move_without_replacing(source: Path, destination: Path) -> None:
@@ -1261,9 +1254,20 @@ def _write_operation_log(log_path: Path, operations: list[MoveResult]) -> Operat
             for result in operations
         ]
     }
-    with log_path.open("w", encoding="utf-8") as file:
-        json.dump(log_data, file, indent=2, sort_keys=True)
-        file.write("\n")
+    # The log is rewritten after every move, so an interrupt must never see a
+    # half-written file: write beside it and swap it in atomically.
+    temporary_path = log_path.with_name(f".{log_path.name}.tmp")
+    try:
+        with temporary_path.open("w", encoding="utf-8") as file:
+            json.dump(log_data, file, indent=2, sort_keys=True)
+            file.write("\n")
+        os.replace(temporary_path, log_path)
+    except BaseException:
+        try:
+            temporary_path.unlink()
+        except OSError:
+            pass
+        raise
     return OperationLog(log_path=log_path, operations=operations)
 
 
