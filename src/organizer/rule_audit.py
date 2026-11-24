@@ -17,6 +17,9 @@ from organizer.organization_rules import (
     ORGANIZATION_RULES_RELATIVE_PATH,
     OrganizationRules,
     OrganizationRulesLoadResult,
+    STANDARD_KEEP_MATCHING_FILES_TOGETHER,
+    STANDARD_LEGACY_ALIAS,
+    STANDARD_LEGACY_IGNORED_TERM,
     default_organization_rules,
     normalize_anchor,
 )
@@ -117,12 +120,44 @@ def _rule_effect_to_report(effect: RuleEffect) -> dict[str, Any]:
 
 
 def _explicit_rule_values(load_result: OrganizationRulesLoadResult) -> dict[str, object]:
+    if load_result.catalog is not None:
+        return _explicit_catalog_values(load_result)
     data = load_result.raw_data or {}
     return {
         "locked_anchors": tuple(sorted(_string_list(data.get("locked_anchors", [])))),
         "ignored_terms": tuple(sorted(_string_list(data.get("ignored_terms", [])))),
         "anchor_aliases": dict(sorted(_string_map(data.get("anchor_aliases", {})).items())),
         "preferred_granularities": tuple(sorted(_string_list(data.get("preferred_granularities", [])))),
+    }
+
+
+def _explicit_catalog_values(load_result: OrganizationRulesLoadResult) -> dict[str, object]:
+    # Only active, unarchived Standards take effect; the raw catalog also holds
+    # turned-off and archived records that must not be reported as rules.
+    locked: list[str] = []
+    ignored: list[str] = []
+    aliases: dict[str, str] = {}
+    for record in load_result.catalog.standards:
+        if not record.active or record.archived_at is not None:
+            continue
+        if record.type == STANDARD_KEEP_MATCHING_FILES_TOGETHER:
+            value = record.parameter("matcher_value")
+            if value is not None:
+                locked.append(value)
+        elif record.type == STANDARD_LEGACY_IGNORED_TERM:
+            term = record.parameter("term")
+            if term is not None:
+                ignored.append(term)
+        elif record.type == STANDARD_LEGACY_ALIAS:
+            alias = record.parameter("alias")
+            target = record.parameter("target")
+            if alias is not None and target is not None:
+                aliases[alias] = target
+    return {
+        "locked_anchors": tuple(sorted(set(locked))),
+        "ignored_terms": tuple(sorted(set(ignored))),
+        "anchor_aliases": dict(sorted(aliases.items())),
+        "preferred_granularities": (),
     }
 
 

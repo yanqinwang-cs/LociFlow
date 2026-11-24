@@ -262,6 +262,27 @@ class ResumeReviewedPlanTests(unittest.TestCase):
                     )
                     self.assertNotEqual(result.returncode, 0)
 
+    def test_input_ending_at_the_apply_confirmation_applies_nothing(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = write_reviewed_plan(root, reviewed_plan_data())
+            argv = ["organizer.cli", str(root), "--resume-reviewed-plan", str(source)]
+            with mock.patch("sys.argv", argv), mock.patch(
+                "builtins.input",
+                side_effect=["apply", EOFError, EOFError],
+            ), mock.patch(
+                "organizer.cli._apply_plan_items",
+            ) as apply_items, mock.patch(
+                "sys.stdout",
+                new_callable=io.StringIO,
+            ):
+                from organizer.cli import main
+
+                exit_code = main()
+
+            self.assertEqual(exit_code, 0)
+            apply_items.assert_not_called()
+
     def test_interactive_apply_reuses_saved_plan_validator_after_confirmation(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

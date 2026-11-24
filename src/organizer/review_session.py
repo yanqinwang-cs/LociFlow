@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 from typing import Any
 
+from organizer.json_values import is_json_integer, is_json_version
 from organizer.duplicates import find_exact_duplicates
 from organizer.grouping import build_organization_suggestions, find_project_groups
 from organizer.models import FileMetadata, MovePlanItem, OrganizationSuggestion, ReviewedPlanItem
@@ -1090,7 +1091,7 @@ def _optional_string(value: object, fallback: str) -> str:
 
 
 def _optional_confidence(value: object) -> int:
-    if isinstance(value, int) and 0 <= value <= 100:
+    if is_json_integer(value) and 0 <= value <= 100:
         return value
     return 100
 
@@ -1225,7 +1226,7 @@ def _load_reviewed_plan_json(path: Path) -> object:
 def _validated_reviewed_plan_items(data: object) -> list[object]:
     if not isinstance(data, dict):
         raise ValueError("reviewed plan must contain a JSON object")
-    if data.get("schema_version") != REVIEW_SESSION_SCHEMA_VERSION:
+    if not is_json_version(data.get("schema_version"), REVIEW_SESSION_SCHEMA_VERSION):
         raise ValueError("reviewed plan schema_version must be 1")
     if data.get("plan_type") != REVIEW_PLAN_TYPE:
         raise ValueError('reviewed plan plan_type must be "batch_review"')

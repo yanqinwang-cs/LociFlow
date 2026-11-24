@@ -47,6 +47,26 @@ class GroupingTokenTests(unittest.TestCase):
         for code in ["CS2103", "CS2103T", "CS2030S", "MA2001", "ST2334", "IS1108"]:
             self.assertEqual(extract_course_code(metadata_for(f"{code}_notes.pdf")), code)
 
+    def test_term_folder_is_not_read_as_a_course_code(self) -> None:
+        for folder in ("Fall2023", "Spring2024", "Summer2022", "Winter2021"):
+            with self.subTest(folder=folder):
+                self.assertIsNone(
+                    extract_course_code(metadata_for(f"{folder}/notes.pdf"))
+                )
+
+    def test_course_code_inside_a_term_folder_is_still_found(self) -> None:
+        self.assertEqual(
+            extract_course_code(metadata_for("Fall2023/CS1010_lecture1.pdf")),
+            "CS1010",
+        )
+        self.assertEqual(
+            extract_course_code(metadata_for("Fall2023/MA1101R_tutorial.pdf")),
+            "MA1101R",
+        )
+
+    def test_course_code_is_not_taken_from_inside_a_longer_word(self) -> None:
+        self.assertIsNone(extract_course_code(metadata_for("Waterfall2023.pdf")))
+
     def test_extract_course_code_returns_none_when_absent(self) -> None:
         self.assertIsNone(extract_course_code(metadata_for("project_notes.pdf")))
 

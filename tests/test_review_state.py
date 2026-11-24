@@ -52,6 +52,19 @@ class ReviewStateLoadSaveTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             review_state_from_json_data(data)
 
+    def test_true_is_not_accepted_as_a_number_in_state(self) -> None:
+        data = valid_state_data()
+        data["schema_version"] = True
+        with self.assertRaises(ValueError):
+            review_state_from_json_data(data)
+
+        for field in ("size_bytes", "modified_ns"):
+            with self.subTest(field=field):
+                data = valid_state_data()
+                data["decisions"][0]["fingerprint"][field] = True
+                with self.assertRaises(ValueError):
+                    review_state_from_json_data(data)
+
     def test_invalid_decision_category_and_review_category_are_rejected(self) -> None:
         cases = [
             ("decision", "maybe"),

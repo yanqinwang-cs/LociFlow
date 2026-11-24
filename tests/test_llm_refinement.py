@@ -11,6 +11,7 @@ from urllib import error
 
 from organizer.llm_refinement import (
     ALLOWED_SUBFOLDERS,
+    _reject_forbidden_text,
     build_group_refinement_messages,
     build_group_refinement_payload,
     build_refined_organization_suggestion,
@@ -249,6 +250,47 @@ class OllamaClientTests(unittest.TestCase):
         ):
             with self.assertRaises(RuntimeError):
                 client.chat([])
+
+
+class OllamaTimeoutTests(unittest.TestCase):
+    def test_stalled_response_raises_runtime_error_naming_the_timeout(self) -> None:
+        stalled = mock.MagicMock()
+        stalled.__enter__.return_value.read.side_effect = TimeoutError("timed out")
+        with mock.patch(
+            "organizer.ollama_client.request.urlopen",
+            return_value=stalled,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "did not answer within 5 seconds"):
+                OllamaClient("model", timeout_seconds=5).chat([])
+
+    def test_connection_dropped_mid_response_raises_runtime_error(self) -> None:
+        with mock.patch(
+            "organizer.ollama_client.request.urlopen",
+            side_effect=ConnectionResetError("reset"),
+        ):
+            with self.assertRaises(RuntimeError):
+                OllamaClient("model").chat([])
+
+
+class RefinementValueTests(unittest.TestCase):
+    def test_boolean_confidence_is_not_accepted_as_a_number(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            group = make_group(Path(directory))
+            data = json.loads(valid_response_for(group))
+            data["confidence"] = True
+
+            with self.assertRaisesRegex(ValueError, "confidence"):
+                validate_refinement_data(data, group)
+
+    def test_forbidden_phrase_reported_is_the_same_on_every_run(self) -> None:
+        # "safe to delete" contains "delete"; the reported phrase must not
+        # depend on the iteration order of the phrase collection.
+        for order in (["delete", "safe to delete"], ["safe to delete", "delete"]):
+            with self.subTest(order=order), mock.patch(
+                "organizer.llm_refinement.FORBIDDEN_OUTPUT_WORDS", order
+            ):
+                with self.assertRaisesRegex(ValueError, "phrase: delete$"):
+                    _reject_forbidden_text(["this is safe to delete"])
 
 
 class RefinementOrchestrationTests(unittest.TestCase):

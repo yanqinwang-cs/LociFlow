@@ -10,6 +10,8 @@ from typing import Any
 import unicodedata
 import uuid
 
+from organizer.json_values import is_json_version
+
 
 ORGANIZATION_RULES_VERSION = 1
 STANDARDS_CATALOG_VERSION = 2
@@ -199,7 +201,7 @@ def load_organization_rules(root: Path) -> OrganizationRulesLoadResult:
 
     if not isinstance(data, dict):
         return _unavailable_result(rules_path, "Saved Standards must be a JSON object.")
-    if data.get("version") == STANDARDS_CATALOG_VERSION:
+    if is_json_version(data.get("version"), STANDARDS_CATALOG_VERSION):
         try:
             catalog = standards_catalog_from_data(data)
         except ValueError:
@@ -221,7 +223,7 @@ def load_organization_rules(root: Path) -> OrganizationRulesLoadResult:
             raw_data=data,
             catalog=catalog,
         )
-    if data.get("version") != ORGANIZATION_RULES_VERSION:
+    if not is_json_version(data.get("version"), ORGANIZATION_RULES_VERSION):
         return _unavailable_result(rules_path, "Saved Standards version is unsupported.")
     if set(data) - ORGANIZATION_RULES_FIELDS:
         return _unavailable_result(rules_path, "Saved Standards contain unsupported fields.")
@@ -275,7 +277,7 @@ def organization_rules_from_data(data: object) -> tuple[OrganizationRules, list[
             default_organization_rules(),
             ["Organization rules must be a JSON object. Using conservative built-in defaults."],
         )
-    if data.get("version") != ORGANIZATION_RULES_VERSION:
+    if not is_json_version(data.get("version"), ORGANIZATION_RULES_VERSION):
         return (
             default_organization_rules(),
             ["Organization rules version must be 1. Using conservative built-in defaults."],
@@ -430,7 +432,7 @@ def standard_record_to_data(record: StandardRecord) -> dict[str, Any]:
 def standards_catalog_from_data(data: object) -> StandardsCatalog:
     if not isinstance(data, dict) or set(data) != STANDARDS_CATALOG_FIELDS:
         raise ValueError("Standards catalog fields do not match version 2")
-    if data["version"] != STANDARDS_CATALOG_VERSION:
+    if not is_json_version(data["version"], STANDARDS_CATALOG_VERSION):
         raise ValueError("unsupported Standards catalog version")
     identity = _catalog_string(data["configured_root_identity"], "configured root identity")
     if len(identity) != 64 or any(char not in "0123456789abcdef" for char in identity):
@@ -784,6 +786,10 @@ def _valid_anchor(anchor: str) -> bool:
         and "\x00" not in anchor
         and "/" not in anchor
         and "\\" not in anchor
+        # The organization review export rejects these, so accepting them here
+        # would make a loaded rule fail later at export.
+        and ":" not in anchor
+        and ".." not in anchor
     )
 
 

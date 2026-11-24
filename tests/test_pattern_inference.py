@@ -296,5 +296,25 @@ class PatternInferenceTests(unittest.TestCase):
             self.assertFalse((root / "AI_Review" / "config" / "organization_rules.json").exists())
 
 
+class TermFolderTests(unittest.TestCase):
+    def test_term_folders_are_not_course_code_foldering(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for term in ("Fall2023", "Spring2024"):
+                folder = root / term
+                folder.mkdir()
+                (folder / "CS1010 lecture1.pdf").write_text("x", encoding="utf-8")
+                (folder / "MA1101R lecture1.pdf").write_text("x", encoding="utf-8")
+            metadata = scan_directory(root)
+            decisions = analyze_anchor_decisions(metadata)
+
+            patterns = infer_organization_patterns(metadata, decisions).patterns
+
+        self.assertNotIn(
+            PATTERN_COURSE_CODE_FOLDERING,
+            [pattern.pattern_type for pattern in patterns],
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

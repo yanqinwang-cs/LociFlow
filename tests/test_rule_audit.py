@@ -3,7 +3,17 @@ import json
 import tempfile
 import unittest
 
+from datetime import datetime, timezone
+import uuid
+
+from organizer.application.standards_repository import StandardsRepository
 from organizer.html_report import render_html_report
+from organizer.organization_rules import (
+    STANDARD_LEGACY_IGNORED_TERM,
+    StandardRecord,
+    StandardScope,
+    StandardsCatalog,
+)
 from organizer.reports import build_scan_report
 from organizer.rule_audit import _expansion_warnings
 
@@ -70,6 +80,59 @@ class RuleAuditTests(unittest.TestCase):
             self.assertEqual(audit["anchor_aliases"], {"programming methodology": "CS1010X"})
             self.assertEqual(audit["preferred_granularities"], ["course_code"])
             self.assertEqual(rules_path.read_text(encoding="utf-8"), original_rules)
+
+    def test_catalog_audit_lists_active_standards_and_not_turned_off_ones(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            repository = StandardsRepository(root)
+            timestamp = datetime(2026, 1, 1, tzinfo=timezone.utc).isoformat()
+
+            def record(standard_type, parameters, *, active, archived_at=None):
+                return StandardRecord(
+                    id=str(uuid.uuid4()),
+                    type=standard_type,
+                    active=active,
+                    scope=StandardScope("root", None),
+                    parameters=tuple(sorted(parameters.items())),
+                    created_at=timestamp,
+                    updated_at=timestamp,
+                    record_revision=1,
+                    archived_at=archived_at,
+                )
+
+            standards = (
+                        record(
+                            STANDARD_LEGACY_IGNORED_TERM,
+                            {"term": "Scratch"},
+                            active=True,
+                        ),
+                        record(
+                            STANDARD_LEGACY_IGNORED_TERM,
+                            {"term": "Draft"},
+                            active=False,
+                        ),
+                        record(
+                            STANDARD_LEGACY_IGNORED_TERM,
+                            {"term": "Old"},
+                            active=False,
+                            archived_at=timestamp,
+                        ),
+            )
+            repository.save_catalog(
+                StandardsCatalog(
+                    configured_root_identity=repository.configured_root_identity,
+                    revision=1,
+                    # The catalog stores records ordered by ID.
+                    standards=tuple(sorted(standards, key=lambda item: item.id)),
+                ),
+                expected_revision=0,
+            )
+            (root / "Scratch a.txt").write_text("x", encoding="utf-8")
+
+            audit = build_scan_report(root)["rule_audit"]
+
+            self.assertTrue(audit["rules_loaded"])
+            self.assertEqual(audit["ignored_terms"], ["Scratch"])
 
     def test_locked_anchor_effect_records_before_after_and_match_count(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

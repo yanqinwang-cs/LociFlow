@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+from organizer.json_values import is_json_integer
 from organizer.grouping import infer_subfolder
 from organizer.models import LLMRefinement, MovePlanItem, OrganizationSuggestion, ProjectGroup
 
@@ -107,7 +108,7 @@ def validate_refinement_data(data: dict, group: ProjectGroup) -> LLMRefinement:
         raise ValueError("folder_name must be a non-empty string")
     if "/" in folder_name or "\\" in folder_name or folder_name in {".", ".."}:
         raise ValueError("folder_name must not contain path separators")
-    if not isinstance(confidence, int) or confidence < 0 or confidence > 100:
+    if not is_json_integer(confidence) or confidence < 0 or confidence > 100:
         raise ValueError("confidence must be an integer from 0 to 100")
     if not isinstance(reason, str) or not reason.strip():
         raise ValueError("reason must be a non-empty string")
@@ -200,7 +201,7 @@ def refine_project_groups_with_ollama(
 def _reject_forbidden_text(values: list[str]) -> None:
     for value in values:
         lowered = value.lower()
-        for phrase in FORBIDDEN_OUTPUT_WORDS:
+        for phrase in sorted(FORBIDDEN_OUTPUT_WORDS):
             if phrase in lowered:
                 raise ValueError(f"LLM output contains forbidden phrase: {phrase}")
 

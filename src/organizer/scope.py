@@ -118,6 +118,7 @@ PROTECTED_DIRECTORY_NAMES = {
     ".mypy_cache",
 }
 PROTECTED_DIRECTORY_SUFFIXES = {
+    ".rtfd",
     ".app",
     ".framework",
     ".bundle",
@@ -139,6 +140,9 @@ PROJECT_MARKER_NAMES = {
     "Cargo.toml",
     "go.mod",
     "Makefile",
+    "setup.py",
+    "setup.cfg",
+    "CMakeLists.txt",
 }
 WEB_PROJECT_MARKER_NAMES = {
     "package.json",
@@ -282,9 +286,27 @@ def is_project_context_path(
     relative_path: Path,
     all_metadata: Sequence[FileMetadata],
 ) -> bool:
+    if _scan_root_is_inside_repository(all_metadata):
+        return True
     marker_dirs = _marker_directories(all_metadata, PROJECT_MARKER_NAMES)
     file_parent = relative_path.parent
     return any(_is_same_or_under(file_parent, marker_dir) for marker_dir in marker_dirs)
+
+
+def _scan_root_is_inside_repository(all_metadata: Sequence[FileMetadata]) -> bool:
+    # A scan started in a repository's subfolder never lists the .git above it,
+    # so the markers inside the scan cannot show that the files belong to code.
+    for metadata in all_metadata:
+        depth = len(_normalize_relative_path(metadata.relative_path).parts)
+        if metadata.relative_path.as_posix() in {"", "."}:
+            depth = 0
+        if len(metadata.path.parents) < depth + 1:
+            continue
+        root = metadata.path if depth == 0 else metadata.path.parents[depth - 1]
+        return any(
+            os.path.lexists(ancestor / ".git") for ancestor in (root, *root.parents)
+        )
+    return False
 
 
 def is_actionable_plan_eligible(

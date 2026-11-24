@@ -8,6 +8,7 @@ from pathlib import Path
 import re
 from typing import Any, Iterable
 
+from organizer.json_values import is_json_integer, is_json_version
 from organizer.models import RuleCandidate, RuleDecision, RuleReviewResult
 from organizer.organization_rules import (
     ORGANIZATION_RULES_RELATIVE_PATH,
@@ -104,7 +105,7 @@ def rule_candidates_from_report(report: dict[str, Any]) -> list[RuleCandidate]:
         if (
             isinstance(rule_type, str)
             and isinstance(value, str)
-            and isinstance(confidence, int)
+            and is_json_integer(confidence)
             and isinstance(reason, str)
             and isinstance(evidence_paths, list)
             and all(isinstance(path, str) for path in evidence_paths)
@@ -160,7 +161,7 @@ def load_reviewed_rule_file(path: Path, root: Path) -> tuple[dict[str, RuleCandi
         raise ValueError(f"reviewed rule decision JSON is invalid: {error}") from error
     if not isinstance(data, dict):
         raise ValueError("reviewed rule decision file must contain a JSON object")
-    if data.get("schema_version") != RULE_REVIEW_SCHEMA_VERSION:
+    if not is_json_version(data.get("schema_version"), RULE_REVIEW_SCHEMA_VERSION):
         raise ValueError("reviewed rule decision file schema_version must be 1")
     raw_candidates = data.get("candidates")
     if not isinstance(raw_candidates, list):
@@ -250,7 +251,7 @@ def _review_file_item_to_candidate(raw_candidate: object, index: int) -> tuple[R
     if rule_type not in ALLOWED_RULE_TYPES:
         raise ValueError(f"candidates[{index}] has unknown rule_type")
     _validate_rule_value(rule_type, value, f"candidates[{index}].value")
-    if not isinstance(confidence, int) or not 0 <= confidence <= 100:
+    if not is_json_integer(confidence) or not 0 <= confidence <= 100:
         raise ValueError(f"candidates[{index}] confidence must be an integer from 0 to 100")
     if not isinstance(reason, str) or not reason.strip():
         raise ValueError(f"candidates[{index}] reason must be a non-empty string")
@@ -383,7 +384,7 @@ def _load_existing_rules_data(rules_path: Path) -> dict[str, Any]:
     unknown = set(data) - SUPPORTED_RULE_CONFIG_KEYS
     if unknown:
         raise ValueError(f"organization rules contain unsupported field(s): {', '.join(sorted(unknown))}")
-    if data.get("version") != ORGANIZATION_RULES_VERSION:
+    if not is_json_version(data.get("version"), ORGANIZATION_RULES_VERSION):
         raise ValueError("organization rules version must be 1")
     _list_to_display_map(data.get("locked_anchors", []), "locked_anchors")
     _list_to_display_map(data.get("ignored_terms", []), "ignored_terms")
