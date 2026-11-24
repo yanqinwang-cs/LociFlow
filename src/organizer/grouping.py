@@ -288,6 +288,13 @@ def analyze_anchor_decisions(
         if not isinstance(bucket_files, list) or not isinstance(bucket_evidence, set):
             continue
         unique_files = _unique_sorted_files(bucket_files)
+        scoped_locks = active_rules.locked_anchor_scopes or {}
+        if canonical in scoped_locks:
+            unique_files = [
+                file
+                for file in unique_files
+                if _file_is_in_standard_scope(file, scoped_locks[canonical])
+            ]
         if len(unique_files) < min_group_size:
             continue
         evidence = _best_evidence(bucket_evidence)
@@ -329,6 +336,19 @@ def analyze_anchor_decisions(
             item.anchor,
         ),
     )
+
+
+def _file_is_in_standard_scope(
+    file: FileMetadata,
+    scopes: tuple[str, ...],
+) -> bool:
+    for scope in scopes:
+        if scope == ".":
+            return True
+        scope_path = Path(scope)
+        if file.relative_path == scope_path or scope_path in file.relative_path.parents:
+            return True
+    return False
 
 
 def build_organization_suggestions(

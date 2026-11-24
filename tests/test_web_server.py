@@ -1,0 +1,603 @@
+from __future__ import annotations
+
+from contextlib import redirect_stderr, redirect_stdout
+import errno
+from io import StringIO
+import os
+from pathlib import Path
+import signal
+import socket
+import subprocess
+import sys
+import tempfile
+from threading import Event
+import unittest
+from unittest.mock import Mock, patch
+
+from organizer.macos_launcher.application_paths import MacOSApplicationPaths
+from organizer.macos_launcher.process_lease import acquire_root_process_lease
+from organizer.web.config import WebAppConfig
+from organizer.application.runtime_lifecycle import (
+    RuntimeLifecycle,
+    RuntimeOperationKind,
+)
+from organizer.web.launcher import LaunchPhase, LaunchResult
+from organizer.web import server
+
+
+class _HealthyResponse:
+    status = 200
+
+    def __init__(self) -> None:
+        self.closed = False
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class _FakeSocket:
+    def __init__(self, port: int = 43210) -> None:
+        self.port = port
+        self.closed = False
+
+    def getsockname(self) -> tuple[str, int]:
+        return (server.LOOPBACK_HOST, self.port)
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class _FakeBindingSocket(_FakeSocket):
+    def __init__(
+        self,
+        port: int = 43210,
+        *,
+        bind_error: OSError | None = None,
+    ) -> None:
+        super().__init__(port)
+        self.bind_error = bind_error
+        self.bound_address: tuple[str, int] | None = None
+        self.backlog: int | None = None
+        self.inheritable: bool | None = None
+
+    def bind(self, address: tuple[str, int]) -> None:
+        self.bound_address = address
+        if self.bind_error is not None:
+            raise self.bind_error
+
+    def listen(self, backlog: int) -> None:
+        self.backlog = backlog
+
+    def set_inheritable(self, value: bool) -> None:
+        self.inheritable = value
+
+
+class WebServerTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temporary_directory = tempfile.TemporaryDirectory()
+        self.root = Path(self.temporary_directory.name).resolve()
+        self.application_paths = MacOSApplicationPaths.for_home(
+            self.root / "application-home"
+        )
+        self.config = WebAppConfig(
+            self.root,
+            session_secret="s" * 32,
+            launch_token="t" * 32,
+            testing=True,
+        )
+
+    def tearDown(self) -> None:
+        self.temporary_directory.cleanup()
+
+    def test_launcher_dependencies_publish_only_the_exact_app_lifecycle(self) -> None:
+        dependencies = server.build_launcher_dependencies()
+        app = dependencies.app_factory(self.config)
+
+        self.assertIsNotNone(dependencies.runtime_lifecycle_accessor)
+        assert dependencies.runtime_lifecycle_accessor is not None
+        self.assertIs(
+            dependencies.runtime_lifecycle_accessor(app),
+            app.state.runtime_lifecycle,
+        )
+
+    def test_parser_supports_only_root_no_browser_and_valid_fixed_port(self) -> None:
+        parser = server.build_parser()
+        args = parser.parse_args(
+            ["--root", str(self.root), "--no-browser", "--port", "8123"]
+        )
+
+        self.assertEqual(args.root, self.root)
+        self.assertTrue(args.no_browser)
+        self.assertEqual(args.port, 8123)
+        self.assertNotIn("--host", parser.format_help())
+
+        for invalid in ("0", "65536", "not-a-port"):
+            with self.subTest(port=invalid), redirect_stderr(StringIO()):
+                with self.assertRaises(SystemExit):
+                    parser.parse_args(["--port", invalid])
+
+    def test_omitted_root_fails_clearly_when_downloads_is_unavailable(self) -> None:
+        missing_home = self.root / "missing-home"
+        stderr = StringIO()
+        with patch.object(Path, "home", return_value=missing_home):
+            with redirect_stderr(stderr), self.assertRaises(SystemExit) as raised:
+                server.main(
+                    ["--no-browser"],
+                    application_paths=self.application_paths,
+                )
+
+        self.assertEqual(raised.exception.code, 2)
+        self.assertIn("Downloads", stderr.getvalue())
+        self.assertIn("does not exist", stderr.getvalue())
+
+    def test_development_main_uses_the_shared_root_admission_owner(self) -> None:
+        from organizer.web import config as config_module
+
+        stderr = StringIO()
+        with (
+            patch(
+                "organizer.web.config.admit_root",
+                wraps=config_module.admit_root,
+            ) as admission,
+            patch.object(
+                server,
+                "bind_loopback_socket",
+                side_effect=OSError("controlled bind failure"),
+            ),
+            patch.object(
+                Path,
+                "home",
+                return_value=self.application_paths.home,
+            ),
+            redirect_stderr(stderr),
+            self.assertRaises(SystemExit),
+        ):
+            server.main(
+                ["--root", str(self.root), "--no-browser"],
+                application_paths=self.application_paths,
+            )
+
+        admission.assert_called_once_with(self.root)
+
+    def test_second_development_process_on_same_root_fails_before_url_output(
+        self,
+    ) -> None:
+        repository_root = Path(__file__).resolve().parents[1]
+        environment = os.environ.copy()
+        environment["HOME"] = str(self.application_paths.home)
+        environment["PYTHONPATH"] = str(repository_root / "src")
+        environment["PYTHONDONTWRITEBYTECODE"] = "1"
+
+        with acquire_root_process_lease(self.application_paths, self.root):
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    "-c",
+                    (
+                        "from organizer.web.server import main; "
+                        "raise SystemExit(main())"
+                    ),
+                    "--root",
+                    str(self.root),
+                    "--no-browser",
+                ],
+                cwd=repository_root,
+                env=environment,
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=False,
+            )
+
+        self.assertEqual(completed.returncode, 2)
+        self.assertIn(
+            "This folder is already open in Loci Flow.",
+            completed.stderr,
+        )
+        self.assertNotIn(str(self.root), completed.stderr)
+        self.assertNotIn("/launch/", completed.stdout)
+        self.assertNotIn("/launch/", completed.stderr)
+
+    def test_dynamic_and_fixed_sockets_bind_only_to_ipv4_loopback(self) -> None:
+        dynamic = _FakeBindingSocket(port=41001)
+        fixed = _FakeBindingSocket(port=8123)
+        socket_constructor = Mock(side_effect=[dynamic, fixed])
+
+        with patch.object(server.socket, "socket", socket_constructor):
+            self.assertIs(server.bind_loopback_socket(), dynamic)
+            self.assertIs(server.bind_loopback_socket(8123), fixed)
+
+        self.assertEqual(dynamic.bound_address, (server.LOOPBACK_HOST, 0))
+        self.assertEqual(fixed.bound_address, (server.LOOPBACK_HOST, 8123))
+        self.assertEqual(dynamic.backlog, server._SOCKET_BACKLOG)
+        self.assertTrue(dynamic.inheritable)
+        self.assertEqual(
+            socket_constructor.call_args_list[0].args,
+            (socket.AF_INET, socket.SOCK_STREAM),
+        )
+
+    def test_occupied_fixed_port_has_a_clear_error(self) -> None:
+        occupied = _FakeBindingSocket(
+            bind_error=OSError(errno.EADDRINUSE, "address in use")
+        )
+        socket_constructor = Mock(return_value=occupied)
+        with patch.object(server.socket, "socket", socket_constructor):
+            with self.assertRaisesRegex(server.WebServerError, "port 8123"):
+                server.bind_loopback_socket(8123)
+
+        self.assertTrue(occupied.closed)
+        socket_constructor.assert_called_once_with(socket.AF_INET, socket.SOCK_STREAM)
+
+    def test_dynamic_address_collision_retries_with_three_fresh_sockets(self) -> None:
+        collisions = [
+            _FakeBindingSocket(
+                bind_error=OSError(errno.EADDRINUSE, "address in use")
+            )
+            for _ in range(server._MAX_DYNAMIC_BIND_ATTEMPTS)
+        ]
+        socket_constructor = Mock(side_effect=collisions)
+
+        with patch.object(server.socket, "socket", socket_constructor):
+            with self.assertRaisesRegex(server.WebServerError, "dynamic port"):
+                server.bind_loopback_socket()
+
+        self.assertEqual(
+            socket_constructor.call_count,
+            server._MAX_DYNAMIC_BIND_ATTEMPTS,
+        )
+        self.assertTrue(all(candidate.closed for candidate in collisions))
+        self.assertTrue(
+            all(
+                candidate.bound_address == (server.LOOPBACK_HOST, 0)
+                for candidate in collisions
+            )
+        )
+
+    def test_dynamic_retry_can_transfer_the_third_socket_to_the_caller(self) -> None:
+        first = _FakeBindingSocket(
+            bind_error=OSError(errno.EADDRINUSE, "address in use")
+        )
+        second = _FakeBindingSocket(
+            bind_error=OSError(errno.EADDRINUSE, "address in use")
+        )
+        third = _FakeBindingSocket(port=48231)
+
+        with patch.object(
+            server.socket,
+            "socket",
+            side_effect=[first, second, third],
+        ):
+            transferred = server.bind_loopback_socket()
+
+        self.assertIs(transferred, third)
+        self.assertTrue(first.closed)
+        self.assertTrue(second.closed)
+        self.assertFalse(third.closed)
+
+    def test_browser_is_opened_only_after_health_succeeds(self) -> None:
+        response = _HealthyResponse()
+        health_opener = Mock(return_value=response)
+        browser_opener = Mock(return_value=True)
+        stdout = StringIO()
+
+        with redirect_stdout(stdout):
+            server._open_browser_when_ready(
+                "http://127.0.0.1:4000/healthz",
+                "http://127.0.0.1:4000/launch/private-token",
+                Event(),
+                health_opener=health_opener,
+                browser_opener=browser_opener,
+            )
+
+        health_opener.assert_called_once_with(
+            "http://127.0.0.1:4000/healthz",
+            timeout=0.25,
+        )
+        browser_opener.assert_called_once_with(
+            "http://127.0.0.1:4000/launch/private-token"
+        )
+        self.assertTrue(response.closed)
+        self.assertEqual(stdout.getvalue(), "")
+
+    def test_browser_failure_prints_the_single_use_url(self) -> None:
+        stdout = StringIO()
+        with redirect_stdout(stdout):
+            server._open_browser_when_ready(
+                "http://127.0.0.1:4000/healthz",
+                "http://127.0.0.1:4000/launch/private-token",
+                Event(),
+                health_opener=Mock(return_value=_HealthyResponse()),
+                browser_opener=Mock(return_value=False),
+            )
+
+        self.assertIn("temporary private URL", stdout.getvalue())
+        self.assertIn("/launch/private-token", stdout.getvalue())
+
+    def test_native_browser_failure_is_fail_closed_and_never_prints_url(self) -> None:
+        stdout = StringIO()
+        launch_url = "http://127.0.0.1:4000/launch/" + "t" * 32
+        browser_opener = Mock(return_value=False)
+        with redirect_stdout(stdout):
+            error = server._open_browser_when_ready(
+                "http://127.0.0.1:4000/healthz",
+                launch_url,
+                Event(),
+                health_opener=Mock(return_value=_HealthyResponse()),
+                browser_opener=browser_opener,
+                fail_closed=True,
+            )
+
+        self.assertEqual(error.code, "browser_open_failed")
+        browser_opener.assert_called_once_with(launch_url)
+        self.assertEqual(stdout.getvalue(), "")
+        self.assertNotIn("t" * 32, error.safe_message)
+
+    def test_native_readiness_timeout_returns_safe_error(self) -> None:
+        error = server._open_browser_when_ready(
+            "http://127.0.0.1:4000/healthz",
+            "http://127.0.0.1:4000/launch/private-token",
+            Event(),
+            timeout_seconds=0,
+            health_opener=Mock(side_effect=OSError("not ready")),
+            browser_opener=Mock(),
+            fail_closed=True,
+        )
+
+        self.assertEqual(error.code, "readiness_failed")
+        self.assertNotIn("private-token", error.safe_message)
+
+    def test_fail_closed_observer_requests_controlled_server_exit(self) -> None:
+        request_exit = Mock()
+        expected_error = server.LauncherError(
+            code="browser_open_failed",
+            safe_message="safe",
+        )
+        observer = server._FailClosedReadinessObserver(
+            "health",
+            "launch-private",
+            Event(),
+            request_exit,
+            Mock(),
+        )
+        with patch.object(
+            server,
+            "_open_browser_when_ready",
+            return_value=expected_error,
+        ):
+            observer.start()
+            observer.join()
+
+        self.assertIs(observer.error, expected_error)
+        request_exit.assert_called_once_with()
+
+    def test_uvicorn_runner_exposes_only_controlled_exit_request(self) -> None:
+        uvicorn_server = Mock()
+        runner = server._UvicornServerRunner(uvicorn_server)
+
+        runner.request_exit()
+
+        self.assertTrue(uvicorn_server.should_exit)
+
+    def test_coordinated_uvicorn_runner_delegates_signal_ownership(self) -> None:
+        with (
+            patch.object(server.uvicorn, "Config", return_value="config"),
+            patch.object(signal, "signal") as install_handler,
+        ):
+            runner = server._create_uvicorn_server(
+                object(),
+                43210,
+                coordinated_signals=True,
+            )
+            with runner._server.capture_signals():
+                pass
+
+        self.assertIsInstance(runner._server, server._CoordinatedUvicornServer)
+        install_handler.assert_not_called()
+
+    def test_development_signals_wait_for_active_work_and_return_signal_code(
+        self,
+    ) -> None:
+        for signal_number, expected_code in (
+            (signal.SIGINT, 130),
+            (signal.SIGTERM, 143),
+        ):
+            with self.subTest(signal_number=signal_number):
+                stopping = Event()
+                stopped = Event()
+                stop_calls = []
+
+                class _ObservedLifecycle(RuntimeLifecycle):
+                    def begin_shutdown(self):
+                        snapshot = super().begin_shutdown()
+                        stopping.set()
+                        return snapshot
+
+                def fake_launch(_root_provider, **kwargs):
+                    lifecycle = _ObservedLifecycle()
+                    lease = lifecycle.begin_operation(RuntimeOperationKind.SCAN)
+                    runtime_handle = kwargs["runtime_handle"]
+                    stop_controller = kwargs["stop_controller"]
+                    stop_controller.attach(
+                        lambda: (stop_calls.append("stop"), stopped.set())
+                    )
+                    runtime_handle.publish_lifecycle(lifecycle)
+
+                    os.kill(os.getpid(), signal_number)
+                    self.assertTrue(stopping.wait(1))
+                    self.assertEqual(stop_calls, [])
+                    lease.finish()
+                    self.assertTrue(stopped.wait(1))
+                    return LaunchResult(0, (LaunchPhase.STOPPED,))
+
+                stderr = StringIO()
+                with (
+                    patch.object(server, "launch", side_effect=fake_launch),
+                    redirect_stderr(stderr),
+                ):
+                    result = server.main(
+                        ["--root", str(self.root), "--no-browser"],
+                        application_paths=self.application_paths,
+                    )
+
+                self.assertEqual(result, expected_code)
+                self.assertEqual(stop_calls, ["stop"])
+                self.assertNotIn("Traceback", stderr.getvalue())
+
+    def test_development_lease_releases_after_shutdown_and_signal_cleanup(
+        self,
+    ) -> None:
+        events: list[str] = []
+
+        class RecordingLease:
+            def release(inner_self) -> bool:
+                events.append("lease.release")
+                return True
+
+        original_shutdown_join = server.LifecycleShutdownCoordinator.join
+        original_signal_close = server.ProcessSignalCoordinator.close
+
+        def join(shutdown) -> None:
+            original_shutdown_join(shutdown)
+            events.append("shutdown.join")
+
+        def close(signals):
+            result = original_signal_close(signals)
+            events.append("signals.close")
+            return result
+
+        with (
+            patch.object(
+                server,
+                "acquire_root_process_lease",
+                return_value=RecordingLease(),
+            ),
+            patch.object(
+                server,
+                "launch",
+                return_value=LaunchResult(0, (LaunchPhase.STOPPED,)),
+            ),
+            patch.object(
+                server.LifecycleShutdownCoordinator,
+                "join",
+                join,
+            ),
+            patch.object(server.ProcessSignalCoordinator, "close", close),
+        ):
+            result = server.main(
+                ["--root", str(self.root), "--no-browser"],
+                application_paths=self.application_paths,
+            )
+
+        self.assertEqual(result, 0)
+        self.assertEqual(
+            events[-3:],
+            ["shutdown.join", "signals.close", "lease.release"],
+        )
+
+    def test_no_browser_uses_one_worker_and_always_closes_socket(self) -> None:
+        fake_socket = _FakeSocket()
+        fake_uvicorn_server = Mock()
+        config_constructor = Mock(return_value="uvicorn-config")
+        stdout = StringIO()
+
+        with (
+            patch.object(server, "bind_loopback_socket", return_value=fake_socket),
+            patch.object(server.uvicorn, "Config", config_constructor),
+            patch.object(server.uvicorn, "Server", return_value=fake_uvicorn_server),
+            redirect_stdout(stdout),
+        ):
+            result = server.run_server(
+                self.config,
+                port=43210,
+                open_browser=False,
+                application_paths=self.application_paths,
+            )
+
+        self.assertEqual(result, 0)
+        self.assertTrue(fake_socket.closed)
+        fake_uvicorn_server.run.assert_called_once_with(sockets=[fake_socket])
+        options = config_constructor.call_args.kwargs
+        self.assertEqual(options["host"], "127.0.0.1")
+        self.assertEqual(options["port"], 43210)
+        self.assertEqual(options["workers"], 1)
+        self.assertFalse(options["reload"])
+        self.assertFalse(options["access_log"])
+        self.assertFalse(options["proxy_headers"])
+        self.assertIn("/launch/" + self.config.launch_token, stdout.getvalue())
+
+    def test_socket_is_closed_when_uvicorn_exits_with_an_error(self) -> None:
+        fake_socket = _FakeSocket()
+        fake_uvicorn_server = Mock()
+        fake_uvicorn_server.run.side_effect = RuntimeError("server failed")
+
+        with (
+            patch.object(server, "bind_loopback_socket", return_value=fake_socket),
+            patch.object(server.uvicorn, "Config", return_value="config"),
+            patch.object(server.uvicorn, "Server", return_value=fake_uvicorn_server),
+            redirect_stdout(StringIO()),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "server failed"):
+                server.run_server(
+                    self.config,
+                    open_browser=False,
+                    application_paths=self.application_paths,
+                )
+
+        self.assertTrue(fake_socket.closed)
+
+    def test_keyboard_interrupt_is_a_clean_shutdown(self) -> None:
+        fake_socket = _FakeSocket()
+        fake_uvicorn_server = Mock()
+        fake_uvicorn_server.run.side_effect = KeyboardInterrupt()
+
+        with (
+            patch.object(server, "bind_loopback_socket", return_value=fake_socket),
+            patch.object(server.uvicorn, "Config", return_value="config"),
+            patch.object(server.uvicorn, "Server", return_value=fake_uvicorn_server),
+            redirect_stdout(StringIO()),
+        ):
+            result = server.run_server(
+                self.config,
+                open_browser=False,
+                application_paths=self.application_paths,
+            )
+
+        self.assertEqual(result, 0)
+        self.assertTrue(fake_socket.closed)
+
+    def test_browser_readiness_thread_is_started_joined_and_token_safe(self) -> None:
+        fake_socket = _FakeSocket()
+        fake_thread = Mock()
+        fake_uvicorn_server = Mock()
+        stdout = StringIO()
+
+        with (
+            patch.object(server, "bind_loopback_socket", return_value=fake_socket),
+            patch.object(server.uvicorn, "Config", return_value="config"),
+            patch.object(server.uvicorn, "Server", return_value=fake_uvicorn_server),
+            patch.object(server, "Thread", return_value=fake_thread) as thread_type,
+            redirect_stdout(stdout),
+        ):
+            self.assertEqual(
+                server.run_server(
+                    self.config,
+                    application_paths=self.application_paths,
+                ),
+                0,
+            )
+
+        fake_thread.start.assert_called_once_with()
+        fake_thread.join.assert_called_once_with()
+        self.assertTrue(fake_socket.closed)
+        self.assertNotIn(self.config.launch_token, stdout.getvalue())
+        thread_args = thread_type.call_args.kwargs["args"]
+        self.assertEqual(thread_args[0], "http://127.0.0.1:43210/healthz")
+        self.assertEqual(
+            thread_args[1],
+            "http://127.0.0.1:43210/launch/" + self.config.launch_token,
+        )
+        self.assertTrue(thread_args[2].is_set())
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -808,6 +808,139 @@ PYTHONPATH=src python3 -m organizer.cli /path/to/temp-folder \
 
 Use `details <ID>` and `summary` to confirm the prior decisions are unchanged. Try `approve`, `reject`, and `undecide`, then enter `save` and `quit`. Expected outcome: a collision-safe sibling reviewed-plan file is created, the original file is unchanged, no operation log is written, and no files move. The updated file remains suitable for the existing separately confirmed `--apply-reviewed-plan` command. Do not apply against an important folder.
 
+## Stage 10.12 Review Views
+
+In a disposable new or resumed review session, run:
+
+```text
+view
+filter decision undecided
+filter category organization
+sort source asc
+page-size 10
+show
+page next
+page prev
+details <stable-ID>
+clear-sort
+clear-filter
+view
+save
+quit
+```
+
+Expected outcome: view commands change only displayed rows and page metadata. Stable IDs still address hidden rows, `summary` still covers the full session, saved JSON still contains every row in deterministic order, and no operation log or movement occurs from view commands or save.
+
+## Stage 10.13 Current-Page Decisions
+
+In a disposable new or resumed review session, run:
+
+```text
+page-size 5
+filter decision undecided
+sort source asc
+show
+approve-page
+WRONG
+show
+approve-page
+APPROVE CURRENT PAGE
+view
+clear-filter
+page next
+reject-page
+REJECT CURRENT PAGE
+save
+quit
+```
+
+Expected outcome: the wrong confirmation changes nothing; the exact confirmation changes only stable IDs displayed on that page; off-page and filtered-out rows retain their decisions; no save occurs until `save`; the saved reviewed plan still contains all rows; and no operation log or file movement is created by page-decision commands.
+
+## Stage 10.14 Review Session Polish
+
+Use a disposable resumed reviewed-plan session and run:
+
+```text
+help
+view
+conflicts
+approve O1
+view
+quit
+WRONG
+view
+save
+view
+reject-page
+REJECT CURRENT PAGE
+quit
+QUIT WITHOUT SAVING
+```
+
+Expected outcome: help is grouped by purpose; invalid input names the failed command or argument; actual decision changes set `unsaved decision changes` to `yes`; view-only commands do not change that state; a wrong quit confirmation keeps the session open; save writes a collision-safe reviewed-plan sibling and clears the indicator; the final exact quit confirmation discards only the later in-memory decision changes. The resumed input remains unchanged, and no operation log or file movement is produced by help, view, conflicts, decision editing, save, or quit.
+
+## Loci Flow 1.0F-D Guided Standards Creation
+
+Use only this disposable fixture:
+
+```bash
+SMOKE_ROOT="/tmp/loci-flow-f-d-standards"
+rm -rf "$SMOKE_ROOT"
+mkdir -p "$SMOKE_ROOT/Keep-Unchanged"
+mkdir -p "$SMOKE_ROOT/Course-Files"
+mkdir -p "$SMOKE_ROOT/Project-Files"
+mkdir -p "$SMOKE_ROOT/AI_Review/config"
+printf "keep\n" > "$SMOKE_ROOT/Keep-Unchanged/reference.txt"
+printf "notes\n" > "$SMOKE_ROOT/Course-Files/CS1010X-notes.txt"
+printf "slides\n" > "$SMOKE_ROOT/Course-Files/CS1010X-slides.pdf"
+printf "plan\n" > "$SMOKE_ROOT/Project-Files/BootAI-plan.txt"
+printf "report\n" > "$SMOKE_ROOT/Project-Files/BootAI-report.pdf"
+printf '%s\n' '{"version":1,"locked_anchors":["CS2020"],"ignored_terms":["summary"]}' \
+  > "$SMOKE_ROOT/AI_Review/config/organization_rules.json"
+```
+
+Launch the local authenticated app with `SMOKE_ROOT` as its selected root, then:
+
+1. Choose **Check files**, open **Standards**, and choose **Add standard**.
+2. Choose **Keep a folder unchanged**, choose **Keep-Unchanged**, preview, and save.
+3. Choose **Check again** and verify the folder's file is shown as kept by Standards rather than as a movement recommendation.
+4. Return to **Standards**, add **Keep matching files together**, choose **Course code**, enter `CS1010X`, preview, and save.
+5. Choose **Check again** and verify the course files use the deterministic grouping result.
+6. Repeat the matching preset with **Project code** and `BootAI`, then check again and verify its grouping.
+7. Restart the app against the same disposable root and verify the migrated v1 Standard plus the newly saved Standards remain listed.
+8. Approve an organization plan, return to **Standards**, and verify adding another Standard is blocked without altering the approved plan.
+9. Open **Activity** and verify none of the preview, save, or activation actions created an Activity entry.
+
+At each preview, verify only a safe scope label, effect, and current match count
+are shown. No filesystem path, JSON editor, regex or glob control, Standard ID,
+catalog revision, or preview token should be visible. Saving must show that a new
+Check is required and must not start that Check automatically.
+
+Delete the disposable root when acceptance is complete.
+
+## Loci Flow 1.0G-B1 macOS Native Launcher
+
+Run this check only in an interactive macOS graphical session with the `web`
+and `macos-launcher` optional dependencies installed. Use disposable folders.
+
+1. Run `PYTHONPATH=src python3 -m organizer.macos_launcher`.
+2. Confirm the native folder panel initially shows Downloads when it exists.
+3. Confirm files cannot be selected and only one directory can be selected.
+4. Cancel and confirm no browser opens and no local server remains running.
+5. Start again, select a normal disposable folder, and confirm the authenticated
+   Loci Flow page opens in the default browser.
+6. Start again and select an application bundle. Confirm the native launcher
+   rejects it without exposing its full path or a traceback.
+7. Create a POSIX symlink to a disposable directory and select the symlink in
+   the panel. Confirm the launcher receives the lexical symlink path and shared
+   root admission rejects it.
+
+If the final check instead admits the resolved target, stop acceptance and
+report the contradiction. Do not weaken shared root admission or treat the
+resolved target as the user-selected entry. Coordinated Quit while the server
+is running remains deferred to G-B2; the B1 menu must refuse that request
+truthfully rather than terminating the process.
+
 ## Final Git Hygiene Check
 
 From the repository root:

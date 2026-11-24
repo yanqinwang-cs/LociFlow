@@ -10,12 +10,13 @@ from typing import Any
 from organizer.duplicates import find_exact_duplicates
 from organizer.grouping import build_organization_suggestions, find_project_groups
 from organizer.models import FileMetadata, MovePlanItem, OrganizationSuggestion, ReviewedPlanItem
-from organizer.organization_rules import load_organization_rules
+from organizer.organization_rules import OrganizationRules
 from organizer.planner import build_duplicate_review_plan
 from organizer.review import build_review_candidate_plan, detect_review_candidates
 from organizer.safety import validate_under_root
 from organizer.scanner import scan_directory
 from organizer.scope import is_actionable_destination_path, is_actionable_source_path
+from organizer.reports import validate_report_data
 
 REVIEW_SESSION_SCHEMA_VERSION = 1
 REVIEW_PLAN_TYPE = "batch_review"
@@ -32,6 +33,36 @@ MEMORY_NEW = "new_suggestion"
 MEMORY_REJECTED = "rejected_remembered"
 MEMORY_APPROVED = "approved_remembered"
 MEMORY_STALE = "stale_prior_decision"
+DEFAULT_REVIEW_PAGE_SIZE = 25
+MAX_REVIEW_PAGE_SIZE = 200
+REVIEW_FILTER_VALUES = {
+    "decision": {DECISION_APPROVED, DECISION_REJECTED, DECISION_UNDECIDED},
+    "category": {
+        CATEGORY_DUPLICATE,
+        CATEGORY_ORGANIZATION,
+        CATEGORY_REVIEW_CANDIDATE,
+    },
+    "review_category": REVIEW_CANDIDATE_CATEGORIES,
+}
+REVIEW_SORT_FIELDS = {
+    "id",
+    "source",
+    "destination",
+    "decision",
+    "category",
+    "review_category",
+}
+REVIEW_SORT_DIRECTIONS = {"asc", "desc"}
+PAGE_DECISION_CONFIRMATIONS = {
+    DECISION_APPROVED: "APPROVE CURRENT PAGE",
+    DECISION_REJECTED: "REJECT CURRENT PAGE",
+    DECISION_UNDECIDED: "UNDECIDE CURRENT PAGE",
+}
+PAGE_DECISION_ACTIONS = {
+    DECISION_APPROVED: "approve",
+    DECISION_REJECTED: "reject",
+    DECISION_UNDECIDED: "undecide",
+}
 
 
 @dataclass(frozen=True)
@@ -41,12 +72,323 @@ class ReviewedPlanConflict:
     items: list[ReviewedPlanItem]
 
 
+@dataclass(frozen=True)
+class ReviewViewState:
+    filters: tuple[tuple[str, str], ...] = ()
+    sort_field: str = "id"
+    sort_direction: str = "asc"
+    page: int = 1
+    page_size: int = DEFAULT_REVIEW_PAGE_SIZE
+
+
+@dataclass(frozen=True)
+class ReviewViewPage:
+    rows: list[ReviewedPlanItem]
+    page: int
+    total_pages: int
+    page_size: int
+    matching_count: int
+    total_count: int
+
+
+@dataclass(frozen=True)
+class PageDecisionPreview:
+    decision: str
+    action: str
+    confirmation: str
+    target_ids: tuple[str, ...]
+    change_ids: tuple[str, ...]
+    already_count: int
+    page: int
+    total_pages: int
+    matching_count: int
+    total_count: int
+    decision_counts: tuple[tuple[str, int], ...]
+    category_counts: tuple[tuple[str, int], ...]
+
+
+def review_decision_snapshot(
+    items: list[ReviewedPlanItem],
+) -> tuple[tuple[str, str], ...]:
+    return tuple(sorted((item.id, item.decision) for item in items))
+
+
+def preview_page_decision_change(
+    items: list[ReviewedPlanItem],
+    state: ReviewViewState,
+    root: Path,
+    decision: str,
+) -> PageDecisionPreview:
+    if decision not in PAGE_DECISION_CONFIRMATIONS:
+        raise ValueError(f"unsupported review decision: {decision}")
+    view = build_review_view(items, state, root)
+    target_ids = tuple(item.id for item in view.rows)
+    change_ids = tuple(
+        item.id for item in view.rows if item.decision != decision
+    )
+    return PageDecisionPreview(
+        decision=decision,
+        action=PAGE_DECISION_ACTIONS[decision],
+        confirmation=PAGE_DECISION_CONFIRMATIONS[decision],
+        target_ids=target_ids,
+        change_ids=change_ids,
+        already_count=len(target_ids) - len(change_ids),
+        page=view.page,
+        total_pages=view.total_pages,
+        matching_count=view.matching_count,
+        total_count=view.total_count,
+        decision_counts=_count_page_values(view.rows, "decision"),
+        category_counts=_count_page_values(view.rows, "category"),
+    )
+
+
+def apply_page_decision_change(
+    items: list[ReviewedPlanItem],
+    preview: PageDecisionPreview,
+) -> list[ReviewedPlanItem]:
+    if not set(preview.change_ids).issubset(preview.target_ids):
+        raise ValueError("page decision changes must be current-page targets")
+    if not preview.change_ids:
+        return items
+    ids = list(preview.change_ids)
+    if preview.decision == DECISION_APPROVED:
+        return approve_items(items, ids)
+    if preview.decision == DECISION_REJECTED:
+        return reject_items(items, ids)
+    if preview.decision == DECISION_UNDECIDED:
+        return undecide_items(items, ids)
+    raise ValueError(f"unsupported review decision: {preview.decision}")
+
+
+def _count_page_values(
+    rows: list[ReviewedPlanItem],
+    field: str,
+) -> tuple[tuple[str, int], ...]:
+    counts: dict[str, int] = {}
+    for item in rows:
+        value = item.decision if field == "decision" else item.category
+        counts[value] = counts.get(value, 0) + 1
+    return tuple(sorted(counts.items()))
+
+
+def set_review_filter(
+    state: ReviewViewState,
+    field: str,
+    value: str,
+) -> ReviewViewState:
+    normalized_field = field.strip().lower()
+    normalized_value = value.strip().lower()
+    allowed_values = REVIEW_FILTER_VALUES.get(normalized_field)
+    if allowed_values is None:
+        supported = ", ".join(sorted(REVIEW_FILTER_VALUES))
+        raise ValueError(
+            f"Unknown filter field: {field}. Supported fields: {supported}."
+        )
+    if normalized_value not in allowed_values:
+        allowed = ", ".join(sorted(allowed_values))
+        raise ValueError(
+            f"Invalid filter value for {normalized_field}: {value}. "
+            f"Supported values: {allowed}."
+        )
+    filters = dict(state.filters)
+    filters[normalized_field] = normalized_value
+    return replace(
+        state,
+        filters=tuple(sorted(filters.items())),
+        page=1,
+    )
+
+
+def clear_review_filters(state: ReviewViewState) -> ReviewViewState:
+    return replace(state, filters=(), page=1)
+
+
+def set_review_sort(
+    state: ReviewViewState,
+    field: str,
+    direction: str = "asc",
+) -> ReviewViewState:
+    normalized_field = field.strip().lower()
+    normalized_direction = direction.strip().lower()
+    if normalized_field not in REVIEW_SORT_FIELDS:
+        supported = ", ".join(sorted(REVIEW_SORT_FIELDS))
+        raise ValueError(
+            f"Unknown sort field: {field}. Supported fields: {supported}."
+        )
+    if normalized_direction not in REVIEW_SORT_DIRECTIONS:
+        supported = ", ".join(sorted(REVIEW_SORT_DIRECTIONS))
+        raise ValueError(
+            f"Invalid sort direction: {direction}. "
+            f"Supported directions: {supported}."
+        )
+    return replace(
+        state,
+        sort_field=normalized_field,
+        sort_direction=normalized_direction,
+        page=1,
+    )
+
+
+def clear_review_sort(state: ReviewViewState) -> ReviewViewState:
+    return replace(
+        state,
+        sort_field="id",
+        sort_direction="asc",
+        page=1,
+    )
+
+
+def build_review_view(
+    items: list[ReviewedPlanItem],
+    state: ReviewViewState,
+    root: Path,
+) -> ReviewViewPage:
+    matching = apply_review_filters(items, state)
+    ordered = sort_review_rows(matching, state, root)
+    matching_count = len(ordered)
+    total_pages = (
+        (matching_count + state.page_size - 1) // state.page_size
+        if matching_count
+        else 0
+    )
+    page = min(state.page, total_pages) if total_pages else 0
+    start = (page - 1) * state.page_size if page else 0
+    rows = ordered[start : start + state.page_size] if page else []
+    return ReviewViewPage(
+        rows=rows,
+        page=page,
+        total_pages=total_pages,
+        page_size=state.page_size,
+        matching_count=matching_count,
+        total_count=len(items),
+    )
+
+
+def apply_review_filters(
+    items: list[ReviewedPlanItem],
+    state: ReviewViewState,
+) -> list[ReviewedPlanItem]:
+    filters = dict(state.filters)
+    return [
+        item
+        for item in items
+        if all(
+            _review_filter_value(item, field) == value
+            for field, value in filters.items()
+        )
+    ]
+
+
+def sort_review_rows(
+    items: list[ReviewedPlanItem],
+    state: ReviewViewState,
+    root: Path,
+) -> list[ReviewedPlanItem]:
+    rows = sorted(items, key=lambda item: item.id)
+    if state.sort_field == "id":
+        return sorted(
+            rows,
+            key=lambda item: item.id,
+            reverse=state.sort_direction == "desc",
+        )
+    return sorted(
+        rows,
+        key=lambda item: _review_sort_value(item, state.sort_field, root),
+        reverse=state.sort_direction == "desc",
+    )
+
+
+def set_review_page(
+    state: ReviewViewState,
+    page_request: str,
+    items: list[ReviewedPlanItem],
+    root: Path,
+) -> ReviewViewState:
+    view = build_review_view(items, state, root)
+    normalized_request = page_request.strip().lower()
+    if view.total_pages == 0:
+        raise ValueError("Invalid page request: the current review view has no pages.")
+    if normalized_request == "next":
+        requested_page = view.page + 1
+    elif normalized_request == "prev":
+        requested_page = view.page - 1
+    else:
+        try:
+            requested_page = int(normalized_request)
+        except ValueError as error:
+            raise ValueError(
+                f"Invalid page: {page_request}. Use next, prev, or a page number."
+            ) from error
+    if requested_page < 1 or requested_page > view.total_pages:
+        raise ValueError(
+            f"Invalid page: {page_request}. "
+            f"Page must be between 1 and {view.total_pages}."
+        )
+    return replace(state, page=requested_page)
+
+
+def set_review_page_size(
+    state: ReviewViewState,
+    page_size_text: str,
+) -> ReviewViewState:
+    try:
+        page_size = int(page_size_text)
+    except ValueError as error:
+        raise ValueError(
+            f"Invalid page size: {page_size_text}. Page size must be an integer."
+        ) from error
+    if page_size < 1 or page_size > MAX_REVIEW_PAGE_SIZE:
+        raise ValueError(
+            f"Invalid page size: {page_size_text}. "
+            f"Page size must be between 1 and {MAX_REVIEW_PAGE_SIZE}."
+        )
+    return replace(state, page_size=page_size, page=1)
+
+
+def clamp_review_page(
+    state: ReviewViewState,
+    items: list[ReviewedPlanItem],
+    root: Path,
+) -> ReviewViewState:
+    view = build_review_view(items, state, root)
+    return replace(state, page=view.page if view.page else 1)
+
+
+def _review_filter_value(item: ReviewedPlanItem, field: str) -> str:
+    if field == "decision":
+        return item.decision
+    if field == "category":
+        return item.category
+    if field == "review_category":
+        return item.review_category or ""
+    raise ValueError(f"unsupported review filter field: {field}")
+
+
+def _review_sort_value(
+    item: ReviewedPlanItem,
+    field: str,
+    root: Path,
+) -> str:
+    if field == "source":
+        return _normalized_relative_path(item.plan_item.source, root)
+    if field == "destination":
+        return _normalized_relative_path(item.plan_item.destination, root)
+    if field == "decision":
+        return item.decision
+    if field == "category":
+        return item.category
+    if field == "review_category":
+        return item.review_category or ""
+    return item.id
+
+
 def build_review_session_items(
     files: list[FileMetadata],
     root: Path,
+    *,
+    organization_rules: OrganizationRules,
 ) -> list[ReviewedPlanItem]:
     resolved_root = root.resolve()
-    organization_rules = load_organization_rules(resolved_root).rules
     duplicate_groups = find_exact_duplicates(files)
     duplicate_plan_items = build_duplicate_review_plan(
         duplicate_groups,
@@ -88,6 +430,110 @@ def build_review_session_items(
     return items
 
 
+def build_review_session_items_from_report(
+    report: object,
+    root: Path,
+) -> list[ReviewedPlanItem]:
+    """Build the same review rows from one already-completed scan report."""
+    validated_report = validate_report_data(report)
+    resolved_root = root.resolve()
+    items: list[ReviewedPlanItem] = []
+
+    duplicate_items = _report_plan_items(
+        validated_report["duplicate_review_plan"],
+        resolved_root,
+        CATEGORY_DUPLICATE,
+        "D",
+    )
+    organization_items: list[dict[str, Any]] = []
+    for index, suggestion in enumerate(
+        validated_report["organization_suggestions"],
+        start=1,
+    ):
+        if not isinstance(suggestion, dict):
+            raise ValueError(f"organization suggestion {index} must be an object")
+        organization_items.extend(
+            _report_plan_items(
+                suggestion.get("plan_items"),
+                resolved_root,
+                CATEGORY_ORGANIZATION,
+                "O",
+                start_index=len(organization_items) + 1,
+            )
+        )
+    review_items = _report_plan_items(
+        validated_report["review_candidate_plan"],
+        resolved_root,
+        CATEGORY_REVIEW_CANDIDATE,
+        "R",
+    )
+    review_candidates = validated_report["review_candidates"]
+    if len(review_items) != len(review_candidates):
+        raise ValueError("report review candidate rows do not match candidate facts")
+    review_items = [
+        replace(item, review_category=candidate["category"])
+        for item, candidate in zip(review_items, review_candidates)
+        if isinstance(candidate, dict)
+    ]
+    if len(review_items) != len(review_candidates):
+        raise ValueError("report review candidate facts are invalid")
+    items.extend(duplicate_items)
+    items.extend(organization_items)
+    items.extend(review_items)
+    return items
+
+
+def _report_plan_items(
+    raw_items: object,
+    root: Path,
+    category: str,
+    prefix: str,
+    *,
+    start_index: int = 1,
+) -> list[ReviewedPlanItem]:
+    if not isinstance(raw_items, list):
+        raise ValueError(f"report {category} plan must be a list")
+    result: list[ReviewedPlanItem] = []
+    for offset, raw_item in enumerate(raw_items, start=start_index):
+        if not isinstance(raw_item, dict):
+            raise ValueError(f"report {category} item {offset} must be an object")
+        source = _validated_relative_path(raw_item.get("source"), "source", offset)
+        destination = _validated_relative_path(
+            raw_item.get("destination"),
+            "destination",
+            offset,
+        )
+        source_path = root / source
+        destination_path = root / destination
+        validate_under_root(source_path.resolve(strict=False), root)
+        validate_under_root(destination_path.resolve(strict=False), root)
+        result.append(
+            ReviewedPlanItem(
+                id=f"{prefix}{offset}",
+                category=category,
+                decision=DECISION_APPROVED,
+                plan_item=MovePlanItem(
+                    source=source_path,
+                    destination=destination_path,
+                    reason=_optional_string(
+                        raw_item.get("reason"),
+                        "Report suggestion.",
+                    ),
+                    confidence=_optional_confidence(raw_item.get("confidence")),
+                    operation=_optional_string(
+                        raw_item.get("operation"),
+                        "dry-run move",
+                    ),
+                    overwrite_risk=_optional_bool(
+                        raw_item.get("overwrite_risk"),
+                        False,
+                    ),
+                ),
+            )
+        )
+    return result
+
+
 def approve_items(
     items: list[ReviewedPlanItem],
     ids: list[str],
@@ -117,7 +563,7 @@ def get_item(
     for item in items:
         if item.id == normalized_id:
             return item
-    raise ValueError(f"unknown review item ID: {item_id}")
+    raise ValueError(f"Row ID not found: {item_id}. No review decisions were changed.")
 
 
 def summarize_review_items(
@@ -433,10 +879,16 @@ def save_reviewed_plan(
     root: Path,
     review_folder_name: str = "AI_Review",
     session_folder_name: str = "review_sessions",
+    *,
+    output_name: str | None = None,
 ) -> Path:
     resolved_root = root.resolve()
     log_dir = resolved_root / review_folder_name / session_folder_name
-    destination = _next_reviewed_plan_path(log_dir)
+    destination = (
+        _next_reviewed_plan_path(log_dir)
+        if output_name is None
+        else _next_named_reviewed_plan_path(log_dir, output_name)
+    )
     resolved_destination = _validate_new_output_path(destination, resolved_root)
     resolved_destination.parent.mkdir(parents=True, exist_ok=True)
     with resolved_destination.open("x", encoding="utf-8") as file:
@@ -523,7 +975,10 @@ def _set_decision(
     known_ids = {item.id for item in items}
     unknown_ids = [item_id for item_id in normalized_ids if item_id not in known_ids]
     if unknown_ids:
-        raise ValueError(f"unknown review item ID: {unknown_ids[0]}")
+        raise ValueError(
+            f"Row ID not found: {unknown_ids[0]}. "
+            "No review decisions were changed."
+        )
 
     ids_to_update = set(normalized_ids)
     return [
@@ -533,7 +988,7 @@ def _set_decision(
             memory_status=MEMORY_NEW,
             remembered_decision=None,
         )
-        if item.id in ids_to_update
+        if item.id in ids_to_update and item.decision != decision
         else item
         for item in items
     ]
@@ -740,6 +1195,23 @@ def _next_resumed_reviewed_plan_path(source_path: Path) -> Path:
         if not os.path.lexists(candidate):
             return candidate
     raise ValueError(f"could not find unused reviewed plan path for {source_path}")
+
+
+def _next_named_reviewed_plan_path(log_dir: Path, output_name: str) -> Path:
+    name = Path(output_name)
+    if (
+        not output_name
+        or name.name != output_name
+        or name.suffix != ".json"
+        or name.stem in {"", ".", ".."}
+    ):
+        raise ValueError("reviewed plan output name must be a JSON filename")
+    candidate = log_dir / output_name
+    counter = 1
+    while os.path.lexists(candidate):
+        candidate = log_dir / f"{name.stem}_{counter}{name.suffix}"
+        counter += 1
+    return candidate
 
 
 def _load_reviewed_plan_json(path: Path) -> object:

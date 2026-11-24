@@ -9,6 +9,7 @@ Codex must read this file before implementing future stages.
 - State explicit non-goals.
 - List intended files before editing.
 - Inspect existing modules before adding code.
+- Before any Stage 11 implementation, read `WEB_ARCHITECTURE.md` and `WEB_THREAT_MODEL.md` completely.
 - Reuse existing functions where possible.
 - Respect module ownership.
 - Do not skip ahead.
@@ -17,7 +18,7 @@ Codex must read this file before implementing future stages.
 
 ## Completed Stages
 
-Stages 1 through 10.11 are complete. Current code supports scanning, duplicate detection, dry-run duplicate plans, approved duplicate moves with logs, review candidates, conservative deterministic grouping for document-like files, orphan-code review candidates, protected/generated/project-output exclusion from actionable plans, strong-anchor organization, organization rules and anchor-decision reporting, report-only existing organization pattern inference, confirmed organization-rule review, rule-aware organization audit, rule-aware organization review JSON export, confirmed approved organization-review apply, read-only post-apply verification, saved review-session resume and editing, local Ollama refinement, documentation, approved organization moves through `executor.py`, manual testing guidance, release notes, read-only JSON and HTML reports, batch CLI review of duplicate, organization, and review-candidate plans, reviewed-plan conflict detection, persistent review decision memory, and confirmed apply for saved reviewed plans.
+Stages 1 through 10.14 and Stages 11.0 through 11.5.2 are complete. The consumer modules save independently; the complete technical table and full save remain `/review/advanced`.
 
 ## Reuse Before Create
 
@@ -39,10 +40,66 @@ Stages 1 through 10.11 are complete. Current code supports scanning, duplicate d
 - `organization_apply_review.py` owns approved organization-review conversion and result summaries. It may call only `executor.apply_move_plan()` for movement and must not rescan or regenerate suggestions.
 - `llm_refinement.py` owns prompt, payload, and validation for LLM group refinement.
 - `reports.py` owns read-only report assembly and JSON report writing.
+- `reports.py` also owns public scan-report loading and validation for its existing format.
 - `html_report.py` owns read-only static HTML rendering from report dictionaries.
 - `review_session.py` owns batch review-session construction, decisions, reviewed-plan JSON writing, saved-plan validation, and conversion back to `MovePlanItem` values.
 - `review_state.py` owns persistent human review decision memory.
-- `executor.py` owns moving and undo.
+- `safety.py` owns shared root-containment validation.
+- `application/scan_service.py` coordinates report construction and derives interface summaries without I/O or movement.
+- `application/review_service.py` coordinates immutable review sessions through `review_session.py` and `review_state.py`; it never imports the executor.
+- `application/artifact_service.py` lists and loads only scan reports and reviewed plans for the first web MVP. Future artifact kinds remain deferred.
+- `application/view_models.py` owns frozen interface-independent application results.
+- `web/config.py` owns immutable per-launch root and ephemeral secret configuration.
+- `web/server.py` owns loopback socket binding, browser bootstrap, and Uvicorn lifecycle.
+- `web/app.py` owns app construction, middleware, installed-resource lookup, and generic errors.
+- `web/security.py` owns launch-token consumption, session/CSRF helpers, exact same-origin validation, and response headers.
+- `web/routes/home.py` owns health, launch bootstrap, the authenticated dashboard, and scan routes; `web/routes/review.py` owns review presentation and authenticated decision/save HTTP handling through application services.
+- `web/review_explorer.py` owns the locked, generation-bound in-memory application-session holder and one-use current-page preview tokens; it does not own review algorithms or persistence formats.
+- `executor.py` owns movement-specific source/destination/symlink preflight, moving, operation logs, and undo.
+
+## Stage 11 Guardrails
+
+- The local web application is the intended primary consumer interface; do not describe the CLI as the intended ordinary-user interface.
+- Do not skip Stage 11 safety gates or combine roadmap stages merely because later functionality is convenient.
+- Web routes must not import `executor.py`. Only the future `application/execution_service.py` may delegate to existing executor functions.
+- Application services must reuse current scanner, duplicate, grouping, review-session, safety, executor, verification, report, and artifact ownership.
+- Do not create separate CLI and web implementations of the same workflow.
+- Browser requests must submit stable root-bound IDs and allowed actions, never arbitrary source or destination paths.
+- One validated root is immutable for each server process. Changing roots requires a new process.
+- Bind to `127.0.0.1`, use one worker, and never default to `0.0.0.0`.
+- Treat browser values and loaded JSON artifacts as untrusted.
+- Every mutation requires POST, a signed session, session-bound CSRF, same-origin validation, and current-generation validation. GET remains read-only. Explicit revisions and multi-tab stale-state rejection begin in Stage 11.6.
+- Use a one-time launch token, Trusted Host validation, restrictive security headers, no CORS, and no arbitrary file-serving endpoint.
+- Bundle frontend assets locally. No CDN, remote fonts, analytics, telemetry, external scripts, or runtime cloud APIs.
+- Do not add a database initially; existing JSON artifacts remain authoritative.
+- Accessibility targets WCAG 2.2 AA from the first web screen.
+- Do not add web apply before Stage 11.8 or web restore before Stage 11.9.
+- Do not begin native desktop development during Stage 11. A small packaged folder chooser in Stage 11.10 is not a desktop UI architecture.
+- Do not claim that moving files on the same filesystem saves or recovers storage.
+- Stage 11.0 adds documentation only: no production code, dependencies, schemas, CLI flags, templates, routes, assets, launchers, or packaging.
+- Stage 11.1 adds no server, web package, preflight service, execution service, web dependency, new CLI flag, future artifact parser, or movement change.
+- Core mandatory dependencies contain no cloud SDK or dotenv package. Cloud/OpenRouter references are permitted only in `legacy/openrouter_code_assistant/`, which is excluded from packaging and runtime.
+- `application/__init__.py` contains public exports only; services reuse `safety.py` and owner validators rather than implementing shared path validation.
+- Stage 11.2 optional dependency pins and bundled vendor hashes are exact. Do not silently upgrade, fetch from a CDN, re-minify, or remove required license notices.
+- The launcher exposes only `--root`, `--no-browser`, and `--port`; never add `--host`. It passes one already-bound `127.0.0.1` socket to one Uvicorn worker with access logs and proxy headers disabled.
+- Per-launch secrets are random, memory-only, and never read from environment variables or persisted. Print the launch URL only for `--no-browser` or browser-open failure.
+- The signed session cookie is host-only, browser-lifetime, `HttpOnly`, `SameSite=Strict`, and contains only an authentication marker plus opaque session and CSRF values. Signed cookie contents are not confidential.
+- `testserver` is a Trusted Host only in explicit test configuration. Production accepts `127.0.0.1` and `localhost` without wildcards or `www` redirects.
+- Missing, duplicate, malformed, credential-bearing, path-bearing, external, wrong-host, wrong-scheme, or wrong-port Origin values fail closed. CORS remains disabled.
+- Stage 11.5 adds POST-only single-row decision, current-page preview/confirmation, and reviewed-plan save routes. Every route uses the application review service; browser forms submit stable IDs or opaque preview tokens, allowed actions, CSRF, and validated view state—not paths or trusted row lists.
+- User labels map exactly as Organize → `approved`, Keep here → `rejected`, and Review later → `undecided`. Current-page confirmations retain `APPROVE CURRENT PAGE`, `REJECT CURRENT PAGE`, and `UNDECIDE CURRENT PAGE`.
+- Saving is explicit, includes all rows, uses the existing collision-safe reviewed-plan owner, and never moves files. No autosave or browser-selected output path is permitted.
+- A dirty review session blocks `POST /scan` with `409 Conflict`; it must not be discarded silently or attributed to a new scan generation.
+- Stage 11.6 remains responsible for reviewed-plan resume, request revisions, and multi-tab stale-state protection.
+- Stage 11.5.1 consumer cards consolidate by normalized source with duplicate → organization → attention precedence. Secondary rows remain independent; a card action changes only its primary row.
+- Consumer return surfaces are strict enums mapped to fixed server routes. Never accept a browser-provided return URL or path.
+- Use `Space used by extra copies` or `Potential duplicate space`; moving a duplicate copy does not recover storage.
+- Internal navigation must not use a global `beforeunload` warning. Dirty replacement scans remain blocked server-side.
+- Stage 11.5.2 owns the implemented independent module plans. Stage 11.5.3 owns the still-deferred planned-change tree; do not implement it early.
+- Fresh scan-generated web sessions must normalize new/stale suggestions to `undecided` while preserving remembered decisions. Do not change CLI or resumed-plan defaults.
+- Module saving must include every row in that fixed module, update only its saved baseline, and reuse the existing reviewed-plan/review-state owners.
+- Guided handled/deferred IDs are generation-bound web memory only; `Skip for now` remains serialized as `undecided`.
+- Do not weaken CSP or add inline scripts/handlers. The security headers must cover pages, redirects, static responses, Host failures, and handled errors.
 
 ## Do Not Skip Ahead
 
@@ -97,7 +154,22 @@ Answer these before editing:
 - Stage 10.9 organization-review apply requires exact confirmation before file access, converts only approved rows, and delegates all movement to `executor.py`.
 - Stage 10.10 verifies organization-review apply results against the filesystem and executor operation log, and hardens undo verification with temporary-directory tests. It must add no organization logic or mover, automatic undo, rule changes, LLM behavior, or GUI work.
 - Stage 10.11 resumes only existing batch reviewed-plan JSON. Saved decisions are authoritative, review state is not applied, save is collision-safe, and confirmed apply must reuse the existing validator and executor path.
-- Later subset selection, filtering, sorting, pagination, and richer review interfaces remain future work.
+- Stage 10.12 view state filters, sorts, and paginates display rows only. Stable IDs, all session rows, decisions, save ordering, apply confirmation, and executor behavior remain unchanged.
+- Stage 10.13 bulk decisions target only exact stable IDs on the current displayed page, require action-specific typed confirmation, remain in memory until save, and must not enter the executor path.
+- Stage 10.14 unsaved-decision state is session-local, changes only after actual decision edits, clears only after successful save, and must not alter reviewed-plan schemas, review state, conflicts, apply confirmation, or executor behavior.
+- Stage 11.0 freezes architecture, security, accessibility, and roadmap contracts only.
+- Stage 11.1 introduces application services and dependency hygiene without a server or movement changes.
+- Stage 11.2 adds only the secure local web shell and launcher; no scan workflow.
+- Stage 11.3 adds read-only scanning; no decisions or movement.
+- Stage 11.4 adds read-only review exploration; no decision mutation.
+- Stage 11.5 adds review decisions and saving only; no movement, and it is the first product-evaluation checkpoint.
+- Stage 11.5.1 simplifies consumer information architecture only; it preserves all rows, decisions, schemas, and movement boundaries.
+- Stage 11.5.2 adds conservative fresh-web initialization, guided queues, and independent existing-format module saves only; no tree or movement.
+- Stage 11.6 adds resume, revision, stale-state, and multi-tab protection; no movement.
+- Stage 11.7 adds final-plan preview and read-only execution preflight; no movement.
+- Stage 11.8 is the first stage permitted to add confirmed web apply, using existing reviewed-plan validation and `executor.py` only.
+- Stage 11.9 is the first stage permitted to add confirmed web restore, using existing executor undo only.
+- Stage 11.10 owns packaging, onboarding, accessibility audit, performance testing, and release hardening.
 
 ## Testing And Git Hygiene
 

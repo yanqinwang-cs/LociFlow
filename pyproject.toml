@@ -1,10 +1,47 @@
 [project]
 name = "bootai"
 version = "0.1.0"
-description = "Add your description here"
+description = "A cautious local file organizer with review-first, reversible workflows"
 readme = "README.md"
 requires-python = ">=3.13"
-dependencies = [
-    "openai==2.44.0",
-    "python-dotenv==1.1.0",
+dependencies = []
+
+[project.optional-dependencies]
+web = [
+    "fastapi==0.139.0",
+    "starlette==1.3.1",
+    "uvicorn==0.50.2",
+    "jinja2==3.1.6",
+    "itsdangerous==2.2.0",
+]
+web-test = [
+    "httpx==0.28.1",
+]
+macos-launcher = [
+    "pyobjc-core==12.2.1; sys_platform == 'darwin'",
+    "pyobjc-framework-Cocoa==12.2.1; sys_platform == 'darwin'",
+]
+macos-build = [
+    "pillow==12.3.0",
+    "pyinstaller==6.16.0",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"organizer.web" = [
+    "templates/*.html",
+    "static/THIRD_PARTY_NOTICES.txt",
+    "static/css/*.css",
+    "static/js/*.js",
+    "static/loci_flow/*.css",
+    "static/loci_flow/*.js",
+    "static/loci_flow/*.json",
+    "static/loci_flow/assets/*.svg",
+    "static/vendor/*.css",
+    "static/vendor/*.js",
 ]

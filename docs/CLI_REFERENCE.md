@@ -6,6 +6,20 @@ Run commands with:
 PYTHONPATH=src python -m organizer.cli <folder>
 ```
 
+## Local Web Launcher
+
+Stages 11.2 through 11.5.2 use a separate module launcher; they do not add or change an `organizer.cli` flag:
+
+```bash
+PYTHONPATH=src python3 -m organizer.web --root "$HOME/Downloads"
+PYTHONPATH=src python3 -m organizer.web --root "$HOME/Downloads" --no-browser
+PYTHONPATH=src python3 -m organizer.web --root "$HOME/Downloads" --port 8123
+```
+
+Install the optional dependencies with `python3 -m pip install -e ".[web]"`. The launcher accepts only `--root`, `--no-browser`, and `--port`; there is no host option. It binds to `127.0.0.1`, normally selects a dynamic port, and opens a private single-use launch URL after `/healthz` is ready. `--no-browser` prints that URL instead. If `--root` is omitted, `~/Downloads` is accepted only when it exists and passes root validation.
+
+The web application provides guided Duplicates, Organize, and Needs attention queues with independent existing-format saves. Fresh-web default normalization does not change CLI review defaults or saved-plan loading. There is no scheduling, tree, apply, restore, or CLI-interface change.
+
 ## Base
 
 ```bash
@@ -215,19 +229,34 @@ Review mode is single-purpose. It rejects display, planning, apply, undo, report
 
 Inside the review session:
 
-- `help`: show commands.
+- `help`: show commands grouped by inspection, decisions, view controls, and session actions.
 - `show duplicates`: show duplicate suggested moves.
 - `show organization`: show organization suggested moves.
 - `show review-candidates`: show review-candidate suggested moves with `R` IDs.
 - `summary`: show approved and rejected move counts.
-- `conflicts`: show approved source and destination conflicts.
+- `conflicts`: show deterministic approved source and destination conflicts with stable IDs and root-relative paths.
 - `reject <IDs...>`: mark suggested moves as rejected.
 - `approve <IDs...>`: mark rejected moves as approved again.
 - `undecide <IDs...>`: return selected rows to undecided.
 - `details <ID>`: show full details for one item.
-- `save`: write a reviewed-plan JSON file under `AI_Review/review_sessions/`.
+- `filter <field> <value>`: set or replace a decision, category, or review-category filter.
+- `clear-filter`: clear all active filters.
+- `sort <field> [asc|desc]`: sort the current view by ID, source, destination, decision, category, or review category.
+- `clear-sort`: restore default ID order.
+- `page next`, `page prev`, `page <number>`: navigate the current view.
+- `page-size <number>`: set page size from 1 through 200; default is 25.
+- `view`: show active filters, sort, pagination, and row counts.
+- `show`: display the current filtered, sorted page.
+- `approve-page`: preview and set current-page rows to approved after `APPROVE CURRENT PAGE` confirmation.
+- `reject-page`: preview and set current-page rows to rejected after `REJECT CURRENT PAGE` confirmation.
+- `undecide-page`: preview and set current-page rows to undecided after `UNDECIDE CURRENT PAGE` confirmation.
+- `save`: write a reviewed-plan JSON file under `AI_Review/review_sessions/`, print decision/conflict totals, and clear the session-local unsaved-decision indicator.
 - `apply`: save the current reviewed plan if needed, then require exact `APPLY_REVIEWED_PLAN` confirmation before applying approved moves.
-- `quit`: exit without applying.
+- `quit`: exit without applying; unsaved decision changes require exact `QUIT WITHOUT SAVING` confirmation.
+
+The session header identifies generated versus resumed input and shows current decision totals. `view` also reports whether review decisions have changed since the last successful save. Only actual decision changes mark the session dirty; inspection, filtering, sorting, and pagination do not. An idempotent decision command leaves the dirty state unchanged. Dirty state is in memory only and is never written to reviewed-plan JSON, review state, operation logs, or apply results.
+
+Invalid commands identify the entered command, and invalid filters, sorts, pages, page sizes, and row IDs report their supported values without changing decisions or valid view state. A cancelled dirty-session quit preserves all in-memory decisions and moves no files.
 
 By default, `--review-plans` loads review decision memory from `AI_Review/review_state/review_decisions.json`. Matching rows can be pre-marked as remembered approvals or remembered rejections, and stale prior decisions are shown when the source path still matches but file size or modified time changed. `--ignore-review-state` skips this memory for the current session. Review state is decision memory only. It is not an operation log, does not record filesystem success, and does not replace undo logs.
 
@@ -238,5 +267,9 @@ Interactive apply may update review-state memory after exact confirmation and be
 Saved reviewed plans are untrusted input. `--apply-reviewed-plan` validates the plan path under the scan root, checks the JSON shape, rejects absolute paths and path traversal, ignores rejected and undecided items, blocks approved move conflicts, and converts only approved items back into `MovePlanItem` values.
 
 `--resume-reviewed-plan` is single-purpose and reconstructs the saved rows with their explicit `approved`, `rejected`, or `undecided` decisions. It does not scan, regenerate plans, or load review-state memory. `save` writes a collision-safe sibling such as `reviewed_plan_1.json` without overwriting the input. Resume, edit, save, and quit do not move files. The existing interactive `apply` command remains available only with exact `APPLY_REVIEWED_PLAN` confirmation and revalidates the saved revision through the existing apply path before executor use.
+
+View filters combine with AND and reset to page 1 when changed. Sorting uses one primary field with stable ID tie-breaking and also resets to page 1. Page numbers are one-based; an empty view displays page `0 of 0`. View state is temporary and is not written to reviewed-plan JSON or review state. `summary`, saving, conflict detection, and apply continue to use all session rows. `details`, `approve`, `reject`, and `undecide` always target stable row IDs, including rows hidden by the current view. Risk and size are not supported because batch review rows do not contain those fields.
+
+Bulk page commands target only the stable IDs returned by the current filtered, sorted page. They preview target IDs, current decision/category counts, changed rows, and idempotent rows before prompting. Empty or fully idempotent pages do not prompt. Correct confirmation changes in-memory review decisions only; it does not save, apply, or move files. If a decision filter changes the visible set, the current page is recalculated and clamped without clearing filters, sort, or page size. There are no all-filtered or whole-session bulk commands.
 
 Approved saved reviewed-plan items involving protected-context sources are rejected before executor use. Tool-owned destinations under `AI_Review/` and `Organized/` remain valid reviewed-plan destinations.

@@ -6,12 +6,16 @@ Deterministic Python is the source of truth for facts. LLM output is advisory on
 
 ## Current Status
 
-Stages 1 through 10.11 are implemented. Stage 10.10 verifies Stage 10.9 apply summaries against executor operation logs and current filesystem state without moving files. Stage 10.11 resumes saved batch reviewed-plan sessions without rescanning or applying review-state memory. Operation logs remain authoritative for undo. Built-in scheduler daemons, broad code organization, selective subset tooling, HTML review actions, and GUI work remain future work.
+Stages 1 through 10.14 and Stages 11.0 through 11.5.2 are implemented. Guided Duplicates, Organize, and Needs attention queues now save independently while Advanced review retains the complete-session workflow.
+
+Fresh web sessions normalize new/stale suggestions to `undecided` and preserve remembered decisions. Module artifacts reuse the reviewed-plan schema, include every underlying module row, and never move files. Queue progress and skipped state are generation-bound memory only. There is no scheduling, tree, autosave, web apply, or restore.
 
 ## Quick Navigation
 
 - [ROADMAP](ROADMAP.md)
 - [ARCHITECTURE](ARCHITECTURE.md)
+- [WEB_ARCHITECTURE](WEB_ARCHITECTURE.md)
+- [WEB_THREAT_MODEL](WEB_THREAT_MODEL.md)
 - [SAFETY](SAFETY.md)
 - [CLI_REFERENCE](CLI_REFERENCE.md)
 - [REPORT_FORMAT](REPORT_FORMAT.md)
@@ -20,6 +24,9 @@ Stages 1 through 10.11 are implemented. Stage 10.10 verifies Stage 10.9 apply su
 - [DESIGN_DECISIONS](DESIGN_DECISIONS.md)
 - [DEVELOPMENT_GUIDE](DEVELOPMENT_GUIDE.md)
 - [CODEX_INSTRUCTIONS](CODEX_INSTRUCTIONS.md)
+- [ADR 0001: Local Web Stack](adr/0001-local-web-stack.md)
+- [ADR 0002: Local Web Security Boundary](adr/0002-web-security-boundary.md)
+- [ADR 0003: Application-Service Layer](adr/0003-application-service-layer.md)
 - [Sample Report](examples/sample_report.json)
 - [Sample Rule Candidates](examples/sample_rule_candidates.json)
 - [Sample Rule Decisions](examples/sample_rule_decisions.json)

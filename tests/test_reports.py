@@ -104,7 +104,11 @@ class ReportGenerationTests(unittest.TestCase):
             self.assertGreaterEqual(report["summary"]["project_group_count"], 1)
             self.assertGreaterEqual(report["summary"]["organization_suggestion_count"], 1)
             self.assertEqual(report["summary"]["refinement_status"], "not_requested")
-            self.assertEqual(report["organization_rules"]["status"], "defaults")
+            self.assertEqual(report["organization_rules"]["status"], "missing")
+            self.assertEqual(report["organization_rules"]["path"], None)
+            self.assertEqual(report["organization_rules"]["locked_anchors"], [])
+            self.assertEqual(report["organization_rules"]["ignored_terms"], [])
+            self.assertEqual(report["organization_rules"]["anchor_aliases"], {})
             self.assertIn("suggested_groups", report["anchor_decisions"])
             self.assertIn("patterns", report["organization_pattern_inference"])
             self.assertIn("rule_candidates", report["organization_pattern_inference"])
@@ -271,6 +275,11 @@ class ReportGenerationTests(unittest.TestCase):
             self.assertEqual(
                 report["organization_rules"]["path"],
                 "AI_Review/config/organization_rules.json",
+            )
+            self.assertEqual(report["organization_rules"]["ignored_terms"], ["evosim"])
+            self.assertNotIn(
+                "summary",
+                report["organization_rules"]["ignored_terms"],
             )
             self.assertEqual(report["summary"]["suggested_anchor_count"], 1)
             self.assertGreaterEqual(report["summary"]["ignored_anchor_count"], 1)

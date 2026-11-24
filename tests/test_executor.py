@@ -8,7 +8,12 @@ import tempfile
 import unittest
 from unittest import mock
 
-from organizer.executor import apply_move_plan, undo_operation_log
+from organizer.executor import (
+    MovementRecordingError,
+    UndoRecordingError,
+    apply_move_plan,
+    undo_operation_log,
+)
 from organizer.models import MovePlanItem, MoveResult
 
 
@@ -24,6 +29,119 @@ def make_plan_item(source: Path, destination: Path) -> MovePlanItem:
 
 
 class ExecutorApplyTests(unittest.TestCase):
+    def test_optional_recorder_is_called_around_each_filesystem_move(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "a.txt"
+            destination = root / "Organized" / "a.txt"
+            source.write_text("content", encoding="utf-8")
+            events: list[str] = []
+
+            class Recorder:
+                def before_batch(self, plan_items):
+                    events.append("before_batch")
+
+                def before_move(self, index, item):
+                    self_test.assertTrue(source.exists())
+                    events.append("attempting")
+
+                def after_success(self, index, item, result):
+                    self_test.assertFalse(source.exists())
+                    events.append("moved")
+
+                def after_failure(self, index, item, result):
+                    events.append("failed")
+
+                def after_batch(self, operation_log):
+                    events.append("after_batch")
+
+            self_test = self
+            apply_move_plan(
+                [make_plan_item(source, destination)],
+                root,
+                recorder=Recorder(),
+            )
+
+            self.assertEqual(
+                events,
+                ["before_batch", "attempting", "moved", "after_batch"],
+            )
+
+    def test_recorder_failure_before_move_prevents_filesystem_move(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "a.txt"
+            destination = root / "Organized" / "a.txt"
+            source.write_text("content", encoding="utf-8")
+
+            class Recorder:
+                def before_batch(self, plan_items):
+                    return None
+
+                def before_move(self, index, item):
+                    raise OSError("record unavailable")
+
+                def after_success(self, index, item, result):
+                    return None
+
+                def after_failure(self, index, item, result):
+                    return None
+
+                def after_batch(self, operation_log):
+                    return None
+
+            with self.assertRaisesRegex(MovementRecordingError, "before_move"):
+                apply_move_plan(
+                    [make_plan_item(source, destination)],
+                    root,
+                    recorder=Recorder(),
+                )
+
+            self.assertTrue(source.exists())
+            self.assertFalse(destination.exists())
+
+    def test_recorder_failure_after_move_writes_legacy_log_and_stops_batch(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            first = root / "a.txt"
+            second = root / "b.txt"
+            first_destination = root / "Organized" / "a.txt"
+            second_destination = root / "Organized" / "b.txt"
+            first.write_text("a", encoding="utf-8")
+            second.write_text("b", encoding="utf-8")
+
+            class Recorder:
+                def before_batch(self, plan_items):
+                    return None
+
+                def before_move(self, index, item):
+                    return None
+
+                def after_success(self, index, item, result):
+                    raise OSError("record unavailable")
+
+                def after_failure(self, index, item, result):
+                    return None
+
+                def after_batch(self, operation_log):
+                    return None
+
+            with self.assertRaises(MovementRecordingError) as captured:
+                apply_move_plan(
+                    [
+                        make_plan_item(first, first_destination),
+                        make_plan_item(second, second_destination),
+                    ],
+                    root,
+                    recorder=Recorder(),
+                )
+
+            self.assertTrue(captured.exception.filesystem_changed)
+            self.assertIsNotNone(captured.exception.operation_log)
+            self.assertTrue(captured.exception.operation_log.log_path.exists())
+            self.assertTrue(first_destination.exists())
+            self.assertTrue(second.exists())
+
     def test_apply_moves_planned_duplicate_into_review_folder(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -227,6 +345,89 @@ class ExecutorApplyTests(unittest.TestCase):
 
 
 class ExecutorUndoTests(unittest.TestCase):
+    def test_optional_undo_recorder_wraps_each_restore_and_remains_compatible(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "b.txt"
+            destination = root / "Organized" / "b.txt"
+            source.write_text("same", encoding="utf-8")
+            operation_log = apply_move_plan([make_plan_item(source, destination)], root)
+            events: list[str] = []
+
+            class Recorder:
+                def before_batch(self, items): events.append("batch")
+                def before_restore(self, index, item):
+                    self_test.assertTrue(destination.exists())
+                    events.append("attempting")
+                def after_success(self, index, item, result): events.append("restored")
+                def after_failure(self, index, item, result): events.append("failed")
+                def after_batch(self, log): events.append("complete")
+
+            self_test = self
+            undo = undo_operation_log(operation_log.log_path, root, recorder=Recorder())
+            self.assertEqual(events, ["batch", "attempting", "restored", "complete"])
+            self.assertTrue(undo.operations[0].success)
+
+    def test_recorder_failure_before_restore_prevents_filesystem_change(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "b.txt"
+            destination = root / "Organized" / "b.txt"
+            source.write_text("same", encoding="utf-8")
+            operation_log = apply_move_plan([make_plan_item(source, destination)], root)
+
+            class Recorder:
+                def before_batch(self, items): pass
+                def before_restore(self, index, item): raise OSError("durability")
+
+            with self.assertRaises(UndoRecordingError):
+                undo_operation_log(operation_log.log_path, root, recorder=Recorder())
+            self.assertFalse(source.exists())
+            self.assertTrue(destination.exists())
+
+    def test_recorder_failure_after_restore_reports_recoverable_filesystem_change(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "b.txt"
+            destination = root / "Organized" / "b.txt"
+            source.write_text("same", encoding="utf-8")
+            operation_log = apply_move_plan([make_plan_item(source, destination)], root)
+
+            class Recorder:
+                def before_batch(self, items): pass
+                def before_restore(self, index, item): pass
+                def after_success(self, index, item, result): raise OSError("durability")
+
+            with self.assertRaises(UndoRecordingError) as raised:
+                undo_operation_log(operation_log.log_path, root, recorder=Recorder())
+            self.assertTrue(raised.exception.filesystem_changed)
+            self.assertIsNotNone(raised.exception.operation_log)
+            self.assertTrue(source.exists())
+            self.assertFalse(destination.exists())
+
+    def test_undo_rejects_direct_log_symlink_and_non_boolean_success(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            logs = root / "AI_Review" / "operation_logs"
+            logs.mkdir(parents=True)
+            target = logs / "target.json"
+            target.write_text('{"operations": []}', encoding="utf-8")
+            if hasattr(os, "symlink"):
+                link = logs / "link.json"
+                link.symlink_to(target)
+                with self.assertRaisesRegex(ValueError, "symlink"):
+                    undo_operation_log(link, root)
+
+            malformed = logs / "malformed.json"
+            malformed.write_text(json.dumps({"operations": [{
+                "source": str(root / "a.txt"),
+                "destination": str(root / "b.txt"),
+                "success": "true",
+                "message": "moved",
+            }]}), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "boolean"):
+                undo_operation_log(malformed, root)
+
     def test_undo_restores_moved_file_to_original_source(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

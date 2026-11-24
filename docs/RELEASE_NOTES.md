@@ -1,6 +1,130 @@
 # Release Notes
 
-## Current Status Through Stage 10.11
+## Loci Flow Integration 1.0F — Current Production Checkpoint
+
+Loci Flow now runs the accepted prototype-first six-area shell for Home,
+Organize, Duplicate Bin, Activity, Standards, and Settings. The live application
+uses real root-locked scan state, Standards-filtered organization projections,
+revision-bound destination and duplicate decisions, exact-set bulk acceptance,
+and explicit final approval. Home and Organize remain separate, and production
+data passes through the backend API, data source, page-specific view model, and
+accepted renderer without a fixture fallback.
+
+Approved ordinary movement now requires an opaque server-owned authorization,
+fresh preflight, and exact confirmation. Durable intent is written before
+`executor.py` performs user-file movement, verification runs afterward, and
+replay recovers interrupted or lost-response outcomes without automatic repeat
+movement. Activity projects durable movement, failure, restore, and Undo
+records. Ordinary Undo uses an exact-confirmed authorization and post-Undo
+verification.
+
+Duplicate Bin is integrated as reversible protected storage, not Trash. Durable
+approved batches claim every selected and retained group member, the scanner
+prunes the protected subtree, and the complete duplicate group is rehashed
+before separately confirmed movement. The UI lists only physically moved
+copies. Duplicate Bin Restore and Activity Undo share one restore owner, restore
+selected copies to exact previous paths, reject occupied destinations, and
+reconcile fully restored historical batches across restart so later explicit
+organization cycles can proceed.
+
+Standards are now an authoritative deterministic product workflow. Loading is
+fail-closed, and one immutable Standards result is bound to each scan so review,
+decisions, approval, and planning cannot reload different rules from disk. A
+durable revision-protected v2 catalog is migrated from valid v1 storage on the
+first mutation. The Standards page lists authoritative saved Standards, supports
+activate/deactivate, and offers guided creation for **Keep a folder unchanged**
+and **Keep matching files together** using a course code or project code.
+
+Standards previews and mutations use server-owned state, revision and conflict
+checks, and block while an approved organization plan is active. A successful
+change requires a fresh Check before it affects planning. Standards operations
+create no Activity records and perform no filesystem movement. The browser is
+not given raw JSON, filesystem paths, regex controls, or an LLM dependency.
+
+All mutations remain authenticated POSTs protected by CSRF, exact same-origin
+validation, server-owned IDs, immutable root configuration, scan generations,
+and decision revisions. Routes do not import `executor.py`; `executor.py`
+remains the sole user-file movement implementation. There is no permanent
+deletion, Empty Bin, system Trash handoff, Search, general Files browser,
+multi-root execution, root switching within a running process, scheduler daemon,
+notifications, natural-language Standards interpretation, automatic LLM
+execution, or speculative Settings workflow. The next binding stage is the
+read-only **1.0G Release Launcher and Packaging Contract Inspection**, not a
+pre-approved launcher implementation.
+
+## Stage 11.5.2 — Guided Modular Review and Independent Module Plans
+
+Historical stage. The statements in this and older entries describe the
+capability boundary at that checkpoint; the current production state is the
+Loci Flow 1.0F entry above.
+
+Stage 11.5.2 adds guided Duplicates, Organize, and Needs attention queues over one authoritative review session. Progress is interaction-based, skipped rows remain `undecided` and can be returned through a protected in-memory queue action, and each module shows separate progress and persistence status.
+
+Fresh scan-generated web sessions now normalize new and stale suggestions to `undecided`; remembered approvals and rejections remain authoritative. This web-only safety policy prevents untouched findings from becoming approved in independently saved artifacts or review memory. CLI defaults and loaded reviewed-plan decisions are unchanged.
+
+Each module explicitly saves every row in its fixed category using the existing reviewed-plan schema and collision-safe files `duplicate_reviewed_plan.json`, `organization_reviewed_plan.json`, or `attention_reviewed_plan.json`. Module saves advance only their own saved baselines; Advanced review still saves the complete session. No apply, executor access, movement, tree, schema, dependency, or CLI change is introduced.
+
+## Stage 11.5.1 — Consumer Information Architecture and UX Simplification
+
+Stage 11.5.1 replaces the technical table-first default with consumer Home, Duplicates, Organize, Scans, Settings, and linked Needs attention pages. The original filters, sorting, pagination, details, conflicts, bulk decisions, and saving remain at `/review/advanced`; `/review` redirects there compatibly.
+
+Cards consolidate rows by normalized source using duplicate → organization → attention precedence. Secondary findings and their existing choices remain visible in the primary card, while actions change only the primary row. Module summaries continue counting every authoritative underlying row. Human-readable sizes/times, safe `Space used by extra copies` language, fixed enum return surfaces, accessible feedback, and removal of the false `beforeunload` warning improve usability without changing schemas or decisions.
+
+No scheduling, independent module plan, tree, preview, apply, executor access, movement, restore, resume, revision, dependency, or CLI behavior is added. Stage 11.5.2 and 11.5.3 remain future work.
+
+## Stage 11.5 — Web Review Decisions and Reviewed-Plan Saving
+
+Stage 11.5 completes the first web MVP: scan, inspect findings, set rows to Organize (`approved`), Keep here (`rejected`), or Review later (`undecided`), and explicitly save every row in the existing reviewed-plan format. Single-row changes use stable IDs. Current-page actions freeze the displayed IDs server-side and retain the established `APPROVE CURRENT PAGE`, `REJECT CURRENT PAGE`, or `UNDECIDE CURRENT PAGE` confirmation phrases before one-use confirmation.
+
+The root-bound holder atomically replaces immutable application sessions and displays textual dirty state. Unsaved decisions block a replacement scan with `409 Conflict`; there is no autosave or silent discard. Successful save returns a root-relative collision-safe path and clears dirty state, while failure preserves it. Filters, sorting, pagination, details, and conflicts remain projections over the complete session.
+
+All mutations remain authenticated POSTs protected by CSRF, exact Origin, Trusted Host, security headers, current-generation checks, and POST/redirect/GET. No source, destination, root, output path, or trusted row list comes from the browser. No user file moves, and no executor, operation log, apply, restore, resume, revision, multi-tab merge, schema, dependency, or CLI-interface change is introduced. Stage 11.6 remains future work.
+
+## Stage 11.4 — Read-Only Review Explorer
+
+Stage 11.4 adds authenticated GET-only review exploration for the latest completed scan generation. It reuses the application review service and existing review-session filtering, sorting, pagination, stable IDs, and conflict detection without rescanning during navigation. The explorer shows root-relative metadata, warnings, category counts, current decisions as read-only labels, and approved conflicts.
+
+No review decision, review-state, reviewed-plan, report, operation-log, apply, restore, executor, or file-content-preview behavior is added. A new or failed scan invalidates the previous explorer source; independent web app instances keep independent in-memory state.
+
+## Stage 11.3 — Read-Only Scan Dashboard
+
+Stage 11.3 adds an explicit authenticated scan trigger, generation-safe in-process scan job, status polling, collision-safe JSON report writing through the existing report owner, failure handling, and read-only summary cards. No review decisions or movement are available.
+
+## Stage 11.2 — Secure Local Web Shell and Launcher
+
+Stage 11.2 adds bootAI's first local web runtime. `python3 -m organizer.web --root <folder>` validates and locks one root, binds an already-listening IPv4 socket to `127.0.0.1` on a dynamic or explicitly selected port, and runs one Uvicorn worker with proxy headers and access logging disabled. Automatic launch waits for the minimal unauthenticated health check; `--no-browser` and browser-open failure print the private single-use launch URL.
+
+The FastAPI app disables documentation endpoints and exposes only health, single-use launch bootstrap, authenticated welcome, and package-local static GET routes. The launch token is consumed atomically, creates a minimal signed browser-lifetime session, and redirects to a clean URL. Trusted Host enforcement, CSRF and exact same-origin helpers, a locked CSP and security-header middleware, generic production errors, and no CORS establish the mutation-security foundation without adding a mutation route.
+
+HTMX 2.0.10 and Bootstrap 5.3.8 are bundled from verified official release files with their published SHA-384 values and license notices. The accessible first screen confirms the immutable root, offline/local operation, and that no scan or movement has occurred. Exact optional dependencies are isolated in `web` and `web-test`; core dependencies remain empty.
+
+No existing CLI flag, artifact format, JSON schema, executor path, movement, verification, undo, or legacy code changed in Stage 11.2; workflow routes were added only by their later stages.
+
+## Stage 11.1 — Application Services and Dependency Hygiene
+
+Stage 11.1 adds UI-independent application services for scan-report construction, immutable review-session workflows, and deterministic listing/loading of scan reports and reviewed plans. These services delegate to existing report, review-session, review-state, safety, scanner, grouping, and Ollama owners; they create no second scanner, review engine, saver, or movement path.
+
+The CLI now uses the scan service for `--report` and `--html-report`, and the review service for `--review-plans` and `--resume-reviewed-plan`. The interactive command loop, confirmations, apply, undo, organization-review, verification, executor calls, output formats, schemas, and flags are unchanged.
+
+Mandatory `openai` and `python-dotenv` dependencies and their lockfile transitive packages are removed. Core packaging is explicitly restricted to `src/`, Python remains `>=3.13`, and Stage 11.1 adds no web dependencies. The unrelated historical OpenRouter assistant is preserved under `legacy/openrouter_code_assistant/` as unsupported, unpackaged legacy code.
+
+No web server, route, template, asset, preflight service, execution service, future artifact parser, or movement behavior is added in Stage 11.1.
+
+## Stage 11.0 — Local Web Architecture Contract and Threat Model
+
+Stage 11.0 defines the documentation contract for bootAI's future primary local web interface. It accepts FastAPI, Jinja2, HTMX, Bootstrap, minimal vanilla JavaScript, and Uvicorn; requires local assets, loopback-only single-worker serving, one immutable validated root, existing JSON persistence, WCAG 2.2 AA, and a UI-independent application-service layer.
+
+The threat model treats the browser and loaded artifacts as untrusted and requires a one-time launch token, signed session, CSRF, Origin and Host validation, POST-only mutations, restrictive security headers, stable IDs instead of paths, revision protection, fresh preflight, and executor-only movement and undo.
+
+This stage changes documentation only. It adds no server, routes, application-service modules, dependencies, templates, static assets, CLI flags, schemas, packaging, or production behavior. The CLI remains the current implemented interface while the local web application is the intended primary consumer interface for later Stage 11 work.
+
+## Current Status Through Stage 10.14
+
+Stage 10.14 polishes the interactive review session with grouped help, specific invalid-command guidance, session-local unsaved-decision tracking, exact `QUIT WITHOUT SAVING` protection, root-relative session/save summaries, and clearer conflict display. Reviewed-plan schemas, review-state semantics, apply confirmation, and movement behavior are unchanged.
+
+Stage 10.13 adds previewed and typed-confirmed decision changes for the current displayed review page. Idempotent rows are reported separately, hidden and off-page rows remain unchanged, decision-filtered views are recalculated safely, and saving remains explicit.
+
+Stage 10.12 adds deterministic filtering, one-key sorting, pagination, and view-state display to both new and resumed review sessions. View commands operate only on an in-memory projection; stable IDs continue to target the complete session, and saved reviewed plans include all rows without persisting view state.
 
 Stage 10.11 adds a single-purpose resume workflow for saved batch reviewed-plan JSON. It validates untrusted files, reconstructs stable rows without rescanning, preserves explicit decisions, supports `undecide`, and saves collision-safe revisions without overwriting the input. Review state does not alter resumed decisions, and existing exact-confirmed apply behavior remains executor-owned.
 
@@ -56,6 +180,12 @@ Stage 10.9 adds confirmed apply for approved organization-review rows. Exact `AP
 - Stage 10.7: rule-aware organization audit in JSON and HTML reports.
 - Stage 10.8: read-only rule-aware organization suggestion review export.
 - Stage 10.9: confirmed approved organization-review apply through the existing executor.
+- Stage 10.10: post-apply verification and undo hardening.
+- Stage 10.11: resume and edit saved review sessions.
+- Stage 10.12: filtering, sorting, and pagination for review sessions.
+- Stage 10.13: confirmed decisions for the current review page.
+- Stage 10.14: review-session clarity and unsaved-decision protection.
+- Stage 11.0: local web architecture, security, accessibility, and roadmap contract; documentation only.
 
 ## Safety Model
 
@@ -118,16 +248,25 @@ Apply commands require one of:
 ## Known Limitations
 
 - No built-in scheduler daemon or background service.
-- No GUI yet.
+- Standards creation is deliberately limited to deterministic guided presets;
+  there is no raw JSON, path, regex, or natural-language interpretation input.
+- No permanent deletion, Empty Bin, or system Trash handoff; Duplicate Bin is reversible protected storage.
+- No Search, general Files browser, multi-root execution, or automatic LLM execution.
 - No HTML report review actions or apply buttons.
 - No selective subset or interactive editing command for organization-review files.
 - No cloud LLM APIs.
-- No filtering/sorting/pagination in batch review yet.
-- No filtering, pagination, search, or generalized review-file editing.
+- No path search, arbitrary query syntax, whole-filter/session bulk decisions, or generalized review-file editing.
 - Ollama refinement requires a local Ollama service and model.
 - Prompt evaluation harness is documented but not implemented.
 - Users should inspect dry-run output before approved moves.
 
 ## Future Roadmap
 
-See [ROADMAP](ROADMAP.md). Stage 10.12 and later remain future work.
+See [ROADMAP](ROADMAP.md). The next binding stage is **1.0G — Release Launcher
+and Packaging Contract Inspection**. It must resolve folder-selection ownership,
+root validation before server creation, launch authentication and browser
+bootstrap, clean shutdown, packaged lifecycle, macOS packaging, safe terminal
+hiding, failure and cancellation behavior, and dependency constraints without
+pre-approving implementation. Accessibility auditing, large-folder performance,
+and nontechnical-user testing follow as separate release-hardening stages;
+Windows packaging remains deferred.

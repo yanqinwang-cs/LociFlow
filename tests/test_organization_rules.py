@@ -2,6 +2,7 @@ from pathlib import Path
 import json
 import tempfile
 import unittest
+from unittest import mock
 
 from organizer.organization_rules import (
     ORGANIZATION_RULES_RELATIVE_PATH,
@@ -12,13 +13,14 @@ from organizer.organization_rules import (
 
 
 class OrganizationRulesTests(unittest.TestCase):
-    def test_missing_file_uses_defaults_without_creating_config(self) -> None:
+    def test_missing_file_is_valid_empty_rules_without_creating_config(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
 
             result = load_organization_rules(root)
 
-            self.assertEqual(result.status, "defaults")
+            self.assertEqual(result.status, "missing")
+            self.assertTrue(result.available)
             self.assertIsNone(result.source_path)
             self.assertIn("summary", result.rules.ignored_terms)
             self.assertFalse((root / ORGANIZATION_RULES_RELATIVE_PATH).exists())
@@ -104,6 +106,71 @@ class OrganizationRulesTests(unittest.TestCase):
             self.assertEqual(result.status, "loaded")
             self.assertEqual(result.source_path, config.resolve())
             self.assertIn("researchx", result.rules.locked_anchors)
+
+    def test_malformed_json_is_unavailable_without_rewrite_or_raw_details(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = root / ORGANIZATION_RULES_RELATIVE_PATH
+            config.parent.mkdir(parents=True)
+            original = '{"private-secret":'
+            config.write_text(original, encoding="utf-8")
+
+            result = load_organization_rules(root)
+
+            self.assertEqual(result.status, "unavailable")
+            self.assertFalse(result.available)
+            self.assertIsNone(result.rules)
+            self.assertEqual(result.error_code, "standards_unavailable")
+            self.assertEqual(
+                result.message,
+                "Standards could not be loaded. Fix them before organizing.",
+            )
+            safe_text = " ".join([result.message, *result.warnings])
+            self.assertNotIn(str(root), safe_text)
+            self.assertNotIn("private-secret", safe_text)
+            self.assertEqual(config.read_text(encoding="utf-8"), original)
+
+    def test_wrong_version_and_unknown_fields_are_unavailable(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = root / ORGANIZATION_RULES_RELATIVE_PATH
+            config.parent.mkdir(parents=True)
+            for data in (
+                {"version": 2},
+                {"version": 1, "unexpected": True},
+            ):
+                with self.subTest(data=data):
+                    config.write_text(json.dumps(data), encoding="utf-8")
+                    result = load_organization_rules(root)
+                    self.assertEqual(result.status, "unavailable")
+                    self.assertIsNone(result.rules)
+
+    def test_unreadable_existing_file_is_unavailable(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = root / ORGANIZATION_RULES_RELATIVE_PATH
+            config.parent.mkdir(parents=True)
+            config.write_text('{"version": 1}', encoding="utf-8")
+
+            with mock.patch.object(Path, "open", side_effect=PermissionError):
+                result = load_organization_rules(root)
+
+            self.assertEqual(result.status, "unavailable")
+            self.assertIn("could not be read", result.warnings[0].lower())
+
+    def test_symlinked_rules_storage_is_unavailable(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            outside = root / "outside.json"
+            outside.write_text('{"version": 1}', encoding="utf-8")
+            config = root / ORGANIZATION_RULES_RELATIVE_PATH
+            config.parent.mkdir(parents=True)
+            config.symlink_to(outside)
+
+            result = load_organization_rules(root)
+
+            self.assertEqual(result.status, "unavailable")
+            self.assertIsNone(result.rules)
 
 
 if __name__ == "__main__":

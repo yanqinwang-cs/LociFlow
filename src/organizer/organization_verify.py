@@ -31,8 +31,197 @@ class OrganizationApplyVerificationOutcome:
     mismatch_count: int
 
 
+@dataclass(frozen=True)
+class OrganizationOperationVerificationItem:
+    change_id: str
+    source: str
+    destination: str
+    source_size_bytes: int
+    source_modified_time: float
+    result_state: str
+
+
+@dataclass(frozen=True)
+class OrganizationOperationVerificationOutcome:
+    status: str
+    passed: bool
+    verified_count: int
+    mismatch_codes: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class OrganizationUndoVerificationItem:
+    change_id: str
+    restore_target: str
+    moved_from: str
+    baseline_size_bytes: int
+    baseline_modified_time: float
+    result_state: str
+
+
+@dataclass(frozen=True)
+class OrganizationUndoVerificationOutcome:
+    status: str
+    passed: bool
+    verified_count: int
+    mismatch_codes: tuple[str, ...]
+
+
 class VerificationInputError(ValueError):
     pass
+
+
+def verify_organization_undo(
+    items: tuple[OrganizationUndoVerificationItem, ...],
+    expected_pairs: tuple[tuple[str, str], ...],
+    root: Path,
+) -> OrganizationUndoVerificationOutcome:
+    """Verify durable organization restores without changing the filesystem."""
+
+    resolved_root = root.resolve()
+    if not resolved_root.is_dir():
+        raise ValueError(f"organization root is not a directory: {root}")
+    restored = tuple(item for item in items if item.result_state == "restored")
+    mismatches: list[str] = []
+    verified_count = 0
+    if tuple((item.restore_target, item.moved_from) for item in items) != expected_pairs:
+        mismatches.append("authorized_restore_pairs_changed")
+
+    for item in restored:
+        item_passed = True
+        try:
+            target_text = _operation_relative_path(
+                item.restore_target, resolved_root, "restore_target"
+            )
+            moved_from_text = _operation_relative_path(
+                item.moved_from, resolved_root, "moved_from"
+            )
+        except (OSError, ValueError, VerificationInputError):
+            mismatches.append(f"unsafe_restore_path:{item.change_id}")
+            continue
+        target = resolved_root / target_text
+        moved_from = resolved_root / moved_from_text
+        if target.is_symlink():
+            mismatches.append(f"restored_source_symlink:{item.change_id}")
+            item_passed = False
+        else:
+            try:
+                resolved_target = target.resolve(strict=True)
+                validate_under_root(resolved_target, resolved_root)
+            except (FileNotFoundError, OSError, ValueError):
+                mismatches.append(f"restored_source_missing_or_unsafe:{item.change_id}")
+                item_passed = False
+            else:
+                if not resolved_target.is_file():
+                    mismatches.append(f"restored_source_not_file:{item.change_id}")
+                    item_passed = False
+                else:
+                    stat = resolved_target.stat()
+                    if stat.st_size != item.baseline_size_bytes:
+                        mismatches.append(f"restored_source_size_changed:{item.change_id}")
+                        item_passed = False
+                    if stat.st_mtime != item.baseline_modified_time:
+                        mismatches.append(
+                            f"restored_source_modified_time_changed:{item.change_id}"
+                        )
+                        item_passed = False
+        if os.path.lexists(moved_from):
+            mismatches.append(f"moved_destination_still_exists:{item.change_id}")
+            item_passed = False
+        if item_passed:
+            verified_count += 1
+
+    unique = tuple(sorted(set(mismatches)))
+    return OrganizationUndoVerificationOutcome(
+        status="passed" if not unique and verified_count == len(restored) else "mismatches",
+        passed=not unique and verified_count == len(restored),
+        verified_count=verified_count,
+        mismatch_codes=unique,
+    )
+
+
+def verify_organization_operation(
+    items: tuple[OrganizationOperationVerificationItem, ...],
+    root: Path,
+) -> OrganizationOperationVerificationOutcome:
+    """Verify successful Loci Flow moves without changing filesystem state."""
+
+    resolved_root = root.resolve()
+    if not resolved_root.is_dir():
+        raise ValueError(f"organization root is not a directory: {root}")
+
+    moved = tuple(item for item in items if item.result_state == "moved")
+    mismatches: list[str] = []
+    pairs: set[tuple[str, str]] = set()
+    sources: set[str] = set()
+    destinations: set[str] = set()
+    verified_count = 0
+
+    for item in moved:
+        try:
+            source_text = _operation_relative_path(
+                item.source,
+                resolved_root,
+                "source",
+            )
+            destination_text = _operation_relative_path(
+                item.destination,
+                resolved_root,
+                "destination",
+            )
+        except (OSError, ValueError, VerificationInputError):
+            mismatches.append(f"unsafe_operation_path:{item.change_id}")
+            continue
+
+        pair = (source_text, destination_text)
+        if source_text in sources:
+            mismatches.append(f"duplicate_source:{item.change_id}")
+        if destination_text in destinations:
+            mismatches.append(f"duplicate_destination:{item.change_id}")
+        if pair in pairs:
+            mismatches.append(f"duplicate_move:{item.change_id}")
+        sources.add(source_text)
+        destinations.add(destination_text)
+        pairs.add(pair)
+
+        source = resolved_root / source_text
+        destination = resolved_root / destination_text
+        item_passed = True
+        if os.path.lexists(source):
+            mismatches.append(f"source_still_exists:{item.change_id}")
+            item_passed = False
+        if destination.is_symlink():
+            mismatches.append(f"destination_symlink:{item.change_id}")
+            item_passed = False
+        else:
+            try:
+                resolved_destination = destination.resolve(strict=True)
+                validate_under_root(resolved_destination, resolved_root)
+            except (FileNotFoundError, OSError, ValueError):
+                mismatches.append(f"destination_missing_or_unsafe:{item.change_id}")
+                item_passed = False
+            else:
+                if not resolved_destination.is_file():
+                    mismatches.append(f"destination_not_file:{item.change_id}")
+                    item_passed = False
+                else:
+                    stat = resolved_destination.stat()
+                    if stat.st_size != item.source_size_bytes:
+                        mismatches.append(f"destination_size_changed:{item.change_id}")
+                        item_passed = False
+                    if stat.st_mtime != item.source_modified_time:
+                        mismatches.append(f"destination_modified_time_changed:{item.change_id}")
+                        item_passed = False
+        if item_passed:
+            verified_count += 1
+
+    unique_mismatches = tuple(sorted(set(mismatches)))
+    return OrganizationOperationVerificationOutcome(
+        status="passed" if not unique_mismatches else "mismatches",
+        passed=not unique_mismatches,
+        verified_count=verified_count,
+        mismatch_codes=unique_mismatches,
+    )
 
 
 def verify_organization_apply(
@@ -404,6 +593,16 @@ def _relative_path(path_text: str, root: Path, label: str) -> str:
     resolved = (root / path).resolve(strict=False)
     validate_under_root(resolved, root)
     return resolved.relative_to(root).as_posix()
+
+
+def _operation_relative_path(path_text: str, root: Path, label: str) -> str:
+    if not path_text or "\\" in path_text:
+        raise VerificationInputError(f"{label} must be a safe relative path")
+    path = Path(path_text)
+    if path.is_absolute() or any(part in {"", ".", ".."} for part in path.parts):
+        raise VerificationInputError(f"{label} must be a safe relative path")
+    validate_under_root((root / path).resolve(strict=False), root)
+    return path.as_posix()
 
 
 def _operation_path(value: object, root: Path, label: str) -> str:

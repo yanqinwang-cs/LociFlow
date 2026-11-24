@@ -33,17 +33,195 @@
 | 10.9 | Apply approved organization review | `organization_apply_review.py`, `cli.py`, `executor.py` | `--apply-organization-review`, `--confirm` | exact confirmation and operation log required |
 | 10.10 | Post-apply verification and undo hardening | `organization_verify.py`, existing `executor.py` tests | `--verify-organization-apply` | read-only audit report |
 | 10.11 | Resume and edit saved review sessions | `review_session.py`, `cli.py` | `--resume-reviewed-plan` | review-only until exact-confirmed existing apply |
+| 10.12 | Review filtering, sorting, and pagination | `review_session.py`, `cli.py` | interactive view commands | display state only |
+| 10.13 | Confirmed bulk decisions for current page | `review_session.py`, `cli.py` | `approve-page`, `reject-page`, `undecide-page` | decision-only confirmation |
+| 10.14 | Review session quality-of-life polish | `review_session.py`, `cli.py` | existing interactive commands | session-local dirty-state protection |
+| 11.0 | Local web architecture contract and threat model | documentation only | none | no runtime behavior |
+| 11.1 | Application services and dependency hygiene | `application/`, `reports.py`, narrow CLI entry migration | none | no server or movement changes |
+| 11.2 | Secure local web shell and launcher | `web/`, optional web dependencies, bundled assets | separate `organizer.web` launcher | authenticated shell only; no scan or movement |
+| 11.3 | Read-only scan dashboard | `web/scan_jobs.py`, scan routes and templates | none | explicit scan/report only; no decisions or movement |
+| 11.4 | Read-only review explorer | report-to-review adapter, review routes and templates | none | latest completed scan only; no decision mutation |
+| 11.5 | Web review decisions and reviewed-plan saving | generation-bound review holder, decision/save routes and templates | none | explicit save only; no movement |
+| 11.5.1 | Consumer information architecture and UX simplification | consumer presenters, routes, cards, Advanced review | none | presentation only; no movement |
+| 11.5.2 | Guided modular review and independent module plans | application module services, guided queues, module artifacts | none | existing schema; no movement |
+| Loci Flow UX 1.1 | Accepted focused policy-controls prototype | `prototype/loci-flow-ux-1-1-focused-policy-controls/` | none | UX source of truth |
+| Loci Flow 1.0A | Read-only organization contract | application organization projection and adapter | none | no movement |
+| Loci Flow 1.0B | Live read-only Home and Organize UI | production data source and page view models | none | authenticated read-only integration |
+| Loci Flow 1.0C | Temporary decisions and approval | revision-bound decision and approval services | none | approval only; no movement |
+| Loci Flow 1.0D1 | Durable ordinary movement core | authorization, operation repository, coordinator, executor adapter | none | exact confirmation and verification |
+| Loci Flow 1.0D2 | Activity and durable ordinary Undo | Activity projection, Undo repository and service | none | exact confirmation and post-Undo verification |
+| Prototype-first B1–B4 | Accepted renderer recovery and live workflow wiring | fixture contract, adapters, live shell | none | prototype hierarchy preserved |
+| Loci Flow 1.0E | Durable Duplicate Bin movement and restoration | approval catalog, movement and unified restore owners | none | reversible protected storage; no deletion |
+| Loci Flow 1.0F | Fail-closed, scan-bound, durable guided Standards | rules loader, v2 catalog, Standards application services and accepted UI adapter | none | revision-protected configuration only; no movement or Activity |
 
-## Future Stages
+## Current Loci Flow Sequence
 
-### Later: Filtering, Sorting, Or Pagination
+The accepted production checkpoint is Loci Flow Integration 1.0F. The
+standalone UX under `prototype/loci-flow-ux-1-1-focused-policy-controls/`
+remains the visual and interaction source of truth; production follows
+backend/API → data source → page-specific view model → accepted renderer.
 
-Goal: make large batch review sessions easier to inspect.
+Completed in sequence:
 
-Non-goals: no bypass of exact confirmation or executor movement rules.
+- **Accepted UX prototype:** established Home, Organize, Duplicate Bin,
+  Activity, Standards, and Settings while keeping Home and Organize separate.
+- **1.0A:** projected real scan scope, freshness, metadata, Standards-filtered
+  recommendations, choices, and the movement tree through a read-only contract.
+- **1.0B:** connected the accepted Home and Organize renderers to live data.
+- **1.0C:** added scan-generation- and revision-bound temporary decisions,
+  exact-set bulk acceptance, validation, and approval without movement.
+- **1.0D1:** added durable movement intent, exact confirmation, shared execution
+  coordination, executor-owned movement, verification, and replay recovery.
+- **1.0D2:** added durable Activity, ordinary Undo, post-Undo verification, and
+  authenticated browser movement.
+- **Prototype-first B1–B4:** restored fixture fidelity, preserved the accepted
+  renderer hierarchy, and connected real organization, movement, Activity,
+  Undo, and repeated scan cycles.
+- **1.0E:** added durable all-member duplicate claims, protected scanner-pruned
+  Duplicate Bin storage, full-group rehash, separately confirmed movement,
+  listing of physically moved copies, unified exact-path restore, Activity Undo,
+  and restart reconciliation for fully restored batches.
+- **1.0F-A:** unified fail-closed Standards loading, separated built-in policy
+  from saved Standards, and bound one immutable Standards state to each scan.
+- **1.0F-B:** added the revision-protected durable v2 Standards catalog,
+  first-mutation migration from valid v1 storage, and application-service-owned
+  list and mutation contracts.
+- **1.0F-C:** connected the authoritative Standards list and activate/deactivate
+  actions through the accepted production adapter and renderer.
+- **1.0F-D:** added guided deterministic creation for keeping a folder unchanged
+  and keeping matching course-code or project-code files together, with safe
+  preview, conflict protection, approved-plan blocking, and a fresh Check
+  requirement.
 
-### Stage 10.12: UI Or Richer Review Interface
+Planned-change presentation, revision protection, browser movement, Activity,
+Undo, restore, and guided Standards management are therefore no longer future
+Loci Flow stages. Standards mutation creates no Activity record and performs no
+filesystem movement; the product exposes no raw catalog JSON, filesystem paths,
+regex, or LLM-dependent Standards interpretation.
 
-Goal: provide a safer review surface for candidates, groups, plans, and logs.
+### Next: 1.0G — Release Launcher and Packaging Contract Inspection
 
-Non-goals: no cloud dependency by default, no bypass of CLI safety rules.
+Future, inspection only. Determine native folder-selection ownership, root
+validation before server creation, launch-token handling, browser bootstrap,
+clean shutdown, packaged process lifecycle, the macOS packaging approach,
+whether the terminal can be hidden safely, failure and cancellation behavior,
+and packaging dependency constraints. The inspection does not pre-approve a
+packaging tool, launcher design, dependency, or implementation commit.
+
+The first launcher implementation, if separately approved after inspection,
+must remain distinct from later release-hardening stages for the WCAG 2.2 AA
+audit, large-folder performance testing, and nontechnical-user testing.
+Windows packaging is later work.
+
+Explicitly out of scope are Search, a general Files browser, permanent deletion,
+system Trash, multi-root operation, root switching within a running process, a
+scheduler daemon, notifications, natural-language Standards interpretation,
+speculative Settings, Windows packaging, and product workflow redesign.
+
+## Historical Stage 11 Sequence
+
+The material below preserves the original Stage 11 plan and its historical
+checkpoints. Later Loci Flow work through 1.0E overtook several entries. The
+local web application remains bootAI's intended primary consumer interface;
+the CLI remains supported for development, scripting, diagnostics, fallback,
+and safety testing. Static HTML remains read-only.
+
+### Stage 11.0 — Architecture Contract and Threat Model
+
+Completed as documentation only:
+
+- accepted local web stack and asset policy;
+- layer and module ownership;
+- root, server, persistence, and accessibility contracts;
+- concrete threat model and security controls;
+- complete Stage 11 roadmap.
+
+No production code, dependencies, schemas, CLI flags, routes, templates, assets, server, or packaging changed.
+
+### Stage 11.1 — Application Services and Dependency Hygiene
+
+Completed:
+
+- introduced UI-independent scan, immutable review-session, and scan-report/reviewed-plan artifact services while preserving owner modules;
+- migrated only report construction and review-session creation/resume CLI entry paths;
+- removed mandatory cloud dependencies and archived the historical OpenRouter assistant outside the packaged source tree;
+- retained an empty core dependency set and deferred optional web dependencies to Stage 11.2;
+- added no server, web package, future artifact parser, preflight/execution service, CLI flag, or movement change.
+
+### Stage 11.2 — Secure Local Web Shell and Launcher
+
+Completed:
+
+- added an isolated FastAPI app factory, direct IPv4-loopback socket binding, dynamic or validated fixed port, one Uvicorn worker, and bounded automatic browser opening;
+- added atomic single-use launch authentication, a signed browser-lifetime session, CSRF and exact-Origin helpers, Trusted Host enforcement, locked security headers, generic errors, and no CORS;
+- bundled verified HTMX 2.0.10 and Bootstrap 5.3.8 assets with notices and provided a WCAG-oriented welcome screen;
+- added only health, launch, authenticated home, and local-static GET routes;
+- added no scan, artifact, review, mutation, movement, restore, database, schema, or existing CLI-interface change.
+
+### Stage 11.3 — Read-Only Scan Dashboard
+
+Completed: explicit user-triggered scan, one generation-safe in-process scan job, progress polling, failure handling, report generation, and summary cards. No decisions or movement.
+
+### Stage 11.4 — Read-Only Review Explorer
+
+Completed: browse, filter, sort, and paginate the latest completed scan’s review rows; inspect stable-ID metadata details and approved conflicts; display warnings without rescanning or writing artifacts. No decision mutation.
+
+### Stage 11.5 — Review Decisions and Reviewed-Plan Saving
+
+Completed: Organize (`approved`), Keep here (`rejected`), and Review later (`undecided`) single-row decisions; exact-confirmed current-page decisions; textual dirty state; explicit collision-safe save of every row; and dirty-session scan blocking. There is no autosave, apply, restore, resume, revision, multi-tab merge, or movement.
+
+Historical checkpoint statement: this was the first product-evaluation point,
+when apply and Undo were still CLI-only. Browser movement and Undo were
+implemented later through Loci Flow 1.0D, and Duplicate Bin restoration through
+1.0E.
+
+### Stage 11.5.1 — Consumer Information Architecture and UX Simplification
+
+Completed: consumer Home, Duplicates, Organize, Scans, Settings, and Needs attention pages; normalized-source card consolidation; module-separated choices; human-readable formatting; Advanced review compatibility; and removal of the false internal-navigation warning. All underlying rows and saved formats remain unchanged.
+
+### Stage 11.5.2 — Guided Modular Review and Independent Module Plans
+
+Completed: conservative fresh-web initialization, guided duplicate/organization/attention queues, temporary skipped-item handling, module-specific dirty baselines, and independently saved existing-format reviewed plans. Advanced full-session saving remains compatible. No movement or tree.
+
+### Stage 11.5.3 — Static Planned-Change Tree (Superseded Plan)
+
+Historical plan. Loci Flow 1.0A and 1.0B later delivered the backend-provided
+movement tree through the accepted Organize renderer.
+
+### Stage 11.6 — Resume, Stale-State, and Multi-Tab Protection (Overtaken)
+
+Historical plan. Loci Flow 1.0C implemented scan-generation and decision-revision
+protection for the current organization workflow. This does not claim every
+legacy reviewed-plan or multi-tab feature was implemented.
+
+### Stage 11.7 — Final Plan Preview and Execution Preflight (Overtaken)
+
+Implemented later for Loci Flow approval and movement through 1.0C and 1.0D1:
+server-owned plans, live metadata and protection checks, collision and root
+validation, and exact movement preview.
+
+### Stage 11.8 — Confirmed Web Apply and Verification (Overtaken)
+
+Implemented later through Loci Flow 1.0D and prototype-first B4: authenticated
+POST routes, CSRF and exact same-origin checks, fresh preflight, one shared
+execution coordinator, exact confirmation, durable operation intent,
+executor-owned movement, and verification.
+
+### Stage 11.9 — History, Verification, and Confirmed Restore (Overtaken)
+
+Implemented later through Loci Flow 1.0D2 and 1.0E: durable Activity,
+verification, ordinary Undo, Duplicate Bin Restore, shared restore ownership,
+exact confirmation, and post-restore verification.
+
+### Stage 11.10 — Packaging, Onboarding, Accessibility, and Release Hardening
+
+- Begin with the 1.0G contract inspection; it does not pre-approve packaging or
+  launcher implementation.
+- If approved separately, add a low-setup macOS launcher with validated native
+  folder selection, safe browser bootstrap, clean shutdown, and no unnecessary
+  terminal exposure.
+- Follow in separate release-hardening stages with the WCAG 2.2 AA audit,
+  large-folder performance testing, and nontechnical-user testing.
+- Defer Windows packaging until the macOS contract and implementation are proven.
+
+Native desktop development remains an optional final extension after Stage 11. Stage 11 usability should be evaluated at the 11.5 checkpoint rather than postponed until all execution and packaging stages are complete.

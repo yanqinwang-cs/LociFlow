@@ -1,0 +1,2211 @@
+import { LociFlowApiError } from "./api.js";
+
+const KNOWN_KINDS = new Set([
+  "folder", "pdf", "text", "markdown", "word", "spreadsheet", "image",
+  "presentation", "source_code", "archive", "document",
+]);
+const REVIEW_STATUSES = new Set(["in_progress", "ready_for_approval", "ready_to_move"]);
+const RECOMMENDATION_DECISIONS = new Set(["undecided", "accept", "keep"]);
+const MAX_TEXT_LENGTH = 2048;
+const MAX_CONFIRMATION_TOKEN_LENGTH = 512;
+const RECOVERY_STATES = new Set([
+  "clear", "needs_attention", "cannot_continue_automatically",
+]);
+const RECOVERY_RESULT_STATES = new Set([
+  "confirmed", "not_confirmed", "could_not_check",
+]);
+const RECOVERY_STALE_CODES = new Set([
+  "recovery_check_unavailable",
+  "recovery_context_unavailable",
+  "recovery_details_changed",
+  "application_stopping",
+]);
+const MOVEMENT_CONFIRMATION = "MOVE APPROVED FILES";
+const UNDO_CONFIRMATION = "UNDO FILE MOVE";
+const DUPLICATE_BIN_MOVEMENT_CONFIRMATION = "MOVE COPIES TO DUPLICATE BIN";
+const DUPLICATE_BIN_RESTORE_CONFIRMATION = "RESTORE COPIES";
+const EXECUTION_STATUSES = new Set([
+  "not_ready", "ready", "no_supported_moves", "recovery_required",
+  "prepared", "moving", "moved_unverified", "verified", "partial_movement",
+  "movement_failed", "verification_failed", "interrupted",
+]);
+const EXECUTION_IN_PROGRESS_STATUSES = new Set(["prepared", "moving", "moved_unverified"]);
+const EXECUTION_TERMINAL_STATUSES = new Set([
+  "verified", "partial_movement", "movement_failed", "verification_failed", "interrupted",
+]);
+const VERIFICATION_STATUSES = new Set(["not_run", "passed", "failed"]);
+const ACTIVITY_TYPES = new Set([
+  "organization", "restore", "duplicate_bin_move", "duplicate_bin_restore",
+]);
+const MOVEMENT_ACTIVITY_STATUSES = new Set([
+  "verified", "partial_movement", "movement_failed", "verification_failed",
+  "prepared", "moving", "moved_unverified", "interrupted", "recovery_required",
+]);
+const RESTORE_ACTIVITY_STATUSES = new Set([
+  "restored", "partial_undo", "undo_failed", "undo_verification_failed",
+  "prepared", "undoing", "restored_unverified", "interrupted",
+]);
+const DUPLICATE_MOVE_ACTIVITY_STATUSES = new Set([
+  "moved", "partially_moved", "movement_failed", "verification_failed",
+  "prepared", "moving", "moved_unverified", "interrupted",
+]);
+const DUPLICATE_RESTORE_ACTIVITY_STATUSES = new Set([
+  "restored", "partially_restored", "restore_failed", "verification_failed",
+  "prepared", "restoring", "restored_unverified", "interrupted",
+]);
+const DUPLICATE_BATCH_STATUSES = new Set([
+  "approved", "moving", "executing", "moved", "partially_moved",
+  "movement_failed", "verification_failed", "completed", "interrupted",
+  "attention", "superseded", "cancelled",
+]);
+const DUPLICATE_MOVE_STATUSES = new Set([
+  "prepared", "moving", "moved_unverified", "moved", "partially_moved",
+  "movement_failed", "verification_failed", "interrupted",
+]);
+const DUPLICATE_RESTORE_STATUSES = new Set([
+  "prepared", "restoring", "restored_unverified", "restored", "partially_restored",
+  "restore_failed", "verification_failed", "interrupted",
+]);
+const ACTIVITY_ERROR_MESSAGES = Object.freeze({
+  operation_not_found: "This move is no longer available.",
+  operation_not_undoable: "This move can no longer be undone.",
+  operation_superseded: "A newer file move must be handled first.",
+  undo_already_started: "This move is already being restored.",
+  undo_already_completed: "This move has already been restored.",
+  undo_destination_occupied: "A file now exists in one of the previous folders.",
+  undo_source_missing: "A moved file could not be found.",
+  undo_source_changed: "A moved file changed after it was moved.",
+  unsafe_undo_path: "This move cannot be undone safely.",
+  movement_or_undo_in_progress: "Another file action is running.",
+  no_restorable_items: "No copies from this move are still available to restore.",
+  invalid_confirmation_token: "This confirmation expired. Try again.",
+  invalid_restore_confirmation: "The confirmation phrase does not match.",
+  confirmation_expired: "This confirmation expired. Try again.",
+});
+const MOVEMENT_ERROR_MESSAGES = Object.freeze({
+  approved_plan_not_found: "The approved organization is no longer available.",
+  approved_plan_stale: "The approved organization has changed.",
+  scan_generation_mismatch: "The folder was checked again. Review the latest organization.",
+  decision_revision_mismatch: "The organization choices changed. Review them again.",
+  invalid_confirmation: "The confirmation phrase does not match.",
+  invalid_confirmation_token: "This move confirmation is no longer available.",
+  movement_already_started: "This move has already started. The latest result will be loaded.",
+  movement_or_undo_in_progress: "Another file action is running.",
+  movement_recovery_required: "A previous move needs attention in Activity.",
+  source_changed: "A file changed after the folder was checked.",
+  protected_item_selected: "A protected file cannot be moved.",
+  unsafe_destination: "A destination folder is no longer available.",
+  overwrite_detected: "A destination file now exists.",
+  move_conflict: "The approved moves now conflict.",
+  no_supported_moves: "No approved files are ready to move.",
+});
+const DUPLICATE_BIN_ERROR_MESSAGES = Object.freeze({
+  duplicate_batch_not_found: "These approved copies are no longer available.",
+  duplicate_batch_not_approved: "These copies are not ready to move.",
+  duplicate_batch_stale: "These copies changed. Review them again.",
+  duplicate_bin_movement_already_started: "This Duplicate Bin move already started.",
+  duplicate_bin_recovery_required: "This Duplicate Bin move needs attention.",
+  selected_copy_changed: "These copies changed. Review them again.",
+  retained_copy_changed: "These copies changed. Review them again.",
+  retained_copy_missing: "A matching copy is no longer available.",
+  duplicate_member_unsafe: "A selected copy is no longer available.",
+  duplicate_member_changed_during_hash: "These copies changed. Review them again.",
+  unsafe_duplicate_bin_destination: "Duplicate Bin is not available for these copies.",
+  invalid_confirmation_token: "This confirmation expired. Try again.",
+  invalid_confirmation: "The confirmation phrase does not match.",
+  invalid_restore_confirmation: "The confirmation phrase does not match.",
+  confirmation_expired: "This confirmation expired. Try again.",
+  bin_item_not_found: "A selected copy is no longer available.",
+  bin_item_not_restorable: "A selected copy cannot be restored.",
+  bin_item_already_owned: "A selected copy is already being restored.",
+  bin_item_missing: "A selected copy could not be found.",
+  bin_item_changed: "These copies changed. Review them again.",
+  no_restorable_items: "No selected copies are available to restore.",
+  restore_destination_occupied: "A file cannot be restored because its previous location is occupied.",
+  unsafe_restore_destination: "A previous file location is no longer safe.",
+  unsafe_restore_parent: "A previous folder location is no longer safe.",
+  restore_authorization_stale: "These copies changed. Review them again.",
+  restore_recovery_required: "This restore needs attention in Activity.",
+  duplicate_bin_unavailable: "Duplicate Bin could not be loaded.",
+  movement_or_undo_in_progress: "Another file action is running.",
+});
+const STANDARDS_ERROR_MESSAGES = Object.freeze({
+  application_stopping: "Loci Flow is closing. No new work can start.",
+  standard_revision_mismatch: "Standards changed. Reload the latest list.",
+  standard_conflict: "This Standard conflicts with another active Standard.",
+  active_plan_conflict: "Finish or restart the current organization before changing Standards.",
+  standards_storage_unavailable: "Standards could not be loaded.",
+  unknown_standard: "This Standard is no longer available.",
+  immutable_standard: "This built-in Standard cannot be paused.",
+  wrong_root_scope: "Check files again and choose the folder again.",
+  folder_scope_stale: "Check files again and choose the folder again.",
+  preview_expired: "This preview expired. Preview the Standard again.",
+  preview_superseded: "A newer preview is available. Preview the Standard again.",
+  invalid_preset: "Choose one of the available Standard types.",
+  invalid_matcher: "Enter a valid course or project code.",
+  duplicate_standard: "This Standard is already saved.",
+});
+
+export class OrganizationDataError extends Error {
+  constructor(code, message) {
+    super(message);
+    this.name = "OrganizationDataError";
+    this.code = code;
+  }
+}
+
+export class ActivityDataError extends Error {
+  constructor(code, message) {
+    super(message);
+    this.name = "ActivityDataError";
+    this.code = code;
+  }
+}
+
+export class StandardsDataError extends Error {
+  constructor(code, message) {
+    super(message);
+    this.name = "StandardsDataError";
+    this.code = code;
+  }
+}
+
+function clone(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function deepFreeze(value) {
+  if (!value || typeof value !== "object" || Object.isFrozen(value)) return value;
+  Object.freeze(value);
+  Object.values(value).forEach(deepFreeze);
+  return value;
+}
+
+function contractError() {
+  return new OrganizationDataError(
+    "invalid_contract",
+    "Organization information could not be loaded.",
+  );
+}
+
+function activityContractError() {
+  return new ActivityDataError(
+    "invalid_activity_contract",
+    "Activity could not be loaded.",
+  );
+}
+
+function movementContractError() {
+  return new OrganizationDataError(
+    "invalid_movement_contract",
+    "Move information could not be loaded.",
+  );
+}
+
+function requireMovementObject(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw movementContractError();
+  }
+  return value;
+}
+
+function requireActivityObject(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw activityContractError();
+  return value;
+}
+
+function requireActivityArray(value) {
+  if (!Array.isArray(value)) throw activityContractError();
+  return value;
+}
+
+function requireObject(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw contractError();
+  return value;
+}
+
+function requireArray(value) {
+  if (!Array.isArray(value)) throw contractError();
+  return value;
+}
+
+function requireText(value, { allowDot = false } = {}) {
+  if (
+    typeof value !== "string"
+    || value.length === 0
+    || value.length > MAX_TEXT_LENGTH
+    || (!allowDot && value === ".")
+  ) {
+    throw contractError();
+  }
+  return value;
+}
+
+function requireCount(value) {
+  if (!Number.isSafeInteger(value) || value < 0) throw contractError();
+  return value;
+}
+
+function recoveryContractError() {
+  return new OrganizationDataError(
+    "invalid_recovery_contract",
+    "The unfinished file work could not be reviewed safely.",
+  );
+}
+
+export function validateRecoveryResponse(rawPayload) {
+  if (!rawPayload || typeof rawPayload !== "object" || Array.isArray(rawPayload)) {
+    throw recoveryContractError();
+  }
+  const keys = Object.keys(rawPayload).sort();
+  const expected = ["affected_items", "can_check_result", "message", "state", "title"];
+  if (JSON.stringify(keys) !== JSON.stringify(expected)) throw recoveryContractError();
+  if (!RECOVERY_STATES.has(rawPayload.state)) throw recoveryContractError();
+  for (const value of [rawPayload.title, rawPayload.message]) {
+    if (typeof value !== "string" || value.length === 0 || value.length > 512) {
+      throw recoveryContractError();
+    }
+  }
+  if (!Number.isSafeInteger(rawPayload.affected_items) || rawPayload.affected_items < 0) {
+    throw recoveryContractError();
+  }
+  if (typeof rawPayload.can_check_result !== "boolean") throw recoveryContractError();
+  if (
+    new Set(["clear", "cannot_continue_automatically"]).has(rawPayload.state)
+    && (rawPayload.affected_items !== 0 || rawPayload.can_check_result)
+  ) {
+    throw recoveryContractError();
+  }
+  return deepFreeze(clone(rawPayload));
+}
+
+function requireRecoveryUuid(value) {
+  if (
+    typeof value !== "string"
+    || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value)
+  ) {
+    throw recoveryContractError();
+  }
+  return value;
+}
+
+export function validateRecoveryCheckContext(rawPayload) {
+  if (!rawPayload || typeof rawPayload !== "object" || Array.isArray(rawPayload)) {
+    throw recoveryContractError();
+  }
+  const keys = Object.keys(rawPayload).sort();
+  const expected = ["action_id", "case_id", "expires_at", "label"];
+  if (JSON.stringify(keys) !== JSON.stringify(expected)) throw recoveryContractError();
+  requireRecoveryUuid(rawPayload.case_id);
+  requireRecoveryUuid(rawPayload.action_id);
+  if (
+    typeof rawPayload.expires_at !== "string"
+    || rawPayload.expires_at.length === 0
+    || rawPayload.expires_at.length > 128
+    || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(
+      rawPayload.expires_at,
+    )
+    || !Number.isFinite(Date.parse(rawPayload.expires_at))
+    || rawPayload.label !== "Check result"
+  ) {
+    throw recoveryContractError();
+  }
+  return deepFreeze(clone(rawPayload));
+}
+
+export function validateRecoveryCheckResult(rawPayload) {
+  if (!rawPayload || typeof rawPayload !== "object" || Array.isArray(rawPayload)) {
+    throw recoveryContractError();
+  }
+  const keys = Object.keys(rawPayload).sort();
+  const expected = ["message", "recovery_attention", "state", "title"];
+  if (JSON.stringify(keys) !== JSON.stringify(expected)) throw recoveryContractError();
+  if (!RECOVERY_RESULT_STATES.has(rawPayload.state)) throw recoveryContractError();
+  for (const value of [rawPayload.title, rawPayload.message]) {
+    if (typeof value !== "string" || value.length === 0 || value.length > 512) {
+      throw recoveryContractError();
+    }
+  }
+  if (typeof rawPayload.recovery_attention !== "boolean") throw recoveryContractError();
+  return deepFreeze(clone(rawPayload));
+}
+
+function normalizeRecoveryCheckError(error) {
+  if (error instanceof LociFlowApiError && RECOVERY_STALE_CODES.has(error.code)) {
+    return new OrganizationDataError(
+      error.code,
+      "The recovery details changed. Open the review again.",
+    );
+  }
+  return new OrganizationDataError(
+    "recovery_check_failed",
+    "Loci Flow could not check the result. Review the folder and try again.",
+  );
+}
+
+function requireMovementToken(value) {
+  if (
+    typeof value !== "string"
+    || value.length > MAX_CONFIRMATION_TOKEN_LENGTH
+    || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(value)
+  ) {
+    throw movementContractError();
+  }
+  return value;
+}
+
+function requireMovementTimestamp(value) {
+  if (value === null) return null;
+  if (typeof value !== "string" || value.length > 64 || !Number.isFinite(Date.parse(value))) {
+    throw movementContractError();
+  }
+  return value;
+}
+
+function validateExecution(rawExecution, { operationResponse = false } = {}) {
+  const raw = requireMovementObject(rawExecution);
+  if (!EXECUTION_STATUSES.has(raw.status)) throw movementContractError();
+  const operationId = operationResponse ? raw.id : raw.operation_id;
+  if (operationId !== null) requireMovementToken(operationId);
+  if (operationResponse && operationId === null) throw movementContractError();
+  const filesExpected = requireCount(raw.files_expected);
+  const filesMoved = requireCount(raw.files_moved);
+  const filesFailed = requireCount(raw.files_failed);
+  const filesUnattempted = requireCount(raw.files_unattempted);
+  if (filesMoved + filesFailed + filesUnattempted > filesExpected) {
+    throw movementContractError();
+  }
+  const verificationStatus = raw.verification_status;
+  if (verificationStatus !== null && !VERIFICATION_STATUSES.has(verificationStatus)) {
+    throw movementContractError();
+  }
+  if (new Set(["not_ready", "no_supported_moves"]).has(raw.status) && operationId !== null) {
+    throw movementContractError();
+  }
+  if (
+    raw.status === "ready"
+    && (operationId !== null || filesExpected < 1 || filesMoved || filesFailed
+      || filesUnattempted !== filesExpected || verificationStatus !== null)
+  ) {
+    throw movementContractError();
+  }
+  if (
+    (EXECUTION_IN_PROGRESS_STATUSES.has(raw.status) || EXECUTION_TERMINAL_STATUSES.has(raw.status))
+    && operationId === null
+  ) {
+    throw movementContractError();
+  }
+  return {
+    status: raw.status,
+    operation_id: operationId,
+    files_expected: filesExpected,
+    files_moved: filesMoved,
+    files_failed: filesFailed,
+    files_unattempted: filesUnattempted,
+    verification_status: verificationStatus,
+    ...(operationResponse ? {
+      started_at: requireMovementTimestamp(raw.started_at),
+      completed_at: requireMovementTimestamp(raw.completed_at),
+    } : {}),
+  };
+}
+
+export function validateMovementPreview(rawPreview) {
+  const raw = requireMovementObject(rawPreview);
+  if (
+    Object.keys(raw).length !== 4
+    || raw.confirmation !== MOVEMENT_CONFIRMATION
+  ) {
+    throw movementContractError();
+  }
+  const filesToMove = requireCount(raw.files_to_move);
+  if (filesToMove < 1) throw movementContractError();
+  return deepFreeze({
+    files_to_move: filesToMove,
+    duplicate_copies_deferred: requireCount(raw.duplicate_copies_deferred),
+    confirmation: raw.confirmation,
+    confirmation_token: requireMovementToken(raw.confirmation_token),
+  });
+}
+
+export function validateMovementResponse(rawPayload) {
+  const payload = requireMovementObject(rawPayload);
+  if (Object.keys(payload).length !== 1) throw movementContractError();
+  return deepFreeze({
+    operation: validateExecution(payload.operation, { operationResponse: true }),
+  });
+}
+
+export function isCanonicalActivityId(value) {
+  return typeof value === "string"
+    && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(value);
+}
+
+function requireActivityId(value) {
+  if (!isCanonicalActivityId(value)) throw activityContractError();
+  return value;
+}
+
+function requireActivityText(value) {
+  if (typeof value !== "string" || !value || value.length > MAX_TEXT_LENGTH) {
+    throw activityContractError();
+  }
+  return value;
+}
+
+function requireActivityCount(value) {
+  if (!Number.isSafeInteger(value) || value < 0) throw activityContractError();
+  return value;
+}
+
+function requireIsoTimestamp(value) {
+  if (value === null) return null;
+  if (typeof value !== "string" || value.length > 64) throw activityContractError();
+  const match = value.match(
+    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(Z|[+-]\d{2}:\d{2})$/,
+  );
+  if (!match) throw activityContractError();
+  const [, year, month, day, hour, minute, second, zone] = match;
+  const numeric = [year, month, day, hour, minute, second].map(Number);
+  const [yearValue, monthValue, dayValue, hourValue, minuteValue, secondValue] = numeric;
+  const daysInMonth = new Date(Date.UTC(yearValue, monthValue, 0)).getUTCDate();
+  if (
+    monthValue < 1 || monthValue > 12 || dayValue < 1 || dayValue > daysInMonth
+    || hourValue > 23 || minuteValue > 59 || secondValue > 59
+  ) {
+    throw activityContractError();
+  }
+  if (zone !== "Z") {
+    const [zoneHour, zoneMinute] = zone.slice(1).split(":").map(Number);
+    if (zoneHour > 23 || zoneMinute > 59) throw activityContractError();
+  }
+  if (!Number.isFinite(Date.parse(value))) throw activityContractError();
+  return value;
+}
+
+export function isSafeRelativePath(value, { allowDot = true } = {}) {
+  if (typeof value !== "string" || !value || value.length > MAX_TEXT_LENGTH) return false;
+  if (value.includes("\0") || value.includes("\\")) return false;
+  if (value.startsWith("/") || value.startsWith("\\")) return false;
+  if (/^[A-Za-z]:/.test(value) || /^[A-Za-z][A-Za-z0-9+.-]*:/.test(value)) return false;
+  if (value === ".") return allowDot;
+  const parts = value.split("/");
+  return parts.every((part) => part && part !== "." && part !== "..");
+}
+
+function requirePath(value, options) {
+  if (!isSafeRelativePath(value, options)) throw contractError();
+  return value;
+}
+
+function validateFileSnapshot(raw) {
+  const item = requireObject(raw);
+  requireText(item.id);
+  requireText(item.name);
+  if (!new Set(["file", "folder"]).has(item.entity_type)) throw contractError();
+  requireText(item.kind);
+  requireCount(item.size_bytes);
+  requirePath(item.relative_path, { allowDot: false });
+  requirePath(item.current_folder, { allowDot: true });
+  if (item.modified_at !== undefined) requireText(item.modified_at);
+  if (item.extension !== undefined && typeof item.extension !== "string") throw contractError();
+  return item;
+}
+
+function validateOption(raw) {
+  const option = requireObject(raw);
+  requireText(option.id);
+  if (!new Set(["move", "keep", "keep_all_copies", "choose_copies_for_duplicate_bin"]).has(option.action)) {
+    throw contractError();
+  }
+  if (option.destination_folder !== undefined) {
+    requirePath(option.destination_folder, { allowDot: true });
+  }
+  if (option.action === "move" && option.destination_folder === undefined) throw contractError();
+  return option;
+}
+
+function validateSummary(summary, payload) {
+  const value = requireObject(summary);
+  for (const field of [
+    "recommended_changes", "choices_needed", "kept_by_standards", "files_to_move",
+    "names_to_change", "folders_to_create", "duplicate_copies",
+  ]) {
+    requireCount(value[field]);
+  }
+  if (
+    value.recommended_changes !== payload.recommended_changes.length
+    || value.choices_needed !== payload.choices_needed.length
+    || value.kept_by_standards !== payload.kept_by_standards.length
+  ) {
+    throw contractError();
+  }
+  const treePaths = [];
+  for (const rawEntry of requireArray(value.movement_tree)) {
+    const entry = requireObject(rawEntry);
+    requirePath(entry.folder, { allowDot: true });
+    for (const path of requireArray(entry.files)) {
+      treePaths.push(requirePath(path, { allowDot: false }));
+    }
+  }
+  return treePaths;
+}
+
+function validateReview(review, payload) {
+  const value = requireObject(review);
+  if (!REVIEW_STATUSES.has(value.status)) throw contractError();
+  if (value.scan_generation !== payload.freshness.scan_generation) throw contractError();
+  requireCount(value.decision_revision);
+
+  const recommendations = requireArray(value.recommendations);
+  const decisionsById = new Map();
+  for (const rawDecision of recommendations) {
+    const decision = requireObject(rawDecision);
+    requireText(decision.change_id);
+    if (!RECOMMENDATION_DECISIONS.has(decision.decision) || decisionsById.has(decision.change_id)) {
+      throw contractError();
+    }
+    decisionsById.set(decision.change_id, decision.decision);
+  }
+  const recommendationIds = payload.recommended_changes.map((item) => item.id);
+  if (
+    recommendations.length !== recommendationIds.length
+    || recommendationIds.some((id) => !decisionsById.has(id))
+  ) {
+    throw contractError();
+  }
+
+  const choices = requireArray(value.choices);
+  const choiceStateById = new Map();
+  const publicChoices = new Map(payload.choices_needed.map((choice) => [choice.id, choice]));
+  for (const rawChoice of choices) {
+    const choice = requireObject(rawChoice);
+    requireText(choice.choice_id);
+    if (choiceStateById.has(choice.choice_id) || !publicChoices.has(choice.choice_id)) throw contractError();
+    if (choice.option_id !== null && typeof choice.option_id !== "string") throw contractError();
+    const publicChoice = publicChoices.get(choice.choice_id);
+    const optionIds = new Set(publicChoice.options.map((option) => option.id));
+    if (choice.option_id !== null && !optionIds.has(choice.option_id)) throw contractError();
+    const selectedIds = requireArray(choice.selected_copy_ids);
+    if (!selectedIds.every((id) => typeof id === "string") || new Set(selectedIds).size !== selectedIds.length) {
+      throw contractError();
+    }
+    const offeredCopyIds = new Set((publicChoice.copies || []).map((copy) => copy.id));
+    if (selectedIds.some((id) => !offeredCopyIds.has(id))) throw contractError();
+    if (choice.option_id !== "choose-for-bin" && selectedIds.length) throw contractError();
+    choiceStateById.set(choice.choice_id, choice);
+  }
+  if (choices.length !== publicChoices.size) throw contractError();
+
+  const summary = requireObject(value.summary);
+  for (const field of [
+    "pending_recommendations", "pending_choices", "accepted_moves",
+    "kept_recommendations", "duplicate_copies_for_future_bin", "choices_remaining",
+    "files_to_move", "names_to_change", "folders_to_create",
+  ]) {
+    requireCount(summary[field]);
+  }
+  if (typeof summary.ready_for_approval !== "boolean") throw contractError();
+  const pendingRecommendations = [...decisionsById.values()].filter((item) => item === "undecided").length;
+  const pendingChoices = [...choiceStateById.values()].filter((item) => item.option_id === null).length;
+  const acceptedRecommendations = [...decisionsById.values()].filter((item) => item === "accept").length;
+  const acceptedDestinationChoices = [...choiceStateById].filter(([id, state]) => {
+    if (state.option_id === null) return false;
+    return publicChoices.get(id).options.some(
+      (option) => option.id === state.option_id && option.action === "move",
+    );
+  }).length;
+  const selectedCopies = [...choiceStateById.values()].reduce(
+    (total, item) => total + item.selected_copy_ids.length,
+    0,
+  );
+  const remaining = pendingRecommendations + pendingChoices;
+  if (
+    summary.pending_recommendations !== pendingRecommendations
+    || summary.pending_choices !== pendingChoices
+    || summary.choices_remaining !== remaining
+    || summary.ready_for_approval !== (remaining === 0)
+    || summary.files_to_move !== acceptedRecommendations + acceptedDestinationChoices
+    || summary.accepted_moves !== summary.files_to_move
+    || summary.duplicate_copies_for_future_bin !== selectedCopies
+  ) {
+    throw contractError();
+  }
+  if (value.status === "ready_for_approval" && !summary.ready_for_approval) throw contractError();
+  if (value.status === "ready_to_move" && (!summary.ready_for_approval || !value.approval)) {
+    throw contractError();
+  }
+  if (value.approval !== null && value.approval !== undefined) {
+    const approval = requireObject(value.approval);
+    requireText(approval.approved_at);
+    requireObject(approval.summary);
+  }
+  return value;
+}
+
+export function validateOrganizationResponse(rawPayload) {
+  const payload = clone(requireObject(rawPayload));
+  const scope = requireObject(payload.scope);
+  requireText(scope.display_name);
+  const freshness = requireObject(payload.freshness);
+  requireText(freshness.scan_generation);
+  requireText(freshness.last_checked_at);
+  requireObject(payload.planning);
+  requireArray(payload.recommended_changes);
+  requireArray(payload.choices_needed);
+  requireArray(payload.kept_by_standards);
+  payload.execution = validateExecution(payload.execution);
+  if (payload.duplicate_batch === undefined || payload.duplicate_batch === null) {
+    payload.duplicate_batch = null;
+  } else {
+    const batch = requireObject(payload.duplicate_batch);
+    if (
+      Object.keys(batch).length !== 3
+      || !isCanonicalActivityId(batch.id)
+      || !DUPLICATE_BATCH_STATUSES.has(batch.status)
+      || requireCount(batch.copies) < 1
+    ) {
+      throw contractError();
+    }
+    payload.duplicate_batch = {
+      id: batch.id,
+      status: batch.status,
+      copies: batch.copies,
+    };
+  }
+
+  const actionableItemIds = new Set();
+  const recommendationPaths = new Set();
+  for (const rawChange of payload.recommended_changes) {
+    const change = requireObject(rawChange);
+    requireText(change.id);
+    if (change.action !== "move") throw contractError();
+    const item = validateFileSnapshot(change.item);
+    requirePath(change.destination_folder, { allowDot: true });
+    requireText(change.reason_code);
+    if (actionableItemIds.has(item.id)) throw contractError();
+    actionableItemIds.add(item.id);
+    recommendationPaths.add(item.relative_path);
+  }
+
+  for (const rawChoice of payload.choices_needed) {
+    const choice = requireObject(rawChoice);
+    requireText(choice.id);
+    if (!new Set(["choose_destination", "exact_duplicate"]).has(choice.choice_type)) throw contractError();
+    requireText(choice.reason_code);
+    const options = requireArray(choice.options).map(validateOption);
+    if (new Set(options.map((option) => option.id)).size !== options.length) throw contractError();
+    const items = choice.choice_type === "choose_destination"
+      ? [validateFileSnapshot(choice.item)]
+      : requireArray(choice.copies).map(validateFileSnapshot);
+    if (choice.choice_type === "exact_duplicate" && items.length < 2) throw contractError();
+    for (const item of items) {
+      if (actionableItemIds.has(item.id)) throw contractError();
+      actionableItemIds.add(item.id);
+    }
+  }
+
+  const protectedItemIds = new Set();
+  const protectedPaths = new Set();
+  for (const rawKept of payload.kept_by_standards) {
+    const kept = requireObject(rawKept);
+    const item = validateFileSnapshot(kept.item);
+    const standard = requireObject(kept.standard);
+    requireText(standard.id);
+    requireText(standard.name);
+    requireText(kept.reason_code);
+    if (actionableItemIds.has(item.id) || protectedItemIds.has(item.id)) throw contractError();
+    protectedItemIds.add(item.id);
+    protectedPaths.add(item.relative_path);
+  }
+
+  const treePaths = validateSummary(payload.summary, payload);
+  if (
+    treePaths.some((path) => !recommendationPaths.has(path) || protectedPaths.has(path))
+    || new Set(treePaths).size !== treePaths.length
+    || treePaths.length !== recommendationPaths.size
+  ) {
+    throw contractError();
+  }
+  validateReview(payload.review, payload);
+  return deepFreeze(payload);
+}
+
+function duplicateBinContractError(message = "Duplicate Bin information could not be loaded.") {
+  return new OrganizationDataError("invalid_duplicate_bin_contract", message);
+}
+
+function requireDuplicateObject(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw duplicateBinContractError();
+  }
+  return value;
+}
+
+function requireDuplicateToken(value) {
+  if (!isCanonicalActivityId(value)) throw duplicateBinContractError();
+  return value;
+}
+
+function requireDuplicateTimestamp(value) {
+  try {
+    return requireIsoTimestamp(value);
+  } catch {
+    throw duplicateBinContractError();
+  }
+}
+
+export function validateDuplicateBinMovementPreview(rawPreview) {
+  const preview = requireDuplicateObject(rawPreview);
+  if (
+    Object.keys(preview).length !== 4
+    || preview.confirmation !== DUPLICATE_BIN_MOVEMENT_CONFIRMATION
+    || requireCount(preview.copies_to_move) < 1
+  ) {
+    throw duplicateBinContractError();
+  }
+  return deepFreeze({
+    copies_to_move: preview.copies_to_move,
+    confirmation: preview.confirmation,
+    confirmation_token: requireDuplicateToken(preview.confirmation_token),
+    expires_at: requireDuplicateTimestamp(preview.expires_at),
+  });
+}
+
+function validateDuplicateOperation(rawOperation, { restore = false } = {}) {
+  const operation = requireDuplicateObject(rawOperation);
+  const expectedKeys = new Set([
+    "id", "status", "copies_expected", restore ? "copies_restored" : "copies_moved",
+    "copies_failed", "copies_unattempted", "verification_status", "started_at",
+    "completed_at", "recovery_required",
+  ]);
+  if (
+    Object.keys(operation).length !== expectedKeys.size
+    || Object.keys(operation).some((key) => !expectedKeys.has(key))
+    || !(restore ? DUPLICATE_RESTORE_STATUSES : DUPLICATE_MOVE_STATUSES).has(operation.status)
+    || typeof operation.recovery_required !== "boolean"
+    || !VERIFICATION_STATUSES.has(operation.verification_status)
+  ) {
+    throw duplicateBinContractError();
+  }
+  const completedKey = restore ? "copies_restored" : "copies_moved";
+  for (const field of ["copies_expected", completedKey, "copies_failed", "copies_unattempted"]) {
+    requireCount(operation[field]);
+  }
+  return {
+    id: requireDuplicateToken(operation.id),
+    status: operation.status,
+    copies_expected: operation.copies_expected,
+    [completedKey]: operation[completedKey],
+    copies_failed: operation.copies_failed,
+    copies_unattempted: operation.copies_unattempted,
+    verification_status: operation.verification_status,
+    started_at: operation.started_at === null ? null : requireDuplicateTimestamp(operation.started_at),
+    completed_at: operation.completed_at === null ? null : requireDuplicateTimestamp(operation.completed_at),
+    recovery_required: operation.recovery_required,
+  };
+}
+
+export function validateDuplicateBinMovementResponse(rawPayload) {
+  const payload = requireDuplicateObject(rawPayload);
+  if (Object.keys(payload).length !== 1) throw duplicateBinContractError();
+  return deepFreeze({ operation: validateDuplicateOperation(payload.operation) });
+}
+
+export function validateDuplicateBinResponse(rawPayload) {
+  const payload = requireDuplicateObject(rawPayload);
+  if (Object.keys(payload).length !== 1 || !Array.isArray(payload.items)) {
+    throw duplicateBinContractError();
+  }
+  const ids = new Set();
+  const items = payload.items.map((rawItem) => {
+    const item = requireDuplicateObject(rawItem);
+    const id = requireDuplicateToken(item.id);
+    if (ids.has(id)) throw duplicateBinContractError();
+    ids.add(id);
+    if (
+      typeof item.name !== "string" || !item.name || item.name.length > MAX_TEXT_LENGTH
+      || item.name.includes("/") || item.name.includes("\\") || item.name.includes("\0")
+      || !isSafeRelativePath(item.previous_folder, { allowDot: false })
+      || !Number.isSafeInteger(item.size) || item.size < 0
+      || !KNOWN_KINDS.has(item.kind)
+      || typeof item.restore_available !== "boolean"
+      || !(
+        item.attention_message === null
+        || (
+          typeof item.attention_message === "string"
+          && item.attention_message.length > 0
+          && item.attention_message.length <= MAX_TEXT_LENGTH
+        )
+      )
+    ) {
+      throw duplicateBinContractError();
+    }
+    return {
+      id,
+      name: item.name,
+      previous_folder: item.previous_folder,
+      moved_at: requireDuplicateTimestamp(item.moved_at),
+      size: item.size,
+      kind: item.kind,
+      restore_available: item.restore_available,
+      attention_message: item.attention_message,
+    };
+  });
+  return deepFreeze({ items });
+}
+
+export function validateDuplicateBinRestorePreview(rawPreview) {
+  const preview = requireDuplicateObject(rawPreview);
+  if (
+    Object.keys(preview).length !== 4
+    || preview.confirmation !== DUPLICATE_BIN_RESTORE_CONFIRMATION
+    || requireCount(preview.copies_to_restore) < 1
+  ) {
+    throw duplicateBinContractError();
+  }
+  return deepFreeze({
+    copies_to_restore: preview.copies_to_restore,
+    confirmation: preview.confirmation,
+    confirmation_token: requireDuplicateToken(preview.confirmation_token),
+    expires_at: requireDuplicateTimestamp(preview.expires_at),
+  });
+}
+
+export function validateDuplicateBinRestoreResponse(rawPayload) {
+  const payload = requireDuplicateObject(rawPayload);
+  if (Object.keys(payload).length !== 1) throw duplicateBinContractError();
+  return deepFreeze({ restore: validateDuplicateOperation(payload.restore, { restore: true }) });
+}
+
+function validateActivityDetail(rawDetail, type) {
+  const detail = requireActivityObject(rawDetail);
+  const status = requireActivityText(detail.status);
+  if (new Set(["organization", "duplicate_bin_move"]).has(type)) {
+    if (!isSafeRelativePath(detail.source, { allowDot: false })) throw activityContractError();
+    if (!isSafeRelativePath(detail.destination, { allowDot: false })) throw activityContractError();
+    return { source: detail.source, destination: detail.destination, status };
+  }
+  if (!isSafeRelativePath(detail.restored_to, { allowDot: false })) throw activityContractError();
+  if (!isSafeRelativePath(detail.moved_from, { allowDot: false })) throw activityContractError();
+  return { restored_to: detail.restored_to, moved_from: detail.moved_from, status };
+}
+
+function validateActivityEntry(rawEntry) {
+  const entry = requireActivityObject(rawEntry);
+  const id = requireActivityId(entry.id);
+  if (!ACTIVITY_TYPES.has(entry.type)) throw activityContractError();
+  const title = requireActivityText(entry.title);
+  const status = requireActivityText(entry.status);
+  const allowedStatuses = {
+    organization: MOVEMENT_ACTIVITY_STATUSES,
+    restore: RESTORE_ACTIVITY_STATUSES,
+    duplicate_bin_move: DUPLICATE_MOVE_ACTIVITY_STATUSES,
+    duplicate_bin_restore: DUPLICATE_RESTORE_ACTIVITY_STATUSES,
+  }[entry.type];
+  if (!allowedStatuses.has(status)) throw activityContractError();
+  const startedAt = requireIsoTimestamp(entry.started_at);
+  const completedAt = requireIsoTimestamp(entry.completed_at);
+  for (const field of [
+    "files_expected", "files_moved", "files_restored", "files_failed", "files_unattempted",
+  ]) {
+    requireActivityCount(entry[field]);
+  }
+  const verificationStatus = entry.verification_status === null
+    ? null
+    : requireActivityText(entry.verification_status);
+  if (typeof entry.undoable !== "boolean") throw activityContractError();
+  const relatedOperationId = entry.related_operation_id === null
+    ? null
+    : requireActivityId(entry.related_operation_id);
+  const movementType = new Set(["organization", "duplicate_bin_move"]).has(entry.type);
+  const completed = movementType ? entry.files_moved : entry.files_restored;
+  if (completed + entry.files_failed + entry.files_unattempted > entry.files_expected) {
+    throw activityContractError();
+  }
+  if (movementType) {
+    if (entry.files_restored !== 0 || relatedOperationId !== null) throw activityContractError();
+    if (
+      entry.undoable
+      && (
+        !new Set(["verified", "moved"]).has(status)
+        || verificationStatus !== "passed"
+        || entry.files_moved < 1
+      )
+    ) {
+      throw activityContractError();
+    }
+  } else {
+    if (entry.files_moved !== 0 || entry.undoable) throw activityContractError();
+    if (entry.type === "restore" && relatedOperationId === null) throw activityContractError();
+    if (entry.type === "duplicate_bin_restore" && relatedOperationId !== null) {
+      throw activityContractError();
+    }
+  }
+  return {
+    id,
+    type: entry.type,
+    title,
+    status,
+    started_at: startedAt,
+    completed_at: completedAt,
+    files_expected: entry.files_expected,
+    files_moved: entry.files_moved,
+    files_restored: entry.files_restored,
+    files_failed: entry.files_failed,
+    files_unattempted: entry.files_unattempted,
+    verification_status: verificationStatus,
+    undoable: entry.undoable,
+    related_operation_id: relatedOperationId,
+    details: requireActivityArray(entry.details).map(
+      (detail) => validateActivityDetail(detail, entry.type),
+    ),
+  };
+}
+
+export function validateActivityResponse(rawPayload) {
+  const payload = requireActivityObject(rawPayload);
+  const ids = new Set();
+  let ordinaryUndoableCount = 0;
+  const activity = requireActivityArray(payload.activity).map((rawEntry) => {
+    const entry = validateActivityEntry(rawEntry);
+    if (ids.has(entry.id)) throw activityContractError();
+    ids.add(entry.id);
+    if (entry.type === "organization" && entry.undoable) ordinaryUndoableCount += 1;
+    return entry;
+  });
+  if (ordinaryUndoableCount > 1) throw activityContractError();
+  return deepFreeze({ activity });
+}
+
+function standardsContractError() {
+  return new StandardsDataError(
+    "invalid_standards_contract",
+    "Standards information could not be loaded.",
+  );
+}
+
+function requireStandardsText(value, { nullable = false } = {}) {
+  if (nullable && value === null) return null;
+  if (typeof value !== "string" || !value || value.length > MAX_TEXT_LENGTH) {
+    throw standardsContractError();
+  }
+  return value;
+}
+
+function validateStandardItem(rawItem) {
+  const item = rawItem && typeof rawItem === "object" && !Array.isArray(rawItem)
+    ? rawItem
+    : null;
+  const expected = new Set([
+    "id", "name", "description", "active", "mutable", "scope_label",
+    "effect_summary", "preset_type", "attention_message",
+  ]);
+  if (!item || Object.keys(item).length !== expected.size || Object.keys(item).some((key) => !expected.has(key))) {
+    throw standardsContractError();
+  }
+  if (typeof item.active !== "boolean" || typeof item.mutable !== "boolean") {
+    throw standardsContractError();
+  }
+  return {
+    id: requireStandardsText(item.id),
+    name: requireStandardsText(item.name),
+    description: requireStandardsText(item.description),
+    active: item.active,
+    mutable: item.mutable,
+    scope_label: requireStandardsText(item.scope_label),
+    effect_summary: requireStandardsText(item.effect_summary),
+    preset_type: requireStandardsText(item.preset_type),
+    attention_message: requireStandardsText(item.attention_message, { nullable: true }),
+  };
+}
+
+function validateStandardPreset(rawPreset) {
+  const preset = rawPreset && typeof rawPreset === "object" && !Array.isArray(rawPreset)
+    ? rawPreset
+    : null;
+  const expected = new Set(["id", "name", "description"]);
+  if (!preset || Object.keys(preset).length !== expected.size || Object.keys(preset).some((key) => !expected.has(key))) {
+    throw standardsContractError();
+  }
+  return {
+    id: requireStandardsText(preset.id),
+    name: requireStandardsText(preset.name),
+    description: requireStandardsText(preset.description),
+  };
+}
+
+function validateStandardScopeChoice(rawChoice) {
+  const choice = rawChoice && typeof rawChoice === "object" && !Array.isArray(rawChoice)
+    ? rawChoice
+    : null;
+  const expected = new Set(["id", "label", "kind"]);
+  if (
+    !choice
+    || Object.keys(choice).length !== expected.size
+    || Object.keys(choice).some((key) => !expected.has(key))
+    || !new Set(["root", "folder"]).has(choice.kind)
+  ) {
+    throw standardsContractError();
+  }
+  return {
+    id: requireStandardsText(choice.id),
+    label: requireStandardsText(choice.label),
+    kind: choice.kind,
+  };
+}
+
+export function validateStandardsResponse(rawPayload, { mutation = false } = {}) {
+  const payload = rawPayload && typeof rawPayload === "object" && !Array.isArray(rawPayload)
+    ? rawPayload
+    : null;
+  const expected = new Set(mutation === "save"
+    ? ["revision", "items", "fresh_scan_required", "save_message"]
+    : mutation
+      ? ["revision", "items", "fresh_scan_required"]
+      : [
+        "revision", "items", "presets",
+        "creation_available", "creation_message",
+      ]);
+  if (!payload || Object.keys(payload).length !== expected.size || Object.keys(payload).some((key) => !expected.has(key))) {
+    throw standardsContractError();
+  }
+  if (!Number.isSafeInteger(payload.revision) || payload.revision < 0 || !Array.isArray(payload.items)) {
+    throw standardsContractError();
+  }
+  if (mutation && typeof payload.fresh_scan_required !== "boolean") {
+    throw standardsContractError();
+  }
+  const ids = new Set();
+  const items = payload.items.map((item) => {
+    const validated = validateStandardItem(item);
+    if (ids.has(validated.id)) throw standardsContractError();
+    ids.add(validated.id);
+    return validated;
+  });
+  if (!mutation) {
+    if (
+      !Array.isArray(payload.presets)
+      || typeof payload.creation_available !== "boolean"
+      || (payload.creation_available
+        ? payload.creation_message !== null
+        : typeof payload.creation_message !== "string" || !payload.creation_message)
+    ) {
+      throw standardsContractError();
+    }
+    const presets = payload.presets.map(validateStandardPreset);
+    const presetIds = presets.map((preset) => preset.id);
+    if (
+      presets.length !== 2
+      || new Set(presetIds).size !== 2
+      || !presetIds.includes("keep_folder_unchanged")
+      || !presetIds.includes("keep_matching_files_together")
+    ) {
+      throw standardsContractError();
+    }
+    return deepFreeze({
+      revision: payload.revision,
+      items,
+      presets,
+      creation_available: payload.creation_available,
+      creation_message: payload.creation_message,
+    });
+  }
+  if (mutation === "save") requireStandardsText(payload.save_message);
+  return deepFreeze({
+    revision: payload.revision,
+    items,
+    fresh_scan_required: payload.fresh_scan_required,
+    ...(mutation === "save" ? { save_message: payload.save_message } : {}),
+  });
+}
+
+export function validateStandardsCreationContext(rawPayload) {
+  const payload = rawPayload && typeof rawPayload === "object" && !Array.isArray(rawPayload)
+    ? rawPayload
+    : null;
+  const expected = new Set(["scope_choices", "expires_at", "revision"]);
+  if (
+    !payload
+    || Object.keys(payload).length !== expected.size
+    || Object.keys(payload).some((key) => !expected.has(key))
+    || !Array.isArray(payload.scope_choices)
+    || !Number.isSafeInteger(payload.revision)
+    || payload.revision < 0
+  ) {
+    throw standardsContractError();
+  }
+  const expiresAt = requireStandardsText(payload.expires_at);
+  if (!/^\d{4}-\d{2}-\d{2}T/.test(expiresAt) || Number.isNaN(Date.parse(expiresAt))) {
+    throw standardsContractError();
+  }
+  const scopeChoices = payload.scope_choices.map(validateStandardScopeChoice);
+  const scopeIds = new Set();
+  for (const choice of scopeChoices) {
+    if (scopeIds.has(choice.id)) throw standardsContractError();
+    scopeIds.add(choice.id);
+  }
+  if (scopeChoices.filter((choice) => choice.kind === "root").length !== 1) {
+    throw standardsContractError();
+  }
+  return deepFreeze({
+    scope_choices: scopeChoices,
+    expires_at: expiresAt,
+    revision: payload.revision,
+  });
+}
+
+export function validateStandardPreviewResponse(rawPayload) {
+  const payload = rawPayload && typeof rawPayload === "object" && !Array.isArray(rawPayload)
+    ? rawPayload
+    : null;
+  const topExpected = new Set(["preview_token", "expires_at", "preview"]);
+  const previewExpected = new Set([
+    "name", "description", "scope_label", "effect_summary", "matching_files",
+    "fresh_scan_required", "attention_message",
+  ]);
+  const preview = payload?.preview;
+  if (
+    !payload
+    || Object.keys(payload).length !== topExpected.size
+    || Object.keys(payload).some((key) => !topExpected.has(key))
+    || !preview
+    || typeof preview !== "object"
+    || Array.isArray(preview)
+    || Object.keys(preview).length !== previewExpected.size
+    || Object.keys(preview).some((key) => !previewExpected.has(key))
+    || !Number.isSafeInteger(preview.matching_files)
+    || preview.matching_files < 0
+    || typeof preview.fresh_scan_required !== "boolean"
+  ) {
+    throw standardsContractError();
+  }
+  const expiresAt = requireStandardsText(payload.expires_at);
+  if (!/^\d{4}-\d{2}-\d{2}T/.test(expiresAt) || Number.isNaN(Date.parse(expiresAt))) {
+    throw standardsContractError();
+  }
+  return deepFreeze({
+    preview_token: requireStandardsText(payload.preview_token),
+    expires_at: expiresAt,
+    preview: {
+      name: requireStandardsText(preview.name),
+      description: requireStandardsText(preview.description),
+      scope_label: requireStandardsText(preview.scope_label),
+      effect_summary: requireStandardsText(preview.effect_summary),
+      matching_files: preview.matching_files,
+      fresh_scan_required: preview.fresh_scan_required,
+      attention_message: requireStandardsText(preview.attention_message, { nullable: true }),
+    },
+  });
+}
+
+export function validateUndoPreview(rawPreview, requestedOperationId) {
+  const preview = requireActivityObject(rawPreview);
+  requireActivityId(requestedOperationId);
+  const duplicateRestore = preview.confirmation === DUPLICATE_BIN_RESTORE_CONFIRMATION;
+  const count = duplicateRestore ? preview.copies_to_restore : preview.files_to_restore;
+  if (!Number.isSafeInteger(count) || count < 1) throw activityContractError();
+  if (!duplicateRestore) {
+    if (requireActivityId(preview.operation_id) !== requestedOperationId) throw activityContractError();
+    if (preview.confirmation !== UNDO_CONFIRMATION) throw activityContractError();
+  }
+  if (
+    typeof preview.confirmation_token !== "string"
+    || !preview.confirmation_token
+    || preview.confirmation_token.length > MAX_CONFIRMATION_TOKEN_LENGTH
+  ) {
+    throw activityContractError();
+  }
+  return deepFreeze(duplicateRestore ? {
+    operation_id: requestedOperationId,
+    copies_to_restore: count,
+    confirmation: preview.confirmation,
+    confirmation_token: preview.confirmation_token,
+  } : {
+    operation_id: preview.operation_id,
+    files_to_restore: count,
+    confirmation: preview.confirmation,
+    confirmation_token: preview.confirmation_token,
+  });
+}
+
+export function activityErrorMessage(error) {
+  return ACTIVITY_ERROR_MESSAGES[error?.code]
+    || (error?.code === "activity_unavailable" ? "Activity could not be loaded." : null)
+    || "The Activity request could not be completed.";
+}
+
+export function standardsErrorMessage(error) {
+  return STANDARDS_ERROR_MESSAGES[error?.code]
+    || (error?.code === "invalid_standards_contract"
+      ? "Standards information could not be loaded."
+      : null)
+    || "The Standards request could not be completed.";
+}
+
+export function isUncertainUndoError(error) {
+  const code = error?.code || "";
+  return code === "request_failed"
+    || code === "invalid_response"
+    || /^http_5\d\d$/.test(code)
+    || !Object.hasOwn(ACTIVITY_ERROR_MESSAGES, code);
+}
+
+export function movementErrorMessage(error) {
+  return MOVEMENT_ERROR_MESSAGES[error?.code]
+    || (error?.code === "invalid_movement_contract" ? "Move information could not be loaded." : null)
+    || "The move result could not be confirmed. Load the latest organization before trying again.";
+}
+
+export function isUncertainMovementError(error) {
+  const code = error?.code || "";
+  return code === "request_failed"
+    || code === "invalid_response"
+    || code === "invalid_movement_contract"
+    || /^http_5\d\d$/.test(code)
+    || (!Object.hasOwn(MOVEMENT_ERROR_MESSAGES, code) && code !== "invalid_confirmation");
+}
+
+function snapshot(status, backendState = null) {
+  return Object.freeze({ status, backendState });
+}
+
+function normalizeApiError(error) {
+  if (error instanceof OrganizationDataError || error instanceof LociFlowApiError) return error;
+  return new OrganizationDataError("request_failed", "Organization information could not be loaded.");
+}
+
+function normalizeActivityError(error, fallbackMessage) {
+  if (error instanceof ActivityDataError) return error;
+  if (error instanceof LociFlowApiError) {
+    return new ActivityDataError(error.code, ACTIVITY_ERROR_MESSAGES[error.code] || fallbackMessage);
+  }
+  return new ActivityDataError("request_failed", fallbackMessage);
+}
+
+function normalizeStandardsError(error) {
+  if (error instanceof StandardsDataError) return error;
+  if (error instanceof LociFlowApiError) {
+    return new StandardsDataError(error.code, standardsErrorMessage(error));
+  }
+  return new StandardsDataError("request_failed", "Standards could not be loaded.");
+}
+
+function normalizeMovementError(error) {
+  if (error instanceof OrganizationDataError) return error;
+  if (error instanceof LociFlowApiError) {
+    return new OrganizationDataError(error.code, movementErrorMessage(error));
+  }
+  return new OrganizationDataError(
+    "request_failed",
+    "The move result could not be loaded.",
+  );
+}
+
+function normalizeDuplicateBinError(error) {
+  if (error instanceof OrganizationDataError) return error;
+  if (error instanceof LociFlowApiError) {
+    return new OrganizationDataError(
+      error.code,
+      DUPLICATE_BIN_ERROR_MESSAGES[error.code]
+        || "The Duplicate Bin request could not be completed.",
+    );
+  }
+  return new OrganizationDataError(
+    "request_failed",
+    "The Duplicate Bin result could not be loaded.",
+  );
+}
+
+export function duplicateBinErrorMessage(error) {
+  return DUPLICATE_BIN_ERROR_MESSAGES[error?.code]
+    || (error?.code === "invalid_duplicate_bin_contract"
+      ? "Duplicate Bin information could not be loaded."
+      : null)
+    || "The Duplicate Bin result could not be loaded. Reload Duplicate Bin before trying again.";
+}
+
+export function isUncertainDuplicateBinError(error) {
+  const code = error?.code || "";
+  return code === "request_failed"
+    || code === "invalid_response"
+    || code === "invalid_duplicate_bin_contract"
+    || /^http_5\d\d$/.test(code)
+    || !Object.hasOwn(DUPLICATE_BIN_ERROR_MESSAGES, code);
+}
+
+let fixtureModulesPromise;
+
+async function fixtureModules() {
+  if (!fixtureModulesPromise) {
+    fixtureModulesPromise = Promise.all([
+      import("./fixtures.json", { with: { type: "json" } }),
+      import("./stage_b1_scenarios.js"),
+    ]);
+  }
+  return fixtureModulesPromise;
+}
+
+export function createFixtureDataSource(options = {}) {
+  const scenarioId = options.scenarioId || "accepted_default";
+  return Object.freeze({
+    kind: "fixture",
+    scenarioId,
+    async load() {
+      const [{ default: fixtureState }, scenarios] = await fixtureModules();
+      return scenarios.createStageB1Fixture(clone(fixtureState), scenarioId);
+    },
+    async previewMovement() {
+      throw new OrganizationDataError(
+        "movement_unavailable",
+        "Real file moves are unavailable in sample mode.",
+      );
+    },
+    async confirmMovement() {
+      throw new OrganizationDataError(
+        "movement_unavailable",
+        "Real file moves are unavailable in sample mode.",
+      );
+    },
+    async previewDuplicateBinMove() {
+      throw new OrganizationDataError(
+        "movement_unavailable",
+        "Real file moves are unavailable in sample mode.",
+      );
+    },
+    async confirmDuplicateBinMove() {
+      throw new OrganizationDataError(
+        "movement_unavailable",
+        "Real file moves are unavailable in sample mode.",
+      );
+    },
+    async loadDuplicateBin() {
+      return deepFreeze({ items: [] });
+    },
+    async previewDuplicateBinRestore() {
+      throw new OrganizationDataError(
+        "movement_unavailable",
+        "Real file restores are unavailable in sample mode.",
+      );
+    },
+    async confirmDuplicateBinRestore() {
+      throw new OrganizationDataError(
+        "movement_unavailable",
+        "Real file restores are unavailable in sample mode.",
+      );
+    },
+    async loadStandards() {
+      throw new StandardsDataError(
+        "standards_unavailable",
+        "Live Standards are unavailable in sample mode.",
+      );
+    },
+    async setStandardActive() {
+      throw new StandardsDataError(
+        "standards_unavailable",
+        "Live Standards cannot be changed in sample mode.",
+      );
+    },
+    async loadStandardsCreationContext() {
+      throw new StandardsDataError(
+        "standards_unavailable",
+        "Live Standards cannot be changed in sample mode.",
+      );
+    },
+    async previewStandardCreation() {
+      throw new StandardsDataError(
+        "standards_unavailable",
+        "Live Standards cannot be changed in sample mode.",
+      );
+    },
+    async saveStandardCreation() {
+      throw new StandardsDataError(
+        "standards_unavailable",
+        "Live Standards cannot be changed in sample mode.",
+      );
+    },
+  });
+}
+
+export function createBackendDataSource({
+  apiClient,
+  csrfToken,
+  pollIntervalMs = 1000,
+  schedule = globalThis.setTimeout.bind(globalThis),
+  cancel = globalThis.clearTimeout.bind(globalThis),
+}) {
+  if (!apiClient || typeof apiClient.getCurrentOrganization !== "function") {
+    throw new TypeError("an organization API client is required");
+  }
+  const interval = Math.max(1000, pollIntervalMs);
+  let disposed = false;
+  let current = snapshot("not_checked");
+  let mutationPending = false;
+  let scanPending = false;
+  let pollTimer = null;
+  let wakePoll = null;
+  let activityState = null;
+  let undoMutationPending = false;
+  let movementPreviewPending = false;
+  let movementPending = false;
+  let duplicateMovementPreviewPending = false;
+  let duplicateMovementPending = false;
+  let duplicateRestorePreviewPending = false;
+  let duplicateRestorePending = false;
+  let duplicateBinState = null;
+  let standardsState = null;
+  let standardsCreationContext = null;
+  let standardsMutationPending = false;
+
+  function assertActive() {
+    if (disposed) throw new OrganizationDataError("disposed", "The organization view is unavailable.");
+  }
+
+  async function loadCurrentState() {
+    assertActive();
+    try {
+      const payload = validateOrganizationResponse(await apiClient.getCurrentOrganization());
+      current = snapshot("completed", payload);
+    } catch (rawError) {
+      const error = normalizeApiError(rawError);
+      if (error.code === "scan_not_ready") current = snapshot("not_checked");
+      else if (error.code === "scan_in_progress") current = snapshot("checking");
+      else if (error.code === "scan_failed") current = snapshot("failed");
+      else throw error;
+    }
+    return current;
+  }
+
+  function waitForNextPoll() {
+    return new Promise((resolve) => {
+      wakePoll = resolve;
+      pollTimer = schedule(() => {
+        pollTimer = null;
+        wakePoll = null;
+        resolve();
+      }, interval);
+    });
+  }
+
+  async function pollUntilSettled(onStatus) {
+    while (!disposed) {
+      await waitForNextPoll();
+      if (disposed) break;
+      const next = await loadCurrentState();
+      onStatus?.(next);
+      if (next.status === "completed" || next.status === "failed") return next;
+    }
+    throw new OrganizationDataError("disposed", "The organization view is unavailable.");
+  }
+
+  async function startScan(onStatus) {
+    assertActive();
+    if (scanPending || current.status === "checking") {
+      throw new OrganizationDataError("scan_in_progress", "A file check is already running.");
+    }
+    scanPending = true;
+    current = snapshot("checking");
+    onStatus?.(current);
+    try {
+      await apiClient.startScan({ csrfToken });
+      return await pollUntilSettled(onStatus);
+    } finally {
+      scanPending = false;
+    }
+  }
+
+  function mutationContext() {
+    assertActive();
+    if (current.status !== "completed" || !current.backendState) {
+      throw new OrganizationDataError("review_unavailable", "Organization choices are unavailable.");
+    }
+    if (current.backendState.review.status === "ready_to_move") {
+      throw new OrganizationDataError("approval_already_completed", "This organization plan is already approved.");
+    }
+    return {
+      scanGeneration: current.backendState.freshness.scan_generation,
+      expectedRevision: current.backendState.review.decision_revision,
+    };
+  }
+
+  async function mutate(call) {
+    if (mutationPending) {
+      throw new OrganizationDataError("mutation_in_progress", "Another organization choice is being saved.");
+    }
+    mutationPending = true;
+    try {
+      const payload = validateOrganizationResponse(await call(mutationContext()));
+      current = snapshot("completed", payload);
+      return current;
+    } catch (error) {
+      throw normalizeApiError(error);
+    } finally {
+      mutationPending = false;
+    }
+  }
+
+  function decideRecommendation(changeId, decision) {
+    if (!new Set(["accept", "keep"]).has(decision)) throw contractError();
+    return mutate((context) => apiClient.updateRecommendationDecision(
+      { ...context, changeId, decision },
+      csrfToken,
+    ));
+  }
+
+  function decideChoice(choiceId, optionId, copyIds = undefined) {
+    const state = current.backendState;
+    const choice = state?.choices_needed.find((item) => item.id === choiceId);
+    if (!choice || !choice.options.some((option) => option.id === optionId)) throw contractError();
+    const ids = copyIds === undefined ? undefined : [...copyIds];
+    if (optionId === "choose-for-bin") {
+      const offered = new Set(choice.copies.map((copy) => copy.id));
+      if (
+        !ids
+        || ids.length === 0
+        || ids.length >= offered.size
+        || new Set(ids).size !== ids.length
+        || ids.some((id) => !offered.has(id))
+      ) {
+        throw contractError();
+      }
+    } else if (ids !== undefined) {
+      throw contractError();
+    }
+    return mutate((context) => apiClient.updateChoiceDecision(
+      { ...context, choiceId, optionId, ...(ids ? { copyIds: ids } : {}) },
+      csrfToken,
+    ));
+  }
+
+  function acceptRecommendations(expectedChangeIds) {
+    const state = current.backendState;
+    const decisions = new Map(
+      (state?.review.recommendations || []).map((item) => [item.change_id, item.decision]),
+    );
+    const pending = [...decisions]
+      .filter(([, decision]) => decision === "undecided")
+      .map(([id]) => id);
+    if (
+      !Array.isArray(expectedChangeIds)
+      || expectedChangeIds.length === 0
+      || new Set(expectedChangeIds).size !== expectedChangeIds.length
+      || expectedChangeIds.length !== pending.length
+      || expectedChangeIds.some((id) => !pending.includes(id))
+    ) {
+      throw contractError();
+    }
+    return mutate((context) => apiClient.acceptRecommendedChanges(
+      { ...context, expectedChangeIds: [...expectedChangeIds] },
+      csrfToken,
+    ));
+  }
+
+  function approve() {
+    return mutate((context) => apiClient.approveOrganizationPlan(context, csrfToken));
+  }
+
+  function movementContext() {
+    assertActive();
+    if (
+      current.status !== "completed"
+      || !current.backendState
+      || current.backendState.review.status !== "ready_to_move"
+    ) {
+      throw new OrganizationDataError(
+        "approved_plan_not_found",
+        MOVEMENT_ERROR_MESSAGES.approved_plan_not_found,
+      );
+    }
+    return current.backendState;
+  }
+
+  function duplicateBatchContext(batchId) {
+    assertActive();
+    const batch = current.backendState?.duplicate_batch;
+    if (
+      current.status !== "completed"
+      || !batch
+      || batch.id !== batchId
+      || batch.status !== "approved"
+    ) {
+      throw new OrganizationDataError(
+        "duplicate_batch_stale",
+        DUPLICATE_BIN_ERROR_MESSAGES.duplicate_batch_stale,
+      );
+    }
+    return batch;
+  }
+
+  function fileActionPending() {
+    return movementPreviewPending || movementPending || undoMutationPending
+      || duplicateMovementPreviewPending || duplicateMovementPending
+      || duplicateRestorePreviewPending || duplicateRestorePending;
+  }
+
+  async function previewDuplicateBinMove(batchId) {
+    duplicateBatchContext(batchId);
+    if (fileActionPending()) {
+      throw new OrganizationDataError(
+        "movement_or_undo_in_progress",
+        DUPLICATE_BIN_ERROR_MESSAGES.movement_or_undo_in_progress,
+      );
+    }
+    duplicateMovementPreviewPending = true;
+    try {
+      if (typeof apiClient.previewDuplicateBinMove !== "function") {
+        throw new TypeError("Duplicate Bin movement preview API is unavailable");
+      }
+      return validateDuplicateBinMovementPreview(
+        await apiClient.previewDuplicateBinMove(batchId, csrfToken),
+      );
+    } catch (error) {
+      throw normalizeDuplicateBinError(error);
+    } finally {
+      duplicateMovementPreviewPending = false;
+    }
+  }
+
+  async function confirmDuplicateBinMove(confirmationToken, confirmation) {
+    if (confirmation !== DUPLICATE_BIN_MOVEMENT_CONFIRMATION) {
+      throw new OrganizationDataError(
+        "invalid_confirmation",
+        DUPLICATE_BIN_ERROR_MESSAGES.invalid_confirmation,
+      );
+    }
+    requireDuplicateToken(confirmationToken);
+    if (fileActionPending()) {
+      throw new OrganizationDataError(
+        "movement_or_undo_in_progress",
+        DUPLICATE_BIN_ERROR_MESSAGES.movement_or_undo_in_progress,
+      );
+    }
+    duplicateMovementPending = true;
+    try {
+      if (typeof apiClient.confirmDuplicateBinMove !== "function") {
+        throw new TypeError("Duplicate Bin movement API is unavailable");
+      }
+      return validateDuplicateBinMovementResponse(
+        await apiClient.confirmDuplicateBinMove(
+          { confirmationToken, confirmation },
+          csrfToken,
+        ),
+      );
+    } catch (error) {
+      throw normalizeDuplicateBinError(error);
+    } finally {
+      duplicateMovementPending = false;
+    }
+  }
+
+  async function loadDuplicateBin() {
+    assertActive();
+    try {
+      if (typeof apiClient.getDuplicateBin !== "function") {
+        throw new TypeError("Duplicate Bin API is unavailable");
+      }
+      duplicateBinState = validateDuplicateBinResponse(await apiClient.getDuplicateBin());
+      return duplicateBinState;
+    } catch (error) {
+      throw normalizeDuplicateBinError(error);
+    }
+  }
+
+  function selectedRestorableItems(itemIds) {
+    if (
+      !duplicateBinState
+      || !Array.isArray(itemIds)
+      || itemIds.length === 0
+      || new Set(itemIds).size !== itemIds.length
+    ) {
+      throw duplicateBinContractError("Select at least one copy to restore.");
+    }
+    const byId = new Map(duplicateBinState.items.map((item) => [item.id, item]));
+    if (itemIds.some((id) => !byId.get(id)?.restore_available)) {
+      throw duplicateBinContractError("A selected copy cannot be restored.");
+    }
+    return [...itemIds];
+  }
+
+  async function previewDuplicateBinRestore(itemIds) {
+    const selected = selectedRestorableItems(itemIds);
+    if (fileActionPending()) {
+      throw new OrganizationDataError(
+        "movement_or_undo_in_progress",
+        DUPLICATE_BIN_ERROR_MESSAGES.movement_or_undo_in_progress,
+      );
+    }
+    duplicateRestorePreviewPending = true;
+    try {
+      if (typeof apiClient.previewDuplicateBinRestore !== "function") {
+        throw new TypeError("Duplicate Bin restore preview API is unavailable");
+      }
+      return validateDuplicateBinRestorePreview(
+        await apiClient.previewDuplicateBinRestore(selected, csrfToken),
+      );
+    } catch (error) {
+      throw normalizeDuplicateBinError(error);
+    } finally {
+      duplicateRestorePreviewPending = false;
+    }
+  }
+
+  async function confirmDuplicateBinRestore(confirmationToken, confirmation) {
+    requireDuplicateToken(confirmationToken);
+    if (confirmation !== DUPLICATE_BIN_RESTORE_CONFIRMATION) {
+      throw new OrganizationDataError(
+        "invalid_restore_confirmation",
+        DUPLICATE_BIN_ERROR_MESSAGES.invalid_restore_confirmation,
+      );
+    }
+    if (fileActionPending()) {
+      throw new OrganizationDataError(
+        "movement_or_undo_in_progress",
+        DUPLICATE_BIN_ERROR_MESSAGES.movement_or_undo_in_progress,
+      );
+    }
+    duplicateRestorePending = true;
+    try {
+      if (typeof apiClient.confirmDuplicateBinRestore !== "function") {
+        throw new TypeError("Duplicate Bin restore API is unavailable");
+      }
+      return validateDuplicateBinRestoreResponse(
+        await apiClient.confirmDuplicateBinRestore(
+          { confirmationToken, confirmation },
+          csrfToken,
+        ),
+      );
+    } catch (error) {
+      throw normalizeDuplicateBinError(error);
+    } finally {
+      duplicateRestorePending = false;
+    }
+  }
+
+  async function previewMovement() {
+    const backend = movementContext();
+    if (fileActionPending()) {
+      throw new OrganizationDataError(
+        "movement_or_undo_in_progress",
+        MOVEMENT_ERROR_MESSAGES.movement_or_undo_in_progress,
+      );
+    }
+    if (backend.execution.status !== "ready") {
+      throw new OrganizationDataError(
+        backend.execution.status === "recovery_required"
+          ? "movement_recovery_required"
+          : "movement_already_started",
+        backend.execution.status === "recovery_required"
+          ? MOVEMENT_ERROR_MESSAGES.movement_recovery_required
+          : MOVEMENT_ERROR_MESSAGES.movement_already_started,
+      );
+    }
+    movementPreviewPending = true;
+    try {
+      if (typeof apiClient.previewOrganizationMove !== "function") {
+        throw new TypeError("movement preview API is unavailable");
+      }
+      return validateMovementPreview(
+        await apiClient.previewOrganizationMove(csrfToken),
+      );
+    } catch (error) {
+      throw normalizeMovementError(error);
+    } finally {
+      movementPreviewPending = false;
+    }
+  }
+
+  async function confirmMovement(confirmationToken, confirmation) {
+    movementContext();
+    requireMovementToken(confirmationToken);
+    if (confirmation !== MOVEMENT_CONFIRMATION) {
+      throw new OrganizationDataError(
+        "invalid_confirmation",
+        MOVEMENT_ERROR_MESSAGES.invalid_confirmation,
+      );
+    }
+    if (fileActionPending()) {
+      throw new OrganizationDataError(
+        "movement_or_undo_in_progress",
+        MOVEMENT_ERROR_MESSAGES.movement_or_undo_in_progress,
+      );
+    }
+    movementPending = true;
+    try {
+      if (typeof apiClient.moveApprovedOrganization !== "function") {
+        throw new TypeError("movement API is unavailable");
+      }
+      return validateMovementResponse(await apiClient.moveApprovedOrganization(
+        { confirmationToken, confirmation },
+        csrfToken,
+      ));
+    } catch (error) {
+      throw normalizeMovementError(error);
+    } finally {
+      movementPending = false;
+    }
+  }
+
+  async function loadActivity() {
+    assertActive();
+    try {
+      if (typeof apiClient.getActivity !== "function") throw new TypeError("Activity API is unavailable");
+      activityState = validateActivityResponse(await apiClient.getActivity());
+      return activityState;
+    } catch (error) {
+      throw normalizeActivityError(error, "Activity could not be loaded.");
+    }
+  }
+
+  async function loadRecoveryProjection() {
+    assertActive();
+    try {
+      if (typeof apiClient.getCurrentRecovery !== "function") {
+        throw new TypeError("recovery API is unavailable");
+      }
+      return validateRecoveryResponse(await apiClient.getCurrentRecovery());
+    } catch (error) {
+      if (error instanceof OrganizationDataError) throw error;
+      throw recoveryContractError();
+    }
+  }
+
+  async function createRecoveryCheckContext() {
+    assertActive();
+    try {
+      if (typeof apiClient.createRecoveryCheckContext !== "function") {
+        throw new TypeError("recovery Check API is unavailable");
+      }
+      return validateRecoveryCheckContext(
+        await apiClient.createRecoveryCheckContext(csrfToken),
+      );
+    } catch (error) {
+      if (error instanceof OrganizationDataError) throw error;
+      throw normalizeRecoveryCheckError(error);
+    }
+  }
+
+  async function checkRecoveryResult(caseId, actionId) {
+    assertActive();
+    try {
+      requireRecoveryUuid(caseId);
+      requireRecoveryUuid(actionId);
+      if (typeof apiClient.checkRecoveryResult !== "function") {
+        throw new TypeError("recovery Check API is unavailable");
+      }
+      return validateRecoveryCheckResult(await apiClient.checkRecoveryResult(
+        { caseId, actionId },
+        csrfToken,
+      ));
+    } catch (error) {
+      if (
+        error instanceof OrganizationDataError
+        && error.code !== "invalid_recovery_contract"
+      ) {
+        throw error;
+      }
+      throw normalizeRecoveryCheckError(error);
+    }
+  }
+
+  async function loadStandards() {
+    assertActive();
+    try {
+      if (typeof apiClient.getStandards !== "function") {
+        throw new TypeError("Standards API is unavailable");
+      }
+      const loaded = validateStandardsResponse(await apiClient.getStandards());
+      if (
+        standardsCreationContext
+        && standardsCreationContext.revision !== loaded.revision
+      ) {
+        standardsCreationContext = null;
+      }
+      standardsState = loaded;
+      return standardsState;
+    } catch (error) {
+      throw normalizeStandardsError(error);
+    }
+  }
+
+  async function loadStandardsCreationContext(expectedRevision) {
+    assertActive();
+    if (standardsMutationPending) {
+      throw new StandardsDataError(
+        "standards_mutation_in_progress",
+        "Another Standard change is being saved.",
+      );
+    }
+    if (
+      !standardsState
+      || !standardsState.creation_available
+      || standardsState.revision !== expectedRevision
+    ) {
+      throw standardsContractError();
+    }
+    standardsMutationPending = true;
+    try {
+      if (typeof apiClient.getStandardsCreationContext !== "function") {
+        throw new TypeError("Standards API is unavailable");
+      }
+      const context = validateStandardsCreationContext(
+        await apiClient.getStandardsCreationContext(expectedRevision, csrfToken),
+      );
+      if (context.revision !== expectedRevision) throw standardsContractError();
+      standardsCreationContext = context;
+      return context;
+    } catch (error) {
+      throw normalizeStandardsError(error);
+    } finally {
+      standardsMutationPending = false;
+    }
+  }
+
+  function clearStandardsCreationContext() {
+    standardsCreationContext = null;
+  }
+
+  async function setStandardActive(standardId, active, expectedRevision) {
+    assertActive();
+    if (standardsMutationPending) {
+      throw new StandardsDataError(
+        "standards_mutation_in_progress",
+        "Another Standard change is being saved.",
+      );
+    }
+    if (
+      !standardsState
+      || standardsState.revision !== expectedRevision
+      || typeof standardId !== "string"
+      || typeof active !== "boolean"
+      || !standardsState.items.some((item) => item.id === standardId && item.mutable)
+    ) {
+      throw standardsContractError();
+    }
+    standardsMutationPending = true;
+    try {
+      if (typeof apiClient.setStandardActive !== "function") {
+        throw new TypeError("Standards API is unavailable");
+      }
+      const result = validateStandardsResponse(
+        await apiClient.setStandardActive(
+          { standardId, active, expectedRevision },
+          csrfToken,
+        ),
+        { mutation: true },
+      );
+      standardsState = deepFreeze({
+        ...standardsState,
+        revision: result.revision,
+        items: result.items,
+      });
+      if (result.revision !== expectedRevision) standardsCreationContext = null;
+      return result;
+    } catch (error) {
+      throw normalizeStandardsError(error);
+    } finally {
+      standardsMutationPending = false;
+    }
+  }
+
+  async function previewStandardCreation(input, expectedRevision) {
+    assertActive();
+    if (standardsMutationPending) {
+      throw new StandardsDataError(
+        "standards_mutation_in_progress",
+        "Another Standard change is being saved.",
+      );
+    }
+    const preset = standardsState?.presets.find((item) => item.id === input?.presetId);
+    const scope = standardsCreationContext?.scope_choices.find(
+      (item) => item.id === input?.scopeId
+    );
+    const matching = input?.presetId === "keep_matching_files_together";
+    if (
+      !standardsState
+      || !standardsCreationContext
+      || !standardsState.creation_available
+      || standardsState.revision !== expectedRevision
+      || standardsCreationContext.revision !== expectedRevision
+      || !preset
+      || !scope
+      || (matching && !new Set(["course_code", "project_code"]).has(input?.matcherKind))
+      || (matching && (typeof input?.matcherValue !== "string" || !input.matcherValue.trim()))
+    ) {
+      throw standardsContractError();
+    }
+    standardsMutationPending = true;
+    try {
+      if (typeof apiClient.previewStandardCreation !== "function") {
+        throw new TypeError("Standards API is unavailable");
+      }
+      return validateStandardPreviewResponse(
+        await apiClient.previewStandardCreation(
+          {
+            presetType: preset.id,
+            scopeId: scope.id,
+            expectedRevision,
+            ...(matching
+              ? { matcherKind: input.matcherKind, matcherValue: input.matcherValue }
+              : {}),
+          },
+          csrfToken,
+        ),
+      );
+    } catch (error) {
+      throw normalizeStandardsError(error);
+    } finally {
+      standardsMutationPending = false;
+    }
+  }
+
+  async function saveStandardCreation(previewToken, expectedRevision) {
+    assertActive();
+    if (standardsMutationPending) {
+      throw new StandardsDataError(
+        "standards_mutation_in_progress",
+        "Another Standard change is being saved.",
+      );
+    }
+    if (
+      !standardsState
+      || standardsState.revision !== expectedRevision
+      || typeof previewToken !== "string"
+      || !previewToken
+    ) {
+      throw standardsContractError();
+    }
+    standardsMutationPending = true;
+    try {
+      if (typeof apiClient.saveStandardCreation !== "function") {
+        throw new TypeError("Standards API is unavailable");
+      }
+      const result = validateStandardsResponse(
+        await apiClient.saveStandardCreation(
+          { previewToken, expectedRevision },
+          csrfToken,
+        ),
+        { mutation: "save" },
+      );
+      standardsState = deepFreeze({
+        ...standardsState,
+        revision: result.revision,
+        items: result.items,
+      });
+      if (result.revision !== expectedRevision) standardsCreationContext = null;
+      return result;
+    } catch (error) {
+      throw normalizeStandardsError(error);
+    } finally {
+      standardsMutationPending = false;
+    }
+  }
+
+  async function withUndoMutation(operation) {
+    assertActive();
+    if (fileActionPending()) {
+      throw new ActivityDataError("undo_in_progress", "Another Undo request is already running.");
+    }
+    undoMutationPending = true;
+    try {
+      return await operation();
+    } finally {
+      undoMutationPending = false;
+    }
+  }
+
+  function currentUndoableEntry(operationId) {
+    requireActivityId(operationId);
+    const entry = activityState?.activity.find((item) => item.id === operationId);
+    if (!entry || entry.undoable !== true) {
+      throw new ActivityDataError("operation_not_undoable", ACTIVITY_ERROR_MESSAGES.operation_not_undoable);
+    }
+    return entry;
+  }
+
+  function previewUndo(operationId) {
+    currentUndoableEntry(operationId);
+    return withUndoMutation(async () => {
+      try {
+        if (typeof apiClient.previewActivityUndo !== "function") throw new TypeError("Undo API is unavailable");
+        return validateUndoPreview(
+          await apiClient.previewActivityUndo(operationId, csrfToken),
+          operationId,
+        );
+      } catch (error) {
+        throw normalizeActivityError(error, "The Undo preview could not be loaded.");
+      }
+    });
+  }
+
+  function confirmUndo(operationId, confirmationToken, confirmation = UNDO_CONFIRMATION) {
+    currentUndoableEntry(operationId);
+    if (
+      typeof confirmationToken !== "string"
+      || !confirmationToken
+      || confirmationToken.length > MAX_CONFIRMATION_TOKEN_LENGTH
+    ) {
+      throw activityContractError();
+    }
+    if (!new Set([UNDO_CONFIRMATION, DUPLICATE_BIN_RESTORE_CONFIRMATION]).has(confirmation)) {
+      throw activityContractError();
+    }
+    return withUndoMutation(async () => {
+      try {
+        if (typeof apiClient.undoActivityOperation !== "function") throw new TypeError("Undo API is unavailable");
+        return await apiClient.undoActivityOperation(
+          operationId,
+          confirmationToken,
+          csrfToken,
+          confirmation,
+        );
+      } catch (error) {
+        throw normalizeActivityError(error, "The Undo result could not be loaded.");
+      }
+    });
+  }
+
+  function dispose() {
+    disposed = true;
+    if (pollTimer !== null) cancel(pollTimer);
+    pollTimer = null;
+    wakePoll?.();
+    wakePoll = null;
+  }
+
+  return Object.freeze({
+    kind: "backend",
+    loadCurrentState,
+    startScan,
+    decideRecommendation,
+    decideChoice,
+    acceptRecommendations,
+    approve,
+    previewMovement,
+    confirmMovement,
+    previewDuplicateBinMove,
+    confirmDuplicateBinMove,
+    loadDuplicateBin,
+    previewDuplicateBinRestore,
+    confirmDuplicateBinRestore,
+    loadActivity,
+    loadRecoveryProjection,
+    createRecoveryCheckContext,
+    checkRecoveryResult,
+    loadStandards,
+    loadStandardsCreationContext,
+    clearStandardsCreationContext,
+    setStandardActive,
+    previewStandardCreation,
+    saveStandardCreation,
+    previewUndo,
+    confirmUndo,
+    dispose,
+    currentState: () => current,
+    isMutationPending: () => mutationPending,
+    isMovementPending: () => movementPending || movementPreviewPending,
+    isDuplicateBinPending: () => duplicateMovementPreviewPending
+      || duplicateMovementPending || duplicateRestorePreviewPending || duplicateRestorePending,
+    isUndoPending: () => undoMutationPending,
+    isStandardsMutationPending: () => standardsMutationPending,
+  });
+}

@@ -1,0 +1,18 @@
+<section aria-labelledby="findings-heading">
+  {% if saved_feedback %}<div class="decision-feedback" role="status" aria-live="polite" tabindex="-1" data-decision-feedback>Choices saved. A complete reviewed plan has been saved. No files have moved.</div>{% endif %}
+  <h2 id="findings-heading">Latest findings</h2>
+  <div class="consumer-result-grid">
+    {% for module in module_statuses %}
+    <article class="result-card">
+      <h3>{{ module.title }}</h3>
+      <p class="result-count">{{ module.waiting_count }} waiting</p>
+      <p>{{ module.approved_count }} choices ready</p>
+      <p>Progress: <strong>{{ module.progress_status }}</strong></p>
+      <p>Persistence: <strong>{{ module.persistence_status }}</strong></p>
+      {% if module.module.value == "duplicates" %}<p>Space used by extra copies: {{ duplicate_space }}</p>{% endif %}
+      <a class="btn btn-outline-primary" href="{{ module.route }}">{{ module.action_label }}</a>
+    </article>
+    {% endfor %}
+  </div>
+  <p><a href="/review/advanced">View technical table and save all choices</a></p>
+</section>

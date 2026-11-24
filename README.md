@@ -2,11 +2,36 @@
 
 `bootAI` is a cautious local file organizer for scanning folders, reviewing metadata, and applying explicitly approved move plans.
 
-The project is safety-first: dry-run is default, real movement requires exact confirmation, the tool never permanently deletes files by default, the tool never overwrites files, and all real movement goes through approved move plans and operation logs.
+The project is safety-first: dry-run is default, real movement requires exact confirmation, the tool never permanently deletes files, the tool never overwrites files, and all real movement goes through approved move plans and operation logs.
 
 ## Current Status
 
-Stages 1 through 10.11 are implemented. The tool can currently:
+The accepted Loci Flow integration is complete through 1.0F. The primary local
+web application has six areas: **Home**, **Organize**, **Duplicate Bin**,
+**Activity**, **Standards**, and **Settings**. Home summarizes the selected root
+and recent verified work; Organize owns scan results, recommendations, choices,
+approval, and ordinary movement. Duplicate Bin is reversible protected storage,
+not Trash. Activity shows only real filesystem movement, restore, failure, and
+Undo records. Standards are loaded fail-closed once per scan and filter forbidden
+changes before suggestions are displayed. The authoritative Standards page lists
+the durable v2 catalog, supports activate/deactivate, and provides guided creation
+for keeping a folder unchanged or keeping matching course-code or project-code
+files together. Settings exposes only currently implemented configuration.
+
+The current safe workflow is:
+
+```text
+authenticated root-locked launch
+  -> deterministic scan
+  -> recommendations and choices
+  -> revision-bound decisions and approval
+  -> exact-confirmed movement or Duplicate Bin movement
+  -> durable intent and executor-owned movement
+  -> verification
+  -> Activity and exact-confirmed Undo or Restore
+```
+
+The tool can currently:
 
 - Scan folders read-only.
 - Detect exact duplicates with SHA-256.
@@ -14,7 +39,7 @@ Stages 1 through 10.11 are implemented. The tool can currently:
 - Apply approved duplicate review moves with undo logs.
 - Detect review candidates.
 - Group document-like files deterministically.
-- Load optional read-only organization rules from `AI_Review/config/organization_rules.json`.
+- Load saved organization rules fail-closed and bind them immutably to one scan.
 - Report alias-normalized anchor decisions for suggested groups, anchors needing a user decision, and ignored terms.
 - Infer existing organization patterns for reports without writing rules.
 - Export inferred organization rule candidates for manual review.
@@ -35,20 +60,79 @@ Stages 1 through 10.11 are implemented. The tool can currently:
 - Remember prior batch-review decisions as review state.
 - Apply saved reviewed-plan JSON files after validation and exact confirmation.
 - Resume saved reviewed-plan sessions, edit decisions, and save a new collision-safe revision.
+- Filter, sort, and paginate review-session rows without changing decisions or saved-plan contents.
+- Change decisions for the current displayed page only after an exact decision confirmation.
+- Track unsaved review decisions locally, require exact confirmation before discarding them, and present grouped help and clearer conflict summaries.
+- Coordinate scan-report construction and review-session creation or resume through UI-independent application services.
+- List and load validated scan reports and reviewed plans through a root-contained artifact boundary.
+- Launch a single-worker local web shell for one immutable validated root.
+- Establish one browser session through a single-use launch URL, then redirect to a clean authenticated page.
+- Serve locally bundled HTMX and Bootstrap assets with strict Host and response-header controls.
+- Scan and reload real organization state without rescanning during navigation.
+- Review recommended destinations and exact-duplicate choices using server-owned IDs.
+- Approve a complete revision-bound organization plan and inspect its movement tree.
+- Preview and exactly confirm ordinary movement, then verify the result.
+- Recover durable movement state after restart or a lost browser response.
+- Inspect durable Activity and exactly confirm ordinary Undo.
+- Approve, separately confirm, and verify movement into Duplicate Bin.
+- Restore selected Duplicate Bin copies to their exact previous paths.
+- Use the same authoritative restore service from Activity Undo and Duplicate Bin Restore.
+- Start a new organization cycle after completed movement or restore.
+- Load Standards fail-closed and bind one immutable Standards state to each scan.
+- Read and mutate a revision-protected durable v2 Standards catalog, migrating a
+  valid v1 file on the first mutation.
+- List authoritative Standards and activate or deactivate them without moving files.
+- Preview and create deterministic Standards for keeping a folder unchanged or
+  keeping matching course-code or project-code files together.
+- Require a fresh Check before changed Standards affect organization planning and
+  block Standards mutation while an approved plan is active.
 
-Stage 10.10 adds read-only post-apply verification and stronger undo regression coverage. Verification writes an audit report only; it does not move or restore files. Operation logs remain authoritative for movement and undo.
+## Interface Direction
+
+The local web application is the intended primary interface for ordinary users.
+It uses a production backend/API → data source → page-specific view model →
+accepted renderer pipeline. Browser mutations are authenticated POSTs protected
+by CSRF, exact same-origin checks, immutable root configuration, scan generation,
+and decision revision. Routes call application services and never import
+`executor.py`; `executor.py` remains the sole user-file movement implementation.
+
+The next binding stage is **1.0G — Release Launcher and Packaging Contract
+Inspection**. It is inspection only: it must resolve native folder-selection
+ownership, root validation before server creation, launch-token and browser
+bootstrap handling, clean shutdown, packaged process lifecycle, the macOS
+packaging approach, safe terminal hiding, failure and cancellation behavior, and
+packaging dependency constraints before any launcher implementation is approved.
+Accessibility auditing, large-folder performance testing, and nontechnical-user
+testing remain separate later release-hardening stages.
+
+See the [local web architecture contract](docs/WEB_ARCHITECTURE.md) and [web threat model](docs/WEB_THREAT_MODEL.md) for the frozen Stage 11 requirements.
 
 ## Setup
 
-Use Python 3 and the standard library. No third-party dependencies are required for the current test suite.
+Use Python 3.13 or newer. Core CLI installation has no mandatory third-party runtime dependencies. Install the exact optional web and web-test dependencies for the local shell and full suite:
 
 ```bash
-PYTHONPATH=src python3 -m unittest tests.test_scanner tests.test_safety tests.test_duplicates tests.test_planner tests.test_executor tests.test_review tests.test_grouping tests.test_llm_refinement tests.test_organization_apply tests.test_reports tests.test_review_session tests.test_review_state tests.test_html_report tests.test_scope tests.test_organization_rules tests.test_pattern_inference tests.test_rule_review tests.test_rule_audit tests.test_organization_review tests.test_organization_review_apply tests.test_organization_verify
+python3 -m pip install -e ".[web,web-test]"
+```
+
+```bash
+PYTHONPATH=src python3 -m unittest discover -s tests
 ```
 
 ## Quickstart
 
 Run commands with `PYTHONPATH=src` from the repository root:
+
+Launch Loci Flow for one locked folder:
+
+```bash
+PYTHONPATH=src python3 -m organizer.web --root "$HOME/Downloads"
+PYTHONPATH=src python3 -m organizer.web --root "$HOME/Downloads" --no-browser
+```
+
+The launcher binds only to `127.0.0.1`, selects a dynamic port unless `--port` is supplied, and uses a private single-use launch URL. The authenticated application keeps that validated root immutable for the process lifetime.
+
+Existing CLI commands remain unchanged:
 
 ```bash
 PYTHONPATH=src python3 -m organizer.cli /path/to/folder
@@ -155,6 +239,17 @@ PYTHONPATH=src python3 -m organizer.cli /path/to/folder --apply-refined-organiza
 - Post-apply verification compares the apply summary, operation log, and filesystem without moving files.
 - `executor.py` is the only module that performs real movement.
 - Review, grouping, and LLM modules produce facts or suggestions; they do not execute moves.
+- Loci Flow exposes no arbitrary file-serving route and never accepts source, destination, root, or operation-log paths from the browser.
+- Its signed session cookie is integrity-protected, not confidential; it contains only authentication state and opaque session/CSRF values.
+
+Current limitations are explicit: there is no Search, general Files browser,
+permanent deletion, Empty Bin, system Trash handoff, multi-root execution,
+root switching within a running process, scheduler daemon, notifications,
+natural-language Standards interpretation, automatic LLM execution, or
+speculative Settings workflow. Duplicate Bin remains reversible protected
+storage, and occupied exact restore destinations block restoration rather than
+being overwritten. Standards expose guided deterministic controls rather than
+raw JSON, filesystem paths, regex, or LLM-dependent interpretation.
 
 ## Documentation
 
@@ -165,3 +260,7 @@ PYTHONPATH=src python3 -m organizer.cli /path/to/folder --apply-refined-organiza
 - [Manual testing guide](docs/MANUAL_TESTING.md)
 - [Release notes](docs/RELEASE_NOTES.md)
 - [Safety constitution](docs/SAFETY.md)
+- [Local web architecture contract](docs/WEB_ARCHITECTURE.md)
+- [Local web threat model](docs/WEB_THREAT_MODEL.md)
+- [Architecture decisions](docs/adr/0001-local-web-stack.md)
+- [Application-service decision](docs/adr/0003-application-service-layer.md)

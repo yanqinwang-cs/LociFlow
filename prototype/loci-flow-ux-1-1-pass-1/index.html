@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta
+      name="description"
+      content="Loci Flow is a local-only structural prototype for understandable file organization."
+    >
+    <meta name="color-scheme" content="light">
+    <title>Loci Flow · Structural prototype</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to main content</a>
+
+    <p class="prototype-notice" role="note">
+      <span class="notice-mark" aria-hidden="true">◇</span>
+      <span>Prototype using sample files. No files on your computer are accessed or changed.</span>
+    </p>
+
+    <div id="onboarding-root" class="onboarding-root" hidden></div>
+
+    <div id="app-shell" class="app-shell">
+      <header class="product-bar">
+        <a class="brand" href="#/home" aria-label="Loci Flow home">
+          <span class="brand-mark" aria-hidden="true">
+            <span></span>
+            <span></span>
+            <span></span>
+          </span>
+          <span class="brand-copy">
+            <strong>Loci Flow</strong>
+            <small>Sample Downloads</small>
+          </span>
+        </a>
+
+        <div class="location-state" aria-label="Sample location status">
+          <span class="status-dot" aria-hidden="true"></span>
+          <span><strong>Downloads</strong> · Up to date</span>
+        </div>
+      </header>
+
+      <nav id="primary-nav" class="primary-nav" aria-label="Primary navigation">
+        <a href="#/home" data-route="home">
+          <span class="nav-glyph glyph-home" aria-hidden="true"></span>
+          <span>Home</span>
+        </a>
+        <a href="#/search" data-route="search">
+          <span class="nav-glyph glyph-search" aria-hidden="true"></span>
+          <span>Search</span>
+        </a>
+        <a href="#/files" data-route="files">
+          <span class="nav-glyph glyph-files" aria-hidden="true"></span>
+          <span>Files</span>
+        </a>
+        <a href="#/organize" data-route="organize">
+          <span class="nav-glyph glyph-organize" aria-hidden="true"></span>
+          <span>Organize</span>
+          <span class="nav-count" data-nav-count="plan" aria-label="3 items need attention">3</span>
+        </a>
+        <a href="#/duplicates" data-route="duplicates">
+          <span class="nav-glyph glyph-duplicates" aria-hidden="true"></span>
+          <span>Duplicates</span>
+          <span class="nav-count nav-count-quiet" data-nav-count="duplicates" aria-label="2 exact-copy groups">2</span>
+        </a>
+        <a href="#/activity" data-route="activity">
+          <span class="nav-glyph glyph-activity" aria-hidden="true"></span>
+          <span>Activity</span>
+        </a>
+        <a href="#/settings" data-route="settings">
+          <span class="nav-glyph glyph-settings" aria-hidden="true"></span>
+          <span>Settings</span>
+        </a>
+      </nav>
+
+      <main id="main-content" class="main-content" tabindex="-1">
+        <div id="page-content" class="page-content" aria-busy="true">
+          <div class="page-header loading-header">
+            <div>
+              <p class="eyebrow">Sample Downloads</p>
+              <h1 id="page-heading">Preparing Loci Flow</h1>
+              <p class="page-intro">Loading a safe sample workspace…</p>
+            </div>
+          </div>
+          <section class="loading-state" aria-label="Loading prototype">
+            <span class="loading-spinner" aria-hidden="true"></span>
+            <div>
+              <strong>Opening the sample location</strong>
+              <p>No folders or files on this computer are being read.</p>
+            </div>
+          </section>
+        </div>
+      </main>
+    </div>
+
+    <div
+      id="toast-region"
+      class="toast-region"
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+    ></div>
+    <div
+      id="progress-region"
+      class="visually-hidden"
+      role="status"
+      aria-live="assertive"
+      aria-atomic="true"
+    ></div>
+
+    <dialog
+      id="prototype-dialog"
+      class="prototype-dialog"
+      aria-labelledby="dialog-title"
+      aria-describedby="dialog-description"
+    >
+      <div class="dialog-frame">
+        <header class="dialog-header">
+          <div>
+            <p id="dialog-eyebrow" class="eyebrow"></p>
+            <h2 id="dialog-title">File details</h2>
+            <p id="dialog-description" class="dialog-description"></p>
+          </div>
+          <form method="dialog">
+            <button
+              class="icon-button dialog-close"
+              type="submit"
+              value="cancel"
+              data-action="close-dialog"
+              aria-label="Close dialog"
+            >
+              <span aria-hidden="true">×</span>
+            </button>
+          </form>
+        </header>
+        <div id="dialog-content" class="dialog-content"></div>
+      </div>
+    </dialog>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>

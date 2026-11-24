@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+
+{% block title %}Advanced review · bootAI{% endblock %}
+
+{% block content %}
+<section class="review-panel" aria-labelledby="review-heading">
+  <p class="eyebrow">Advanced review</p>
+  <div class="d-flex flex-wrap align-items-start justify-content-between gap-3">
+    <div>
+      <h1 id="review-heading">Technical review table</h1>
+      <p class="lead mb-1">Inspect every underlying review row and technical detail.</p>
+      <p class="text-muted">Decisions and saving do not move files. Applying a saved plan remains CLI-only.</p>
+    </div>
+    <a class="btn btn-outline-primary" href="/">Return home</a>
+  </div>
+
+  {% if explorer.warnings %}
+  <section class="warning-panel" aria-labelledby="warnings-heading">
+    <h2 id="warnings-heading">Scan warnings ({{ warning_count }})</h2>
+    <ul>
+      {% for warning in explorer.warnings %}<li>{{ warning }}</li>{% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+
+  <nav class="category-nav" aria-label="Finding categories">
+    {% for category, label in category_labels.items() %}
+    <a class="category-link{% if active_category == category %} active{% endif %}"
+       href="{{ category_urls[category] }}"
+       {% if active_category == category %}aria-current="page"{% endif %}>
+      {{ label }} <span class="count">{{ category_counts.get(category, session.items|length if category == "all" else 0) }}</span>
+    </a>
+    {% endfor %}
+  </nav>
+
+  <form class="review-filters" method="get" action="/review/advanced">
+    <input type="hidden" name="category" value="{{ active_category }}">
+    <div>
+      <label for="decision-filter">Decision</label>
+      <select id="decision-filter" name="decision">
+        <option value="">All decisions</option>
+        {% for value, label in decision_labels.items() %}
+        <option value="{{ value }}"{% if active_filters.get("decision") == value %} selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="review-category-filter">Review category</label>
+      <select id="review-category-filter" name="review_category">
+        <option value="">All review categories</option>
+        {% for value in ("empty", "temporary", "backup_or_copy", "orphan_code") %}
+        <option value="{{ value }}"{% if active_filters.get("review_category") == value %} selected{% endif %}>{{ value|replace("_", " ")|title }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="sort-field">Sort by</label>
+      <select id="sort-field" name="sort">
+        {% for value in ("id", "source", "destination", "decision", "category", "review_category") %}
+        <option value="{{ value }}"{% if session.view_state.sort_field == value %} selected{% endif %}>{{ value|replace("_", " ")|title }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="sort-direction">Direction</label>
+      <select id="sort-direction" name="direction">
+        <option value="asc"{% if session.view_state.sort_direction == "asc" %} selected{% endif %}>Ascending</option>
+        <option value="desc"{% if session.view_state.sort_direction == "desc" %} selected{% endif %}>Descending</option>
+      </select>
+    </div>
+    <div>
+      <label for="page-size">Rows per page</label>
+      <select id="page-size" name="page_size">
+        {% for value in (25, 50, 100, 200) %}
+        <option value="{{ value }}"{% if session.view_state.page_size == value %} selected{% endif %}>{{ value }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button class="btn btn-primary align-self-end" type="submit">Update view</button>
+  </form>
+
+  {% include "review_workspace.html" %}
+</section>
+{% endblock %}

@@ -1,0 +1,434 @@
+{
+  "fixtureVersion": 1,
+  "meta": {
+    "productName": "Loci Flow",
+    "stage": "UX 1.1 Focused Prototype — Organization Planning Companion",
+    "activeLocation": "Downloads",
+    "positioning": "Works alongside Finder or File Explorer to prepare personalized, visible, and reversible file-organization changes.",
+    "prototypeNotice": "Prototype using sample files. No files on your computer are accessed or changed.",
+    "primaryRoutes": [
+      { "id": "home", "label": "Home", "route": "#/home" },
+      { "id": "organize", "label": "Organize", "route": "#/organize" },
+      { "id": "duplicates", "label": "Duplicates", "route": "#/duplicates" },
+      { "id": "activity", "label": "Activity", "route": "#/activity" },
+      { "id": "settings", "label": "Settings", "route": "#/settings" }
+    ],
+    "counts": {
+      "plannedFileChanges": 38,
+      "plannedDestinations": 5,
+      "reviewRequired": 2,
+      "blockingConflicts": 1,
+      "activeDuplicateGroups": 2
+    },
+    "defaults": {
+      "sampleOnly": true,
+      "noRealFileAccess": true,
+      "planPreparation": "manual",
+      "filesystemActionsRequireConfirmation": true,
+      "planReadyNotifications": true
+    }
+  },
+  "folders": [
+    { "id": "folder-downloads", "name": "Downloads", "parentId": null, "kind": "location" },
+    { "id": "folder-projects", "name": "Projects", "parentId": "folder-downloads", "kind": "folder" },
+    { "id": "folder-elarian", "name": "Elarian", "parentId": "folder-projects", "kind": "folder" },
+    { "id": "folder-northstar", "name": "Northstar", "parentId": "folder-projects", "kind": "proposed-folder" },
+    { "id": "folder-study", "name": "Study", "parentId": "folder-downloads", "kind": "folder" },
+    { "id": "folder-cs1010s", "name": "CS1010S", "parentId": "folder-study", "kind": "folder" },
+    { "id": "folder-work", "name": "Work", "parentId": "folder-downloads", "kind": "folder" },
+    { "id": "folder-client-forms", "name": "Client Forms", "parentId": "folder-work", "kind": "proposed-folder" },
+    { "id": "folder-receipts", "name": "Receipts", "parentId": "folder-downloads", "kind": "folder" },
+    { "id": "folder-travel", "name": "Travel", "parentId": "folder-downloads", "kind": "folder" },
+    { "id": "folder-reference", "name": "Reference", "parentId": "folder-downloads", "kind": "folder" },
+    { "id": "folder-holding-area", "name": "Reversible holding area", "parentId": null, "kind": "prototype-only", "hidden": true }
+  ],
+  "files": [
+    { "id": "file-architecture", "name": "Architecture.pdf", "folderId": "folder-downloads", "kind": "PDF document", "sizeLabel": "2.4 MB", "modifiedAt": "2026-07-08T16:42:00+08:00" },
+    { "id": "file-elarian-logo", "name": "Elarian logo.svg", "folderId": "folder-downloads", "kind": "SVG image", "sizeLabel": "46 KB", "modifiedAt": "2025-12-11T14:05:00+08:00" },
+    { "id": "file-notes-loose", "name": "Notes.docx", "folderId": "folder-downloads", "kind": "Word document", "sizeLabel": "118 KB", "modifiedAt": "2026-07-09T18:30:00+08:00" },
+    { "id": "file-elarian-brief", "name": "Elarian brief.pdf", "folderId": "folder-downloads", "kind": "PDF document", "sizeLabel": "842 KB", "modifiedAt": "2026-07-01T11:20:00+08:00" },
+    { "id": "file-elarian-budget", "name": "Elarian budget.xlsx", "folderId": "folder-downloads", "kind": "Spreadsheet", "sizeLabel": "94 KB", "modifiedAt": "2026-07-06T09:12:00+08:00" },
+    { "id": "file-elarian-launch-notes", "name": "Elarian launch notes.docx", "folderId": "folder-downloads", "kind": "Word document", "sizeLabel": "166 KB", "modifiedAt": "2026-07-07T15:02:00+08:00" },
+    { "id": "file-elarian-wireframe", "name": "Elarian wireframe.png", "folderId": "folder-downloads", "kind": "PNG image", "sizeLabel": "2.9 MB", "modifiedAt": "2026-06-30T15:20:00+08:00" },
+    { "id": "file-elarian-timeline", "name": "Elarian timeline.pdf", "folderId": "folder-downloads", "kind": "PDF document", "sizeLabel": "716 KB", "modifiedAt": "2026-07-03T08:40:00+08:00" },
+
+    { "id": "file-final-pdf", "name": "final.pdf", "folderId": "folder-downloads", "kind": "PDF document", "sizeLabel": "906 KB", "modifiedAt": "2026-07-09T11:48:00+08:00" },
+    { "id": "file-northstar-proposal", "name": "Northstar proposal.docx", "folderId": "folder-downloads", "kind": "Word document", "sizeLabel": "516 KB", "modifiedAt": "2026-07-10T08:03:00+08:00" },
+    { "id": "file-northstar-plan", "name": "Northstar plan.pdf", "folderId": "folder-downloads", "kind": "PDF document", "sizeLabel": "1.2 MB", "modifiedAt": "2026-07-05T17:41:00+08:00" },
+    { "id": "file-northstar-deck", "name": "Northstar deck.pptx", "folderId": "folder-downloads", "kind": "Presentation", "sizeLabel": "5.8 MB", "modifiedAt": "2026-07-09T12:24:00+08:00" },
+    { "id": "file-northstar-survey", "name": "Northstar survey.csv", "folderId": "folder-downloads", "kind": "CSV data", "sizeLabel": "640 KB", "modifiedAt": "2026-07-03T13:05:00+08:00" },
+    { "id": "file-northstar-contract", "name": "Northstar contract.docx", "folderId": "folder-downloads", "kind": "Word document", "sizeLabel": "184 KB", "modifiedAt": "2026-07-04T14:01:00+08:00" },
+    { "id": "file-northstar-mark", "name": "Northstar mark.png", "folderId": "folder-downloads", "kind": "PNG image", "sizeLabel": "212 KB", "modifiedAt": "2026-06-17T15:16:00+08:00" },
+
+    { "id": "file-cs1010s-finals", "name": "CS1010S 2016 Finals.pdf", "folderId": "folder-downloads", "kind": "PDF document", "sizeLabel": "1.4 MB", "modifiedAt": "2026-06-16T20:10:00+08:00" },
+    { "id": "file-cs1010s-tutorial", "name": "CS1010S Tutorial 03.pdf", "folderId": "folder-downloads", "kind": "PDF document", "sizeLabel": "720 KB", "modifiedAt": "2026-06-17T07:30:00+08:00" },
+    { "id": "file-cs1010s-cheatsheet", "name": "CS1010S cheatsheet.pdf", "folderId": "folder-downloads", "kind": "PDF document", "sizeLabel": "488 KB", "modifiedAt": "2026-06-18T08:50:00+08:00" },
+    { "id": "file-cs1010s-midterm", "name": "CS1010S Midterm 2016.pdf", "folderId": "folder-downloads", "kind": "PDF document", "sizeLabel": "960 KB", "modifiedAt": "2026-06-16T20:15:00+08:00" },
+    { "id": "file-cs1010x-finals", "name": "CS1010X 2016 Finals.pdf", "folderId": "folder-downloads", "kind": "PDF document", "sizeLabel": "1.6 MB", "modifiedAt": "2026-06-14T19:16:00+08:00" },
+    { "id": "file-cs1010x-solutions", "name": "CS1010X 2016 Final Solutions.pdf", "folderId": "folder-downloads", "kind": "PDF document", "sizeLabel": "1.1 MB", "modifiedAt": "2026-06-14T19:17:00+08:00" },
+    { "id": "file-cs1010x-range", "name": "CS1010X 2016-2017 Finals.pdf", "folderId": "folder-downloads", "kind": "PDF document", "sizeLabel": "2.1 MB", "modifiedAt": "2026-06-14T19:18:00+08:00" },
+    { "id": "file-cs1010x-2019", "name": "CS1010X 2019 Finals.pdf", "folderId": "folder-downloads", "kind": "PDF document", "sizeLabel": "1.7 MB", "modifiedAt": "2026-06-16T20:12:00+08:00" },
+
+    { "id": "file-client-intake", "name": "Client Intake Form.pdf", "folderId": "folder-downloads", "kind": "PDF form", "sizeLabel": "302 KB", "modifiedAt": "2026-06-05T09:30:00+08:00" },
+    { "id": "file-download-pdf", "name": "download.pdf", "folderId": "folder-downloads", "kind": "PDF form", "sizeLabel": "328 KB", "modifiedAt": "2026-06-06T11:03:00+08:00" },
+    { "id": "file-w9-elarian", "name": "W-9 Elarian.pdf", "folderId": "folder-downloads", "kind": "PDF form", "sizeLabel": "442 KB", "modifiedAt": "2026-06-07T08:18:00+08:00" },
+    { "id": "file-consent", "name": "Consent Form.docx", "folderId": "folder-downloads", "kind": "Word form", "sizeLabel": "96 KB", "modifiedAt": "2026-06-08T13:12:00+08:00" },
+    { "id": "file-onboarding-checklist", "name": "Onboarding Checklist.pdf", "folderId": "folder-downloads", "kind": "PDF document", "sizeLabel": "218 KB", "modifiedAt": "2026-06-09T09:45:00+08:00" },
+    { "id": "file-client-details", "name": "Client details.xlsx", "folderId": "folder-downloads", "kind": "Spreadsheet", "sizeLabel": "88 KB", "modifiedAt": "2026-06-09T12:10:00+08:00" },
+    { "id": "file-signed-agreement", "name": "Signed agreement.pdf", "folderId": "folder-downloads", "kind": "PDF document", "sizeLabel": "534 KB", "modifiedAt": "2026-06-10T09:18:00+08:00" },
+
+    { "id": "file-inv-2048", "name": "INV-2048.pdf", "folderId": "folder-downloads", "kind": "PDF document", "sizeLabel": "284 KB", "modifiedAt": "2026-06-10T15:00:00+08:00" },
+    { "id": "file-inv-2048-receipt", "name": "INV-2048 receipt.pdf", "folderId": "folder-downloads", "kind": "PDF document", "sizeLabel": "290 KB", "modifiedAt": "2026-06-12T09:40:00+08:00" },
+    { "id": "file-taxi-receipt", "name": "Taxi receipt July.pdf", "folderId": "folder-downloads", "kind": "PDF document", "sizeLabel": "180 KB", "modifiedAt": "2026-07-02T22:12:00+08:00" },
+    { "id": "file-cafe-receipt", "name": "Harbor Cafe receipt.pdf", "folderId": "folder-downloads", "kind": "PDF document", "sizeLabel": "154 KB", "modifiedAt": "2026-07-03T13:02:00+08:00" },
+    { "id": "file-cloud-receipt", "name": "Cloud storage receipt.pdf", "folderId": "folder-downloads", "kind": "PDF document", "sizeLabel": "132 KB", "modifiedAt": "2026-07-04T10:16:00+08:00" },
+    { "id": "file-office-receipt", "name": "Office supplies receipt.pdf", "folderId": "folder-downloads", "kind": "PDF document", "sizeLabel": "168 KB", "modifiedAt": "2026-07-05T16:09:00+08:00" },
+    { "id": "file-hotel-receipt", "name": "Hotel receipt.pdf", "folderId": "folder-downloads", "kind": "PDF document", "sizeLabel": "338 KB", "modifiedAt": "2026-07-06T08:52:00+08:00" },
+    { "id": "file-train-receipt", "name": "Train receipt.pdf", "folderId": "folder-downloads", "kind": "PDF document", "sizeLabel": "126 KB", "modifiedAt": "2026-07-07T19:25:00+08:00" },
+
+    { "id": "file-notes-existing", "name": "Notes.docx", "folderId": "folder-elarian", "kind": "Word document", "sizeLabel": "104 KB", "modifiedAt": "2026-06-28T10:45:00+08:00" },
+    { "id": "file-guide-working", "name": "Singapore Guide.pdf", "folderId": "folder-travel", "kind": "PDF document", "sizeLabel": "4.2 MB", "modifiedAt": "2026-06-18T10:00:00+08:00" },
+    { "id": "file-guide-extra", "name": "Singapore Guide (1).pdf", "folderId": "folder-downloads", "kind": "PDF document", "sizeLabel": "4.2 MB", "modifiedAt": "2026-06-18T10:00:00+08:00" },
+    { "id": "file-brief-a", "name": "Project brief.pdf", "folderId": "folder-downloads", "kind": "PDF document", "sizeLabel": "1.1 MB", "modifiedAt": "2026-06-20T09:12:00+08:00" },
+    { "id": "file-brief-b", "name": "Project brief copy.pdf", "folderId": "folder-reference", "kind": "PDF document", "sizeLabel": "1.1 MB", "modifiedAt": "2026-06-20T09:12:00+08:00" },
+    { "id": "file-deck-preferred-edited", "name": "Elarian launch deck.pptx", "folderId": "folder-elarian", "kind": "Presentation", "sizeLabel": "6.4 MB", "modifiedAt": "2026-07-11T17:30:00+08:00" },
+    { "id": "file-deck-older-copy", "name": "Elarian launch deck (1).pptx", "folderId": "folder-downloads", "kind": "Presentation", "sizeLabel": "6.1 MB", "modifiedAt": "2026-07-08T15:10:00+08:00" },
+    { "id": "file-invoice-reference", "name": "Invoice scan.pdf", "folderId": "folder-reference", "kind": "PDF document", "sizeLabel": "710 KB", "modifiedAt": "2026-07-01T10:04:00+08:00" },
+    { "id": "file-invoice-extra-changed", "name": "Invoice scan (1).pdf", "folderId": "folder-downloads", "kind": "PDF document", "sizeLabel": "742 KB", "modifiedAt": "2026-07-12T08:15:00+08:00" },
+    { "id": "file-history-research-summary", "name": "Quarterly research summary.pdf", "folderId": "folder-reference", "kind": "PDF document", "sizeLabel": "1.3 MB", "modifiedAt": "2026-07-11T18:24:00+08:00" },
+    { "id": "file-history-kyoto-itinerary", "name": "Kyoto itinerary.pdf", "folderId": "folder-travel", "kind": "PDF document", "sizeLabel": "884 KB", "modifiedAt": "2026-07-11T18:24:00+08:00" },
+    { "id": "file-history-client-index", "name": "Client forms index.xlsx", "folderId": "folder-client-forms", "kind": "Spreadsheet", "sizeLabel": "72 KB", "modifiedAt": "2026-07-11T18:24:00+08:00" },
+    { "id": "file-history-warranty-working", "name": "Warranty booklet.pdf", "folderId": "folder-reference", "kind": "PDF document", "sizeLabel": "3.7 MB", "modifiedAt": "2026-07-10T09:18:00+08:00" },
+    { "id": "file-history-warranty-held", "name": "Warranty booklet (1).pdf", "folderId": "folder-holding-area", "kind": "PDF document", "sizeLabel": "3.7 MB", "modifiedAt": "2026-07-10T09:18:00+08:00", "inHoldingArea": true }
+  ],
+  "stageDefinitions": {
+    "planPreparation": [
+      { "id": "checking-files", "label": "Checking files" },
+      { "id": "finding-groups", "label": "Finding groups" },
+      { "id": "checking-conflicts", "label": "Checking conflicts" },
+      { "id": "preparing-plan", "label": "Preparing plan" }
+    ],
+    "organizationApply": [
+      { "id": "rechecking", "label": "Rechecking plan" },
+      { "id": "applying", "label": "Applying changes" },
+      { "id": "verifying", "label": "Verifying" },
+      { "id": "complete", "label": "Complete" }
+    ],
+    "duplicateConsolidation": [
+      { "id": "rechecking-copies", "label": "Rechecking copies" },
+      { "id": "consolidating", "label": "Consolidating" },
+      { "id": "verifying", "label": "Verifying" },
+      { "id": "complete", "label": "Complete" }
+    ]
+  },
+  "aggregateRows": [
+    { "id": "aggregate-other-files", "parentFolderId": "folder-downloads", "label": "79 other files", "kind": "collapsed-files", "count": 79 },
+    { "id": "aggregate-unchanged-folders", "parentFolderId": "folder-downloads", "label": "12 unchanged folders", "kind": "collapsed-folders", "count": 12 },
+    { "id": "aggregate-not-affected", "parentFolderId": "folder-downloads", "label": "46 items not affected", "kind": "collapsed-context", "count": 46 }
+  ],
+  "initialState": {
+    "location": {
+      "folderId": "folder-downloads",
+      "freshness": "up-to-date",
+      "statusLabel": "Up to date",
+      "lastCheckedLabel": "Checked a moment ago"
+    },
+    "workflow": {
+      "active": "none",
+      "allowed": ["none", "organization", "duplicates", "applying", "verifying"],
+      "switchPolicy": "confirm-discard",
+      "switchDialog": {
+        "continueLabel": "Continue plan",
+        "discardOrganizationLabel": "Discard plan and open Duplicates",
+        "discardDuplicatesLabel": "Discard duplicate review and open Organize"
+      }
+    },
+    "plan": {
+      "id": "plan-downloads-organization",
+      "status": "ready",
+      "title": "Organize Downloads",
+      "previewNotice": "Preview — no files have moved.",
+      "summary": {
+        "fileChanges": 38,
+        "destinations": 5,
+        "reviewRequired": 2,
+        "blockingConflicts": 1
+      },
+      "groups": [
+        { "id": "group-elarian", "label": "Elarian", "destinationFolderId": "folder-elarian", "reason": "Shared Elarian project names and nearby work dates.", "changeIds": ["change-elarian-01", "change-elarian-02", "change-elarian-03", "change-elarian-04", "change-elarian-05", "change-elarian-06", "change-elarian-07", "change-elarian-08"] },
+        { "id": "group-northstar", "label": "Northstar", "destinationFolderId": "folder-northstar", "reason": "Shared Northstar project names and delivery context.", "changeIds": ["change-northstar-01", "change-northstar-02", "change-northstar-03", "change-northstar-04", "change-northstar-05", "change-northstar-06", "change-northstar-07"] },
+        { "id": "group-cs1010s", "label": "CS1010S study material", "destinationFolderId": "folder-cs1010s", "reason": "Course identifiers match the locked study-material rule.", "changeIds": ["change-cs1010s-01", "change-cs1010s-02", "change-cs1010s-03", "change-cs1010s-04", "change-cs1010s-05", "change-cs1010s-06", "change-cs1010s-07", "change-cs1010s-08"] },
+        { "id": "group-client-forms", "label": "Client Forms", "destinationFolderId": "folder-client-forms", "reason": "Repeated form and client-onboarding cues.", "changeIds": ["change-client-01", "change-client-02", "change-client-03", "change-client-04", "change-client-05", "change-client-06", "change-client-07"] },
+        { "id": "group-receipts", "label": "Receipts", "destinationFolderId": "folder-receipts", "reason": "Invoice and receipt names form one bounded document set.", "changeIds": ["change-receipt-01", "change-receipt-02", "change-receipt-03", "change-receipt-04", "change-receipt-05", "change-receipt-06", "change-receipt-07", "change-receipt-08"] }
+      ],
+      "changes": [
+        { "id": "change-elarian-01", "fileId": "file-architecture", "sourceFolderId": "folder-downloads", "destinationFolderId": "folder-elarian", "plannedName": null, "status": "Ready", "reason": "Architecture context matches the Elarian project." },
+        { "id": "change-elarian-02", "fileId": "file-elarian-logo", "sourceFolderId": "folder-downloads", "destinationFolderId": "folder-elarian", "plannedName": null, "status": "Review", "reason": "Shares Elarian, but differs from the document group." },
+        { "id": "change-elarian-03", "fileId": "file-notes-loose", "sourceFolderId": "folder-downloads", "destinationFolderId": "folder-elarian", "plannedName": null, "status": "Conflict", "reason": "Projects › Elarian already contains Notes.docx." },
+        { "id": "change-elarian-04", "fileId": "file-elarian-brief", "sourceFolderId": "folder-downloads", "destinationFolderId": "folder-elarian", "plannedName": null, "status": "Ready", "reason": "The project name and document context match Elarian." },
+        { "id": "change-elarian-05", "fileId": "file-elarian-budget", "sourceFolderId": "folder-downloads", "destinationFolderId": "folder-elarian", "plannedName": null, "status": "Ready", "reason": "The project name matches Elarian." },
+        { "id": "change-elarian-06", "fileId": "file-elarian-launch-notes", "sourceFolderId": "folder-downloads", "destinationFolderId": "folder-elarian", "plannedName": null, "status": "Ready", "reason": "The project name and launch context match Elarian." },
+        { "id": "change-elarian-07", "fileId": "file-elarian-wireframe", "sourceFolderId": "folder-downloads", "destinationFolderId": "folder-elarian", "plannedName": null, "status": "Ready", "reason": "The project name and design context match Elarian." },
+        { "id": "change-elarian-08", "fileId": "file-elarian-timeline", "sourceFolderId": "folder-downloads", "destinationFolderId": "folder-elarian", "plannedName": null, "status": "Ready", "reason": "The project name and schedule context match Elarian." },
+
+        { "id": "change-northstar-01", "fileId": "file-final-pdf", "sourceFolderId": "folder-downloads", "destinationFolderId": "folder-northstar", "plannedName": "Northstar acceptance summary.pdf", "status": "Review", "reason": "Mentions both Elarian and Northstar; the intended project is ambiguous." },
+        { "id": "change-northstar-02", "fileId": "file-northstar-proposal", "sourceFolderId": "folder-downloads", "destinationFolderId": "folder-northstar", "plannedName": null, "status": "Ready", "reason": "The project name matches Northstar." },
+        { "id": "change-northstar-03", "fileId": "file-northstar-plan", "sourceFolderId": "folder-downloads", "destinationFolderId": "folder-northstar", "plannedName": null, "status": "Ready", "reason": "The project name matches Northstar." },
+        { "id": "change-northstar-04", "fileId": "file-northstar-deck", "sourceFolderId": "folder-downloads", "destinationFolderId": "folder-northstar", "plannedName": null, "status": "Ready", "reason": "The project name matches Northstar." },
+        { "id": "change-northstar-05", "fileId": "file-northstar-survey", "sourceFolderId": "folder-downloads", "destinationFolderId": "folder-northstar", "plannedName": null, "status": "Ready", "reason": "The survey supports the Northstar delivery plan." },
+        { "id": "change-northstar-06", "fileId": "file-northstar-contract", "sourceFolderId": "folder-downloads", "destinationFolderId": "folder-northstar", "plannedName": null, "status": "Ready", "reason": "The agreement belongs with the Northstar proposal." },
+        { "id": "change-northstar-07", "fileId": "file-northstar-mark", "sourceFolderId": "folder-downloads", "destinationFolderId": "folder-northstar", "plannedName": null, "status": "Ready", "reason": "The identity asset is referenced by the Northstar deck." },
+
+        { "id": "change-cs1010s-01", "fileId": "file-cs1010s-finals", "sourceFolderId": "folder-downloads", "destinationFolderId": "folder-cs1010s", "plannedName": null, "status": "Ready", "reason": "The filename matches the locked CS1010 study-material rule." },
+        { "id": "change-cs1010s-02", "fileId": "file-cs1010s-tutorial", "sourceFolderId": "folder-downloads", "destinationFolderId": "folder-cs1010s", "plannedName": null, "status": "Ready", "reason": "The filename matches the locked CS1010 study-material rule." },
+        { "id": "change-cs1010s-03", "fileId": "file-cs1010s-cheatsheet", "sourceFolderId": "folder-downloads", "destinationFolderId": "folder-cs1010s", "plannedName": null, "status": "Ready", "reason": "The filename matches the locked CS1010 study-material rule." },
+        { "id": "change-cs1010s-04", "fileId": "file-cs1010s-midterm", "sourceFolderId": "folder-downloads", "destinationFolderId": "folder-cs1010s", "plannedName": null, "status": "Ready", "reason": "The filename matches the locked CS1010 study-material rule." },
+        { "id": "change-cs1010s-05", "fileId": "file-cs1010x-finals", "sourceFolderId": "folder-downloads", "destinationFolderId": "folder-cs1010s", "plannedName": null, "status": "Ready", "reason": "The filename matches the locked CS1010 study-material rule." },
+        { "id": "change-cs1010s-06", "fileId": "file-cs1010x-solutions", "sourceFolderId": "folder-downloads", "destinationFolderId": "folder-cs1010s", "plannedName": null, "status": "Ready", "reason": "The filename matches the locked CS1010 study-material rule." },
+        { "id": "change-cs1010s-07", "fileId": "file-cs1010x-range", "sourceFolderId": "folder-downloads", "destinationFolderId": "folder-cs1010s", "plannedName": null, "status": "Ready", "reason": "The filename matches the locked CS1010 study-material rule." },
+        { "id": "change-cs1010s-08", "fileId": "file-cs1010x-2019", "sourceFolderId": "folder-downloads", "destinationFolderId": "folder-cs1010s", "plannedName": null, "status": "Ready", "reason": "The filename matches the locked CS1010 study-material rule." },
+
+        { "id": "change-client-01", "fileId": "file-client-intake", "sourceFolderId": "folder-downloads", "destinationFolderId": "folder-client-forms", "plannedName": null, "status": "Ready", "reason": "The form belongs with client onboarding material." },
+        { "id": "change-client-02", "fileId": "file-download-pdf", "sourceFolderId": "folder-downloads", "destinationFolderId": "folder-client-forms", "plannedName": "Northstar client intake.pdf", "status": "Ready", "reason": "The fields match the client intake form set." },
+        { "id": "change-client-03", "fileId": "file-w9-elarian", "sourceFolderId": "folder-downloads", "destinationFolderId": "folder-client-forms", "plannedName": null, "status": "Ready", "reason": "This is a client administration form." },
+        { "id": "change-client-04", "fileId": "file-consent", "sourceFolderId": "folder-downloads", "destinationFolderId": "folder-client-forms", "plannedName": null, "status": "Ready", "reason": "This is part of client onboarding." },
+        { "id": "change-client-05", "fileId": "file-onboarding-checklist", "sourceFolderId": "folder-downloads", "destinationFolderId": "folder-client-forms", "plannedName": null, "status": "Ready", "reason": "This is part of client onboarding." },
+        { "id": "change-client-06", "fileId": "file-client-details", "sourceFolderId": "folder-downloads", "destinationFolderId": "folder-client-forms", "plannedName": null, "status": "Ready", "reason": "This is a client administration record." },
+        { "id": "change-client-07", "fileId": "file-signed-agreement", "sourceFolderId": "folder-downloads", "destinationFolderId": "folder-client-forms", "plannedName": null, "status": "Ready", "reason": "This belongs with the client form set." },
+
+        { "id": "change-receipt-01", "fileId": "file-inv-2048", "sourceFolderId": "folder-downloads", "destinationFolderId": "folder-receipts", "plannedName": null, "status": "Ready", "reason": "The invoice identifier matches a receipt pair." },
+        { "id": "change-receipt-02", "fileId": "file-inv-2048-receipt", "sourceFolderId": "folder-downloads", "destinationFolderId": "folder-receipts", "plannedName": null, "status": "Ready", "reason": "The receipt identifier matches its invoice." },
+        { "id": "change-receipt-03", "fileId": "file-taxi-receipt", "sourceFolderId": "folder-downloads", "destinationFolderId": "folder-receipts", "plannedName": null, "status": "Ready", "reason": "The filename clearly identifies a receipt." },
+        { "id": "change-receipt-04", "fileId": "file-cafe-receipt", "sourceFolderId": "folder-downloads", "destinationFolderId": "folder-receipts", "plannedName": null, "status": "Ready", "reason": "The filename clearly identifies a receipt." },
+        { "id": "change-receipt-05", "fileId": "file-cloud-receipt", "sourceFolderId": "folder-downloads", "destinationFolderId": "folder-receipts", "plannedName": null, "status": "Ready", "reason": "The filename clearly identifies a receipt." },
+        { "id": "change-receipt-06", "fileId": "file-office-receipt", "sourceFolderId": "folder-downloads", "destinationFolderId": "folder-receipts", "plannedName": null, "status": "Ready", "reason": "The filename clearly identifies a receipt." },
+        { "id": "change-receipt-07", "fileId": "file-hotel-receipt", "sourceFolderId": "folder-downloads", "destinationFolderId": "folder-receipts", "plannedName": null, "status": "Ready", "reason": "The filename clearly identifies a receipt." },
+        { "id": "change-receipt-08", "fileId": "file-train-receipt", "sourceFolderId": "folder-downloads", "destinationFolderId": "folder-receipts", "plannedName": null, "status": "Ready", "reason": "The filename clearly identifies a receipt." }
+      ],
+      "reviewItems": [
+        { "id": "review-elarian-logo", "changeId": "change-elarian-02", "fileId": "file-elarian-logo", "status": "unresolved", "reason": "Shares Elarian, but differs from the document group.", "actions": ["accept", "change-destination", "leave-unchanged"] },
+        { "id": "review-final-pdf", "changeId": "change-northstar-01", "fileId": "file-final-pdf", "status": "unresolved", "reason": "Mentions both Elarian and Northstar; choose where it belongs.", "actions": ["accept", "change-destination", "leave-unchanged"] }
+      ],
+      "conflicts": [
+        { "id": "conflict-notes", "changeId": "change-elarian-03", "fileId": "file-notes-loose", "collidingFileId": "file-notes-existing", "status": "unresolved", "reason": "Projects › Elarian already contains Notes.docx.", "actions": ["keep-both-with-rename", "change-destination", "leave-unchanged"] }
+      ]
+    },
+    "duplicates": {
+      "status": "ready",
+      "activeGroupIds": ["duplicate-travel-guide", "duplicate-project-brief"],
+      "holdingAreaFolderId": "folder-holding-area",
+      "safetyMessages": [
+        "Extra copies move to a reversible holding area.",
+        "Files are not deleted.",
+        "Storage is not recovered.",
+        "Copies are rechecked before applying."
+      ],
+      "groups": [
+        {
+          "id": "duplicate-travel-guide",
+          "status": "Ready",
+          "recommendation": "clear",
+          "memberFileIds": ["file-guide-working", "file-guide-extra"],
+          "workingCopyFileId": "file-guide-working",
+          "selectedExtraFileIds": ["file-guide-extra"],
+          "exactCopyCount": 2,
+          "sizeLabel": "4.2 MB each",
+          "spaceUsedByExtraCopies": "4.2 MB",
+          "recommendationReason": "Stored with related travel material."
+        },
+        {
+          "id": "duplicate-project-brief",
+          "status": "Review",
+          "recommendation": "ambiguous",
+          "memberFileIds": ["file-brief-a", "file-brief-b"],
+          "workingCopyFileId": null,
+          "selectedExtraFileIds": [],
+          "exactCopyCount": 2,
+          "sizeLabel": "1.1 MB each",
+          "spaceUsedByExtraCopies": "1.1 MB",
+          "recommendationReason": "Neither location provides enough evidence for a preferred working copy."
+        }
+      ],
+      "rechecks": [
+        {
+          "id": "recheck-preferred-edited",
+          "scenario": "preferred-copy-edited",
+          "status": "Recheck",
+          "preferredFileId": "file-deck-preferred-edited",
+          "olderCopyFileIds": ["file-deck-older-copy"],
+          "message": "The preferred working copy was edited. The remaining unchanged files are identical older copies.",
+          "requiresReconfirmation": true
+        },
+        {
+          "id": "recheck-extra-changed",
+          "scenario": "extra-copy-changed",
+          "status": "Excluded",
+          "referenceFileId": "file-invoice-reference",
+          "excludedFileId": "file-invoice-extra-changed",
+          "message": "This file changed and is no longer an exact copy.",
+          "eligibleForExactCopyAction": false
+        }
+      ]
+    },
+    "activity": [
+      {
+        "id": "activity-organization-recent",
+        "workflow": "organization",
+        "status": "Applied and verified",
+        "title": "Organized Downloads",
+        "occurredAt": "2026-07-11T18:24:00+08:00",
+        "summary": "3 changes completed and verified.",
+        "fileIds": ["file-history-research-summary", "file-history-kyoto-itinerary", "file-history-client-index"],
+        "reversibleChanges": [
+          { "fileId": "file-history-research-summary", "beforeFolderId": "folder-downloads", "beforeName": "Quarterly research summary.pdf" },
+          { "fileId": "file-history-kyoto-itinerary", "beforeFolderId": "folder-downloads", "beforeName": "Kyoto itinerary.pdf" },
+          { "fileId": "file-history-client-index", "beforeFolderId": "folder-downloads", "beforeName": "Client forms index.xlsx" }
+        ],
+        "verification": "All three sample moves matched the approved plan after verification.",
+        "undo": { "status": "available", "scope": "full-operation", "label": "Undo available", "detail": "This recent clean sample operation can be reversed." }
+      },
+      {
+        "id": "activity-duplicate-recent",
+        "workflow": "duplicates",
+        "status": "Applied and verified",
+        "title": "Consolidated duplicate copies",
+        "occurredAt": "2026-07-10T09:18:00+08:00",
+        "summary": "One extra copy moved to the reversible holding area and was verified.",
+        "fileIds": ["file-history-warranty-working", "file-history-warranty-held"],
+        "reversibleChanges": [
+          { "fileId": "file-history-warranty-held", "beforeFolderId": "folder-downloads", "beforeName": "Warranty booklet (1).pdf" }
+        ],
+        "verification": "Both copies were rechecked before the sample move.",
+        "undo": { "status": "available", "scope": "return-copy", "label": "Return this copy", "detail": "A narrow return is available for the unaffected extra copy." }
+      },
+      {
+        "id": "activity-partial",
+        "workflow": "organization",
+        "status": "Partially completed",
+        "title": "Organized some receipt files",
+        "occurredAt": "2026-07-07T17:20:00+08:00",
+        "summary": "Nine of eleven sample changes were verified; two stayed in Downloads.",
+        "fileIds": ["file-taxi-receipt", "file-cafe-receipt"],
+        "verification": "Two sample files changed during the operation and stayed in place.",
+        "undo": { "status": "limited", "scope": "verified-changes", "label": "Review recovery options", "detail": "Only verified sample changes can be reversed." }
+      },
+      {
+        "id": "activity-verification-needed",
+        "workflow": "organization",
+        "status": "Verification needed",
+        "title": "Verification was interrupted",
+        "occurredAt": "2026-07-06T09:14:00+08:00",
+        "summary": "The sample changes were applied, but final verification did not complete.",
+        "fileIds": ["file-client-intake"],
+        "verification": "Current sample state needs another check.",
+        "undo": { "status": "unavailable", "scope": "none", "label": "Check files", "detail": "Check current state before preparing another plan." }
+      },
+      {
+        "id": "activity-failed",
+        "workflow": "organization",
+        "status": "Failed with no changes",
+        "title": "Stopped before changes",
+        "occurredAt": "2026-07-04T14:40:00+08:00",
+        "summary": "A destination conflict stopped the sample operation before any change.",
+        "fileIds": ["file-notes-loose", "file-notes-existing"],
+        "verification": "No files moved.",
+        "undo": { "status": "not-needed", "scope": "none", "label": "No undo needed", "detail": "No changes were made." }
+      },
+      {
+        "id": "activity-undone",
+        "workflow": "organization",
+        "status": "Undone and verified",
+        "title": "Returned files to their earlier folders",
+        "occurredAt": "2026-06-30T10:05:00+08:00",
+        "summary": "The sample reverse operation completed and was verified.",
+        "fileIds": ["file-office-receipt"],
+        "verification": "The selected sample file returned to its earlier folder.",
+        "undo": { "status": "used", "scope": "none", "label": "Already undone", "detail": "The failsafe has already been used." }
+      },
+      {
+        "id": "activity-old-unavailable",
+        "workflow": "organization",
+        "status": "Undo unavailable",
+        "title": "Older work organization",
+        "occurredAt": "2025-11-18T16:00:00+08:00",
+        "summary": "Later sample changes affect the same folders.",
+        "fileIds": ["file-signed-agreement"],
+        "verification": "The earlier operation was verified at the time.",
+        "undo": { "status": "unavailable", "scope": "none", "label": "Undo unavailable", "detail": "The affected folders changed after this operation. Prepare a new organization plan." }
+      }
+    ],
+    "settings": {
+      "activeSection": "location",
+      "categories": ["Location", "Plan preparation", "Rules", "Duplicates", "Notifications", "Local AI", "Privacy", "Advanced"],
+      "location": {
+        "folderId": "folder-downloads",
+        "freshness": "up-to-date",
+        "usesRealChooser": false
+      },
+      "planPreparation": {
+        "mode": "manual",
+        "options": ["manual", "automatic-when-useful", "scheduled"],
+        "application": "always-ask"
+      },
+      "rules": {
+        "items": [
+          {
+            "id": "rule-cs1010-study",
+            "label": "CS1010 study material",
+            "locked": true,
+            "active": true,
+            "match": "Filename begins with CS1010X or CS1010S",
+            "matchPrefixes": ["CS1010X", "CS1010S"],
+            "destinationFolderId": "folder-cs1010s",
+            "controls": ["inspect", "pause", "edit", "remove"]
+          }
+        ]
+      },
+      "duplicates": {
+        "alwaysAskBeforeConsolidation": true,
+        "holdingAreaEnabled": true
+      },
+      "notifications": {
+        "organizationPlanReady": true,
+        "duplicateReviewReady": true,
+        "applyOrVerificationProblem": true,
+        "indexProblem": false
+      },
+      "localAI": {
+        "enabled": false,
+        "providerConcept": "Local Ollama",
+        "advisoryOnly": true,
+        "runtimeConnection": false
+      },
+      "privacy": {
+        "sampleOnly": true,
+        "localOnly": true,
+        "uploads": false,
+        "telemetryImplemented": false,
+        "fileContentsTransmitted": false
+      },
+      "advanced": {
+        "demoOutcome": "verified",
+        "demoOutcomes": ["verified", "partial", "failed-before-changes", "verification-incomplete"],
+        "fixtureDiagnostics": "All canonical fixture references loaded.",
+        "exportPlaceholders": ["Export prototype summary", "Export acceptance notes"],
+        "workingNameNotice": "Loci Flow is a temporary prototype-facing name."
+      }
+    },
+    "stagedOperation": {
+      "definition": null,
+      "activeStageId": null,
+      "status": "idle",
+      "message": ""
+    },
+    "selection": {
+      "planChangeIds": [],
+      "duplicateGroupId": null,
+      "inspectorItemId": null
+    },
+    "planUndo": {
+      "maxSnapshots": 12,
+      "snapshots": []
+    }
+  }
+}

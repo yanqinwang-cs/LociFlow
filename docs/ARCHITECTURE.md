@@ -7,28 +7,58 @@ Filesystem
   -> facts
      -> scanner.py
      -> duplicates.py
-  -> suggestions
-     -> planner.py
-     -> review.py
-     -> scope.py
-     -> grouping.py
-     -> llm_refinement.py
-  -> reports
-     -> pattern_inference.py
-     -> reports.py
-     -> html_report.py
-  -> batch review
-     -> review_session.py
-  -> decision memory
-     -> review_state.py
-  -> approved moves
-     -> explicit MovePlanItem values
-  -> execution
+  -> supported CLI and report paths
+     -> planner.py, review.py, scope.py, grouping.py
+     -> advisory llm_refinement.py
+     -> reports.py and html_report.py
+     -> review_session.py and review_state.py
+  -> scan application state
+     -> fail-closed Standards load
+     -> immutable scan-bound Standards state
+  -> Standards-first organization projection
+     -> deterministic owner modules
+     -> recommendations, choices, kept items, movement tree
+  -> durable Standards catalog
+     -> revision-protected list and mutations
+     -> v1-to-v2 migration on first mutation
+     -> activate/deactivate or guided deterministic creation
+     -> fresh Check before changed Standards affect planning
+  -> revision-bound decisions and approval
+     -> immutable approved organization plan
+  -> ordinary movement authorization
+     -> durable organization operation repository
+     -> shared execution coordinator
      -> executor.py
-  -> verification
-     -> organization_verify.py
-  -> undo
-     -> operation logs
+     -> verification
+  -> Activity
+     -> durable organization movement and Undo records
+  -> ordinary Undo authorization
+     -> shared execution coordinator
+     -> executor.py
+     -> post-Undo verification
+  -> Duplicate Bin approval catalog
+     -> all-member active claims
+     -> movement authorization and durable operation records
+     -> shared execution coordinator
+     -> executor.py
+     -> verification and protected listing
+  -> unified Duplicate Bin restore
+     -> Duplicate Bin page Restore or Activity Undo
+     -> shared execution coordinator
+     -> executor.py
+     -> exact-path verification
+
+Browser
+  -> authenticated route
+  -> application service
+  -> deterministic owner modules
+  -> executor.py only for explicitly authorized movement or restoration
+
+Production frontend
+  -> backend/API
+  -> data source
+  -> page-specific view model
+  -> accepted renderer
 ```
 
 ## Module Ownership
@@ -36,13 +66,13 @@ Filesystem
 | Module | Ownership |
 | --- | --- |
 | `models.py` | dataclasses shared across stages |
-| `safety.py` | path validation |
+| `safety.py` | shared root-containment validation |
 | `scanner.py` | filesystem metadata scanning |
 | `duplicates.py` | SHA-256 hashing and exact duplicate grouping |
 | `planner.py` | duplicate review planning |
 | `review.py` | heuristic review candidate detection and review planning |
 | `scope.py` | deterministic organization-scope and orphan-code classification helpers |
-| `organization_rules.py` | organization rules loading, validation, and serialization support |
+| `organization_rules.py` | fail-closed organization-rules loading, validation, immutable rules snapshots, and serialization support |
 | `grouping.py` | deterministic project grouping and organization suggestions |
 | `pattern_inference.py` | report-only inference of existing folder organization patterns |
 | `rule_review.py` | organization rule candidate export, reviewed-decision validation, and confirmed config updates |
@@ -52,12 +82,101 @@ Filesystem
 | `organization_verify.py` | read-only comparison of apply summaries, operation logs, and filesystem state |
 | `llm_refinement.py` | advisory LLM prompt, payload, validation, refined suggestions |
 | `ollama_client.py` | local Ollama client only |
-| `reports.py` | read-only report assembly and JSON report writing |
+| `reports.py` | read-only report assembly, JSON report writing, and authoritative scan-report loading/validation |
 | `html_report.py` | read-only static HTML rendering from report dictionaries |
 | `review_session.py` | batch review-session construction, decisions, reviewed-plan JSON writing, and saved-plan validation |
 | `review_state.py` | persistent human review decision memory |
-| `executor.py` | approved move execution and undo logs |
-| `cli.py` | command-line orchestration |
+| `application/scan_service.py` | UI-independent scan/report coordination and summary projection |
+| `application/review_service.py` | immutable review-session coordination through existing review owners |
+| `application/artifact_service.py` | root-contained listing/loading of scan reports and reviewed plans only |
+| `application/view_models.py` | frozen, interface-independent application result types |
+| Loci Flow organization projection and decision services | Standards-first consumer projection, temporary revisions, exact-set decisions, validation, and approval |
+| Loci Flow Standards catalog and application services | durable v2 catalog ownership, valid v1 first-mutation migration, revision/conflict checks, authoritative list projection, activation, deactivation, guided preview and creation, approved-plan blocking, and fresh-Check state |
+| Loci Flow organization operation repositories and services | durable ordinary movement authorization, intent, replay, verification, and recovery projection |
+| `application/activity_service.py` | Activity projection from durable movement, Undo, Duplicate Bin movement, and restore records |
+| Loci Flow ordinary Undo repositories and services | authorization, durable restore intent, executor delegation, and verification |
+| `application/execution_coordinator.py` | one shared process-wide movement or restore operation at a time |
+| `application/duplicate_bin_repository.py` | durable approved batches, all-member claims, lifecycle, restart reconciliation, and protected catalog |
+| Duplicate Bin movement authorization and operation repositories | one-use authorization, durable intent, replay, and verified movement state |
+| `application/duplicate_bin_restore_service.py` | sole application owner for Duplicate Bin page Restore and Duplicate Bin Activity Undo |
+| `web/config.py` | frozen per-launch root and ephemeral security configuration |
+| `web/server.py` | IPv4-loopback socket binding, browser bootstrap, and single-worker Uvicorn lifecycle |
+| `web/app.py` | isolated FastAPI construction, middleware, templates, static mounting, and generic errors |
+| `web/security.py` | one-time launch gate, session/CSRF helpers, exact Origin validation, and security headers |
+| `web/routes/home.py` | health, single-use launch bootstrap, and authenticated welcome routes only |
+| Loci Flow authenticated routes | strict no-store GET projections and authenticated CSRF/same-origin POST mutations using server-owned IDs |
+| Loci Flow data source and page view models | validate production contracts and adapt backend state to the accepted renderer without owning backend policy |
+| `executor.py` | movement-specific source/destination/symlink validation, approved move execution, operation logs, and undo |
+| `cli.py` | substantial current command-line and use-case orchestration |
+
+## Current Loci Flow Web Direction
+
+Loci Flow through Integration 1.0F is bootAI's primary consumer interface. Its
+six areas are Home, Organize, Duplicate Bin, Activity, Standards, and Settings.
+Home summarizes real scope and verified work; Organize owns recommendations,
+choices, approval, and ordinary movement. Activity contains only real
+filesystem operations and their outcomes. Standards load fail-closed once per
+scan, and the resulting immutable state filters forbidden changes before the
+remaining plan is displayed. The authoritative Standards surface lists the
+durable v2 catalog, supports activate/deactivate, and creates deterministic
+Standards through the accepted folder-protection, course-code, and project-code
+presets.
+
+Standards mutation is configuration, not movement. It is revision- and
+conflict-protected, migrates valid v1 storage only on the first mutation, blocks
+while an approved organization plan is active, and requires a fresh Check before
+the changed catalog affects planning. It creates no Activity record and never
+calls `executor.py`. The browser receives safe labels, effects, match counts,
+and server-owned identifiers rather than raw JSON, filesystem paths, regex, or
+LLM-derived interpretation.
+
+The required and implemented dependency direction is:
+
+```text
+Local browser
+    ↓
+Web interface layer
+    ↓
+Application-service layer
+    ↓
+Existing deterministic bootAI modules
+    ↓
+executor.py for explicitly approved movement and undo only
+```
+
+The web layer does not reproduce scanner, duplicate, grouping, review, safety,
+movement, restore, or Undo logic. Route modules never import `executor.py`.
+Authenticated routes accept stable server-owned IDs, exact confirmations, scan
+generations, and revisions rather than source, destination, root, catalog, or
+operation-log paths. Application services revalidate approved intent and may
+delegate explicit movement or restoration to `executor.py`; `executor.py`
+remains the sole user-file movement implementation.
+
+Organization decisions are temporary, generation-bound, and revision-bound.
+Approvals, movement authorizations, and restore authorizations are server-owned.
+Durable operation intent is written before movement, then verification and
+replay-safe reconciliation project the authoritative outcome to the browser.
+
+Consumer presenters group rows by a safety-validated normalized source key and choose one primary card using duplicate → organization → attention precedence. Secondary rows remain visible inside that card and retain independent stable IDs, decisions, conflicts, and serialization. Consumer actions mutate only the primary row through the application service. Advanced review continues to expose all rows. No consumer presenter owns persistence, grouping, duplicate detection, or movement.
+
+Module saves select every authoritative row for one fixed category and reuse `review_session.py` serialization. `saved_decisions` remains the full per-row baseline; a module save advances only its rows, while full save advances all rows. Temporary handled/deferred queue IDs live only in the locked web holder and are invalidated by a new generation.
+
+Each web-server process is bound to one validated immutable root. Browser requests submit stable session-scoped IDs and allowed actions rather than source or destination paths. Existing JSON artifacts remain authoritative; temporary UI, job, security, and revision state may remain in memory, with no initial database.
+
+The current process binds an already-listening IPv4 socket to `127.0.0.1`, normally on an operating-system-selected port, and hands it to one Uvicorn worker with proxy headers and access logging disabled. A one-time launch token establishes a signed browser-lifetime session and immediately redirects away from the token URL. All frontend resources are installed package data; no runtime asset leaves the process origin.
+
+The complete contract is in [WEB_ARCHITECTURE](WEB_ARCHITECTURE.md), and mandatory localhost security controls are in [WEB_THREAT_MODEL](WEB_THREAT_MODEL.md).
+
+The current deterministic behavior requires no LLM. `llm_refinement.py` remains
+advisory only: LLM output cannot authorize, approve, or execute movement.
+
+The next binding stage is the inspection-only **1.0G — Release Launcher and
+Packaging Contract Inspection**. It must settle native folder-selection
+ownership, validation before server creation, launch authentication, browser
+bootstrap, clean shutdown, packaged lifecycle, macOS packaging, terminal
+visibility, cancellation and failure behavior, and dependency constraints before
+implementation is considered. Accessibility auditing, large-folder performance,
+and nontechnical-user testing remain separate later release-hardening stages.
 
 ## Facts, Suggestions, Approved Moves, Execution, Undo
 
@@ -80,6 +199,12 @@ Post-apply verification is separate from execution and undo. `organization_verif
 Batch review sessions collect duplicate, deterministic organization, and review-candidate `MovePlanItem` values for command-line review. Review-candidate rows keep `category = "review_candidate"` separate from `review_category` metadata such as `empty`, `temporary`, or `backup_or_copy`. Approve/reject decisions and reviewed-plan JSON records do not execute moves. Approved rows are checked for source and destination conflicts before apply. Saved reviewed-plan JSON is treated as untrusted input when loaded later; `review_session.py` validates it, rejects approved move conflicts, and converts only approved records back into `MovePlanItem` values. Final apply still uses `executor.py`.
 
 Saved batch review sessions can also be resumed through `review_session.py`. Resume reconstructs existing rows and decisions from validated reviewed-plan JSON without scanning or regenerating candidates. Review state is not applied to resumed rows. Saving writes a collision-safe sibling in the same reviewed-plan format; any later apply still uses the existing validator, exact confirmation, conflict checks, and executor path.
+
+Review view state is an in-memory projection over all session rows. `review_session.py` owns deterministic filters, one stable sort key, and pagination. The CLI displays the resulting page, while decisions, conflict checks, saving, and apply continue to use stable IDs and the complete session row list. View state is never serialized.
+
+Bulk page decisions reuse that projection and the existing single-ID decision helpers. A preview freezes the exact stable IDs displayed on the current page, separates changed and idempotent rows, and requires a decision-specific confirmation before mutating in-memory decisions. It does not save or enter the executor path.
+
+Review-session dirty state is a session-local boolean derived only from actual decision changes. It starts clean for generated and resumed sessions, clears after a successful save, and requires exact `QUIT WITHOUT SAVING` confirmation before unsaved decisions are discarded. It is presentation/session state only: it is not serialized and does not alter review-state memory, conflict detection, apply confirmation, or executor behavior.
 
 Review state is separate from reviewed-plan JSON and operation logs. `review_state.py` stores human review decision memory under `AI_Review/review_state/review_decisions.json`, matches remembered decisions back to current rows by source, destination, category, review category, size, and modified time, and flags stale prior decisions when metadata changes. Review state records intent only. It is not an operation log, does not record filesystem success, and is not used for undo.
 

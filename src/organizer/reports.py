@@ -28,7 +28,12 @@ from organizer.models import (
     ProjectGroup,
     ReviewCandidate,
 )
-from organizer.organization_rules import OrganizationRulesLoadResult, load_organization_rules
+from organizer.organization_rules import (
+    DEFAULT_IGNORED_TERMS,
+    ORGANIZATION_RULES_STATUS_LOADED,
+    OrganizationRulesLoadResult,
+    load_organization_rules,
+)
 from organizer.pattern_inference import (
     InferredRuleCandidate,
     OrganizationPattern,
@@ -46,6 +51,40 @@ from organizer.scanner import scan_directory
 from organizer.scope import is_actionable_plan_eligible
 
 REPORT_SCHEMA_VERSION = 1
+REPORT_TOP_LEVEL_FIELDS = {
+    "schema_version",
+    "generated_at",
+    "scan_root",
+    "summary",
+    "organization_rules",
+    "rule_audit",
+    "anchor_decisions",
+    "organization_pattern_inference",
+    "duplicates",
+    "duplicate_review_plan",
+    "review_candidates",
+    "review_candidate_plan",
+    "project_groups",
+    "organization_suggestions",
+    "refined_organization_suggestions",
+    "warnings",
+}
+REPORT_SUMMARY_FIELDS = {
+    "file_count",
+    "total_bytes",
+    "duplicate_group_count",
+    "duplicate_candidate_count",
+    "review_candidate_count",
+    "review_candidate_counts_by_category",
+    "project_group_count",
+    "organization_suggestion_count",
+    "suggested_anchor_count",
+    "needs_decision_anchor_count",
+    "ignored_anchor_count",
+    "organization_pattern_count",
+    "inferred_rule_candidate_count",
+    "refinement_status",
+}
 
 
 def build_scan_report(
@@ -53,11 +92,17 @@ def build_scan_report(
     max_depth: int | None = None,
     refine_groups: bool = False,
     llm_client: object | None = None,
+    *,
+    metadata_items: list[FileMetadata] | tuple[FileMetadata, ...] | None = None,
+    organization_rules: OrganizationRulesLoadResult | None = None,
 ) -> dict[str, Any]:
     resolved_root = root.resolve()
-    metadata_items = scan_directory(resolved_root, max_depth=max_depth)
+    if metadata_items is None:
+        metadata_items = scan_directory(resolved_root, max_depth=max_depth)
+    else:
+        metadata_items = list(metadata_items)
     file_items = [item for item in metadata_items if not item.is_dir]
-    organization_rules = load_organization_rules(resolved_root)
+    organization_rules = organization_rules or load_organization_rules(resolved_root)
 
     duplicate_groups = find_exact_duplicates(metadata_items)
     duplicate_review_plan = build_duplicate_review_plan(
@@ -70,26 +115,37 @@ def build_scan_report(
         review_candidates,
         resolved_root,
     )
-    anchor_decisions = analyze_anchor_decisions(
-        metadata_items,
-        rules=organization_rules.rules,
-    )
-    pattern_inference = infer_organization_patterns(
-        metadata_items,
-        anchor_decisions,
-    )
+    if organization_rules.available:
+        active_rules = organization_rules.require_rules()
+        anchor_decisions = analyze_anchor_decisions(
+            metadata_items,
+            rules=active_rules,
+        )
+        pattern_inference = infer_organization_patterns(
+            metadata_items,
+            anchor_decisions,
+        )
+        project_groups = find_project_groups(
+            metadata_items,
+            rules=active_rules,
+        )
+        organization_suggestions = build_organization_suggestions(
+            project_groups,
+            resolved_root,
+        )
+    else:
+        anchor_decisions = []
+        pattern_inference = PatternInferenceResult(
+            patterns=[],
+            rule_candidates=[],
+            anchor_evidence={},
+        )
+        project_groups = []
+        organization_suggestions = []
     rule_audit = build_rule_audit(
         metadata_items,
         resolved_root,
         organization_rules,
-    )
-    project_groups = find_project_groups(
-        metadata_items,
-        rules=organization_rules.rules,
-    )
-    organization_suggestions = build_organization_suggestions(
-        project_groups,
-        resolved_root,
     )
 
     warnings: list[str] = []
@@ -107,7 +163,12 @@ def build_scan_report(
     refinement_status = "not_requested"
     refined_suggestions: list[OrganizationSuggestion] = []
 
-    if refine_groups:
+    if refine_groups and not organization_rules.available:
+        refinement_status = "failed"
+        warnings.append(
+            "Organization refinement was skipped because Standards are unavailable."
+        )
+    elif refine_groups:
         refinement_status = "completed"
         if llm_client is None:
             refinement_status = "failed"
@@ -239,6 +300,99 @@ def write_report(
     return resolved_destination
 
 
+def load_report(path: Path, root: Path) -> dict[str, Any]:
+    resolved_root = root.resolve()
+    if not resolved_root.is_dir():
+        raise ValueError(f"report root is not a directory: {root}")
+    candidate = path if path.is_absolute() else resolved_root / path
+    if candidate.is_symlink():
+        raise ValueError(f"report must not be a symlink: {path}")
+    resolved_path = validate_under_root(
+        candidate.resolve(strict=False),
+        resolved_root,
+    )
+    if not candidate.exists():
+        raise ValueError(f"report does not exist: {path}")
+    if not candidate.is_file():
+        raise ValueError(f"report is not a file: {path}")
+
+    try:
+        with resolved_path.open("r", encoding="utf-8") as file:
+            data = json.load(file)
+    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        raise ValueError(f"invalid report JSON: {error}") from error
+    return validate_report_data(data)
+
+
+def validate_report_data(data: object) -> dict[str, Any]:
+    if not isinstance(data, dict):
+        raise ValueError("report must contain a JSON object")
+    if set(data) != REPORT_TOP_LEVEL_FIELDS:
+        raise ValueError("report fields do not match schema version 1")
+    if data.get("schema_version") != REPORT_SCHEMA_VERSION:
+        raise ValueError("report schema_version must be 1")
+    if not isinstance(data.get("generated_at"), str) or not data["generated_at"]:
+        raise ValueError("report generated_at must be a non-empty string")
+    if data.get("scan_root") != ".":
+        raise ValueError('report scan_root must be "."')
+
+    summary = data.get("summary")
+    if not isinstance(summary, dict) or set(summary) != REPORT_SUMMARY_FIELDS:
+        raise ValueError("report summary fields do not match schema version 1")
+    for field in REPORT_SUMMARY_FIELDS - {
+        "review_candidate_counts_by_category",
+        "refinement_status",
+    }:
+        _validate_non_negative_report_count(summary.get(field), field)
+    category_counts = summary.get("review_candidate_counts_by_category")
+    if not isinstance(category_counts, dict) or not all(
+        isinstance(category, str)
+        and not isinstance(count, bool)
+        and isinstance(count, int)
+        and count >= 0
+        for category, count in category_counts.items()
+    ):
+        raise ValueError(
+            "report review_candidate_counts_by_category must contain "
+            "non-negative integer counts"
+        )
+    if summary.get("refinement_status") not in {
+        "not_requested",
+        "completed",
+        "failed",
+    }:
+        raise ValueError("report refinement_status is invalid")
+
+    for field in {
+        "organization_rules",
+        "rule_audit",
+        "anchor_decisions",
+        "organization_pattern_inference",
+    }:
+        if not isinstance(data.get(field), dict):
+            raise ValueError(f"report {field} must be an object")
+    for field in REPORT_TOP_LEVEL_FIELDS - {
+        "schema_version",
+        "generated_at",
+        "scan_root",
+        "summary",
+        "organization_rules",
+        "rule_audit",
+        "anchor_decisions",
+        "organization_pattern_inference",
+    }:
+        if not isinstance(data.get(field), list):
+            raise ValueError(f"report {field} must be a list")
+    if not all(isinstance(warning, str) for warning in data["warnings"]):
+        raise ValueError("report warnings must contain strings")
+    return data
+
+
+def _validate_non_negative_report_count(value: object, field: str) -> None:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ValueError(f"report summary {field} must be a non-negative integer")
+
+
 def default_report_path(root: Path) -> Path:
     reports_dir = root / "AI_Review" / "reports"
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
@@ -297,17 +451,24 @@ def _organization_rules_to_report(
     source_path = None
     if load_result.source_path is not None:
         source_path = load_result.source_path.relative_to(root).as_posix()
+    rules = (
+        load_result.rules
+        if load_result.status == ORGANIZATION_RULES_STATUS_LOADED
+        else None
+    )
     return {
         "status": load_result.status,
         "path": source_path,
         "message": load_result.message,
         "locked_anchors": sorted(
-            load_result.rules.anchor_display_names.get(anchor, anchor)
-            for anchor in load_result.rules.locked_anchors
-        ),
-        "ignored_terms": sorted(load_result.rules.ignored_terms),
-        "anchor_aliases": dict(sorted(load_result.rules.anchor_aliases.items())),
-        "preferred_granularities": sorted(load_result.rules.preferred_granularities),
+            rules.anchor_display_names.get(anchor, anchor)
+            for anchor in rules.locked_anchors
+        ) if rules is not None else [],
+        "ignored_terms": sorted(rules.ignored_terms - DEFAULT_IGNORED_TERMS)
+        if rules is not None
+        else [],
+        "anchor_aliases": dict(sorted(rules.anchor_aliases.items())) if rules is not None else {},
+        "preferred_granularities": sorted(rules.preferred_granularities) if rules is not None else [],
     }
 
 

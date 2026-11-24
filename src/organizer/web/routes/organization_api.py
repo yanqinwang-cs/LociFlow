@@ -1,0 +1,604 @@
+from __future__ import annotations
+
+import json
+import uuid
+
+from fastapi import APIRouter
+from starlette.requests import Request
+from starlette.responses import JSONResponse, Response
+
+from organizer.application.organization_decision_service import (
+    OrganizationDecisionError,
+    organization_review_to_dict,
+)
+from organizer.application.filesystem_operation_admission import (
+    FilesystemOperationBlockedError,
+)
+from organizer.application.organization_movement_service import (
+    OrganizationMovementError,
+    execute_organization_movement,
+    preview_organization_movement,
+    project_organization_execution,
+)
+from organizer.application.organization_slice_service import (
+    build_internal_organization_projection,
+)
+from organizer.application.runtime_lifecycle import ApplicationStoppingError
+from organizer.application.standards_read_models import OrganizationUnavailableError
+from organizer.application.volume_admission import (
+    SAFE_CROSS_VOLUME_MESSAGE,
+    SAFE_INDETERMINATE_VOLUME_MESSAGE,
+    SAFE_UNSAFE_VOLUME_PATH_MESSAGE,
+)
+from organizer.web.forms import FormDataError, read_urlencoded_form
+from organizer.web.scan_jobs import ScanJobSnapshot
+from organizer.web.security import (
+    WebSecurityError,
+    is_authenticated,
+    session_id_for_session,
+    validate_csrf_token,
+    validate_same_origin,
+)
+
+
+_DECISION_FIELDS = {
+    "csrf_token",
+    "scan_generation",
+    "expected_revision",
+    "kind",
+    "change_id",
+    "decision",
+    "choice_id",
+    "option_id",
+    "copy_ids",
+    "expected_change_ids",
+}
+_MAX_ID_COUNT = 500
+_MAX_ID_LENGTH = 2048
+
+_ERRORS = {
+    "standards_unavailable": (
+        409,
+        "Standards could not be loaded. Fix them before organizing.",
+    ),
+    "scan_generation_mismatch": (
+        409,
+        "The organization review belongs to an earlier scan.",
+    ),
+    "decision_revision_mismatch": (409, "Organization choices were updated elsewhere."),
+    "review_session_not_found": (
+        409,
+        "The organization review session is unavailable.",
+    ),
+    "unknown_change_id": (404, "That organization change is unavailable."),
+    "unknown_choice_id": (404, "That organization choice is unavailable."),
+    "invalid_option": (400, "That organization option is invalid."),
+    "recommendation_set_changed": (409, "The recommendation set changed."),
+    "incomplete_decisions": (409, "Every organization choice must be completed first."),
+    "protected_item_selected": (409, "A protected item cannot be selected."),
+    "unsafe_destination": (409, "A destination is no longer available."),
+    "overwrite_detected": (409, "A destination file now exists."),
+    "source_changed": (409, "A file changed after it was checked."),
+    "duplicate_group_changed": (
+        409,
+        "Duplicate copies changed after they were checked.",
+    ),
+    "approval_already_completed": (409, "This organization plan is already approved."),
+    "approved_plan_not_found": (409, "The approved organization plan is unavailable."),
+    "duplicate_batch_conflict": (
+        409,
+        "A duplicate copy is already part of another file action.",
+    ),
+    "duplicate_batch_unavailable": (
+        409,
+        "The duplicate choices could not be saved safely.",
+    ),
+    "movement_or_undo_in_progress": (409, "Another file action is in progress."),
+}
+
+_MOVEMENT_ERRORS = {
+    "standards_unavailable": (
+        409,
+        "Standards could not be loaded. Fix them before organizing.",
+    ),
+    "approved_plan_not_found": (409, "The approved organization plan is unavailable."),
+    "approved_plan_stale": (409, "The approved organization plan is stale."),
+    "scan_generation_mismatch": (
+        409,
+        "The organization review belongs to an earlier scan.",
+    ),
+    "decision_revision_mismatch": (409, "Organization choices were updated elsewhere."),
+    "invalid_confirmation": (400, "Movement confirmation is invalid."),
+    "invalid_confirmation_token": (409, "Movement confirmation is unavailable."),
+    "movement_already_started": (409, "This approved plan has already started."),
+    "movement_or_undo_in_progress": (409, "Another file action is in progress."),
+    "movement_recovery_required": (409, "A previous move needs attention."),
+    "source_changed": (409, "A file changed after it was checked."),
+    "protected_item_selected": (409, "A protected file cannot be moved."),
+    "unsafe_destination": (409, "A destination is no longer safe."),
+    "overwrite_detected": (409, "A destination is no longer available."),
+    "move_conflict": (409, "The approved moves now conflict."),
+    "no_supported_moves": (409, "No regular files are ready to move."),
+    "cross_volume_plan": (
+        409,
+        SAFE_CROSS_VOLUME_MESSAGE,
+    ),
+    "indeterminate_volume": (
+        409,
+        SAFE_INDETERMINATE_VOLUME_MESSAGE,
+    ),
+    "unsafe_volume_path": (
+        409,
+        SAFE_UNSAFE_VOLUME_PATH_MESSAGE,
+    ),
+    "operation_record_failed": (409, "The file move needs attention."),
+}
+
+
+def create_organization_api_router() -> APIRouter:
+    router = APIRouter()
+
+    @router.get("/api/organization/current", include_in_schema=False)
+    async def current_organization(request: Request) -> Response:
+        common = _validate_common_request(request)
+        if common is not None:
+            return common
+        scan_or_response = _completed_scan(request)
+        if isinstance(scan_or_response, Response):
+            return scan_or_response
+        try:
+            projection = _projection(scan_or_response)
+            current = request.app.state.organization_decisions.current(
+                session_id_for_session(request.session),
+                scan_or_response,
+                projection,
+            )
+        except OrganizationUnavailableError as error:
+            return _error_response(error.code, error.safe_message, 409)
+        except (OSError, TypeError, ValueError):
+            return _error_response(
+                "organization_unavailable",
+                "The organization result is unavailable for this scan.",
+                409,
+            )
+        return _current_response(request, current)
+
+    @router.post("/api/organization/decisions", include_in_schema=False)
+    async def update_decision(request: Request) -> Response:
+        common = _validate_common_request(request)
+        if common is not None:
+            return common
+        scan_or_response = _completed_scan(request)
+        if isinstance(scan_or_response, Response):
+            return scan_or_response
+        try:
+            form = await _validated_mutation_form(request, _DECISION_FIELDS)
+            revision = _revision(form.get("expected_revision"))
+            generation = _required(form.get("scan_generation"))
+            projection = _projection(scan_or_response)
+            store = request.app.state.organization_decisions
+            browser_session_id = session_id_for_session(request.session)
+            store.validate_mutation(
+                browser_session_id,
+                scan_or_response,
+                projection,
+                scan_generation=generation,
+                expected_revision=revision,
+            )
+            kind = _required(form.get("kind"))
+            if kind == "recommendation":
+                _require_exact_fields(
+                    form,
+                    {
+                        "csrf_token",
+                        "scan_generation",
+                        "expected_revision",
+                        "kind",
+                        "change_id",
+                        "decision",
+                    },
+                )
+                current = store.update(
+                    browser_session_id,
+                    scan_or_response,
+                    projection,
+                    scan_generation=generation,
+                    expected_revision=revision,
+                    kind=kind,
+                    change_id=_required(form.get("change_id")),
+                    decision=_required(form.get("decision")),
+                )
+            elif kind == "choice":
+                option_id = _required(form.get("option_id"))
+                expected = {
+                    "csrf_token",
+                    "scan_generation",
+                    "expected_revision",
+                    "kind",
+                    "choice_id",
+                    "option_id",
+                }
+                copy_ids: tuple[str, ...] = ()
+                if option_id == "choose-for-bin":
+                    expected.add("copy_ids")
+                    copy_ids = _id_array(form.get("copy_ids"))
+                _require_exact_fields(form, expected)
+                current = store.update(
+                    browser_session_id,
+                    scan_or_response,
+                    projection,
+                    scan_generation=generation,
+                    expected_revision=revision,
+                    kind=kind,
+                    choice_id=_required(form.get("choice_id")),
+                    option_id=option_id,
+                    copy_ids=copy_ids,
+                )
+            elif kind == "bulk_recommendations":
+                _require_exact_fields(
+                    form,
+                    {
+                        "csrf_token",
+                        "scan_generation",
+                        "expected_revision",
+                        "kind",
+                        "decision",
+                        "expected_change_ids",
+                    },
+                )
+                if form.get("decision") != "accept":
+                    raise OrganizationDecisionError("invalid_option")
+                current = store.accept_all_recommended(
+                    browser_session_id,
+                    scan_or_response,
+                    projection,
+                    scan_generation=generation,
+                    expected_revision=revision,
+                    expected_change_ids=_id_array(form.get("expected_change_ids")),
+                )
+            else:
+                raise OrganizationDecisionError("invalid_option")
+        except OrganizationUnavailableError as error:
+            return _error_response(error.code, error.safe_message, 409)
+        except OrganizationDecisionError as error:
+            return _decision_error(error)
+        except ApplicationStoppingError as error:
+            return _error_response("application_stopping", str(error), 409)
+        except WebSecurityError:
+            return _error_response(
+                "request_authentication_failed",
+                "The organization request could not be authenticated.",
+                403,
+            )
+        except (FormDataError, json.JSONDecodeError, TypeError, ValueError):
+            return _decision_error(OrganizationDecisionError("invalid_option"))
+        return _current_response(request, current)
+
+    @router.post("/api/organization/approval", include_in_schema=False)
+    async def approve_organization(request: Request) -> Response:
+        common = _validate_common_request(request)
+        if common is not None:
+            return common
+        try:
+            form = await _validated_mutation_form(
+                request,
+                {"csrf_token", "scan_generation", "expected_revision"},
+            )
+            _require_exact_fields(
+                form,
+                {"csrf_token", "scan_generation", "expected_revision"},
+            )
+            generation = _required(form.get("scan_generation"))
+            revision = _revision(form.get("expected_revision"))
+            scan_or_response = _completed_scan(request)
+            if isinstance(scan_or_response, Response):
+                return scan_or_response
+            projection = _projection(scan_or_response)
+            current = request.app.state.organization_decisions.approve(
+                session_id_for_session(request.session),
+                scan_or_response,
+                projection,
+                scan_generation=generation,
+                expected_revision=revision,
+            )
+        except FilesystemOperationBlockedError as error:
+            return _error_response(error.code, str(error), 409)
+        except OrganizationUnavailableError as error:
+            return _error_response(error.code, error.safe_message, 409)
+        except OrganizationDecisionError as error:
+            return _decision_error(error)
+        except ApplicationStoppingError as error:
+            return _error_response("application_stopping", str(error), 409)
+        except WebSecurityError:
+            return _error_response(
+                "request_authentication_failed",
+                "The organization request could not be authenticated.",
+                403,
+            )
+        except (FormDataError, TypeError, ValueError):
+            return _decision_error(OrganizationDecisionError("invalid_option"))
+        return _current_response(request, current)
+
+    @router.post("/api/organization/move/preview", include_in_schema=False)
+    async def preview_move(request: Request) -> Response:
+        common = _validate_common_request(request)
+        if common is not None:
+            return common
+        try:
+            form = await _validated_mutation_form(request, {"csrf_token"})
+            _require_movement_fields(form, {"csrf_token"})
+            scan_or_response = _completed_scan(request)
+            if isinstance(scan_or_response, Response):
+                return scan_or_response
+            projection = _projection(scan_or_response)
+            browser_session_id = session_id_for_session(request.session)
+            current = request.app.state.organization_decisions.approved_for_movement(
+                browser_session_id,
+                scan_or_response,
+                projection,
+            )
+            approved_plan = current.session.approved_plan
+            assert approved_plan is not None
+            assert scan_or_response.job_id is not None
+            preview = preview_organization_movement(
+                approved_plan=approved_plan,
+                browser_session_id=browser_session_id,
+                current_scan_generation=scan_or_response.job_id,
+                current_decision_revision=current.session.decision_revision,
+                coordinator=request.app.state.organization_execution,
+                operation_repository=request.app.state.organization_operations,
+                filesystem_operation_admission=(
+                    request.app.state.filesystem_operation_admission
+                ),
+            )
+        except FilesystemOperationBlockedError as error:
+            return _error_response(error.code, str(error), 409)
+        except (
+            OrganizationDecisionError,
+            OrganizationMovementError,
+            OrganizationUnavailableError,
+        ) as error:
+            return _movement_error(error.code)
+        except ApplicationStoppingError as error:
+            return _error_response("application_stopping", str(error), 409)
+        except WebSecurityError:
+            return _error_response(
+                "request_authentication_failed",
+                "The movement request could not be authenticated.",
+                403,
+            )
+        except (FormDataError, TypeError, ValueError):
+            return _error_response(
+                "invalid_request", "The movement request is invalid.", 400
+            )
+        return _json_response(preview.to_dict())
+
+    @router.post("/api/organization/move", include_in_schema=False)
+    async def execute_move(request: Request) -> Response:
+        common = _validate_common_request(request)
+        if common is not None:
+            return common
+        try:
+            expected_fields = {
+                "csrf_token",
+                "confirmation_token",
+                "confirmation",
+            }
+            form = await _validated_mutation_form(request, expected_fields)
+            _require_movement_fields(form, expected_fields)
+            scan_or_response = _completed_scan(request)
+            if isinstance(scan_or_response, Response):
+                return scan_or_response
+            projection = _projection(scan_or_response)
+            browser_session_id = session_id_for_session(request.session)
+            current = request.app.state.organization_decisions.approved_for_movement(
+                browser_session_id,
+                scan_or_response,
+                projection,
+            )
+            approved_plan = current.session.approved_plan
+            assert approved_plan is not None
+            assert scan_or_response.job_id is not None
+            result = execute_organization_movement(
+                approved_plan=approved_plan,
+                browser_session_id=browser_session_id,
+                current_scan_generation=scan_or_response.job_id,
+                current_decision_revision=current.session.decision_revision,
+                confirmation_token=_server_issued_id(form.get("confirmation_token")),
+                confirmation=_required(form.get("confirmation")),
+                coordinator=request.app.state.organization_execution,
+                operation_repository=request.app.state.organization_operations,
+                filesystem_operation_admission=(
+                    request.app.state.filesystem_operation_admission
+                ),
+                identity_execution_service=(
+                    request.app.state.organization_identity_execution
+                ),
+                recovery_status=(
+                    request.app.state.current_recovery_admission_status
+                ),
+            )
+        except FilesystemOperationBlockedError as error:
+            return _error_response(error.code, str(error), 409)
+        except (
+            OrganizationDecisionError,
+            OrganizationMovementError,
+            OrganizationUnavailableError,
+        ) as error:
+            return _movement_error(error.code)
+        except ApplicationStoppingError as error:
+            return _error_response("application_stopping", str(error), 409)
+        except WebSecurityError:
+            return _error_response(
+                "request_authentication_failed",
+                "The movement request could not be authenticated.",
+                403,
+            )
+        except (FormDataError, TypeError, ValueError):
+            return _error_response(
+                "invalid_request", "The movement request is invalid.", 400
+            )
+        return _json_response({"operation": result.to_operation_dict()})
+
+    return router
+
+
+def _validate_common_request(request: Request) -> Response | None:
+    if not is_authenticated(request.session):
+        return _error_response(
+            "authentication_required",
+            "An authenticated bootAI session is required.",
+            403,
+        )
+    if request.query_params:
+        return _error_response(
+            "invalid_query",
+            "This endpoint does not accept query parameters.",
+            400,
+        )
+    return None
+
+
+def _completed_scan(request: Request) -> ScanJobSnapshot | Response:
+    scan = request.app.state.scan_jobs.snapshot()
+    if scan.status == "scanning":
+        return _error_response(
+            "scan_in_progress",
+            "The current scan is still in progress.",
+            409,
+        )
+    if scan.status == "failed":
+        return _error_response(
+            "scan_failed",
+            "The current scan did not complete successfully.",
+            409,
+        )
+    if (
+        scan.status != "completed"
+        or scan.result is None
+        or scan.job_id is None
+        or scan.completed_at is None
+    ):
+        return _error_response(
+            "scan_not_ready",
+            "A completed scan is required.",
+            409,
+        )
+    return scan
+
+
+def _projection(scan: ScanJobSnapshot):
+    assert scan.result is not None
+    assert scan.job_id is not None
+    assert scan.completed_at is not None
+    return build_internal_organization_projection(
+        scan_result=scan.result,
+        scan_generation=scan.job_id,
+        completed_at=scan.completed_at,
+    )
+
+
+async def _validated_mutation_form(
+    request: Request,
+    allowed_fields: set[str],
+) -> dict[str, str]:
+    validate_same_origin(request)
+    form = await read_urlencoded_form(request, allowed_fields=allowed_fields)
+    validate_csrf_token(request.session, form.get("csrf_token"))
+    return form
+
+
+def _require_exact_fields(form: dict[str, str], expected: set[str]) -> None:
+    if set(form) != expected:
+        raise OrganizationDecisionError("invalid_option")
+
+
+def _require_movement_fields(form: dict[str, str], expected: set[str]) -> None:
+    if set(form) != expected:
+        raise FormDataError("movement fields are invalid")
+
+
+def _required(value: str | None) -> str:
+    if not isinstance(value, str) or not value:
+        raise OrganizationDecisionError("invalid_option")
+    return value
+
+
+def _revision(value: str | None) -> int:
+    text = _required(value)
+    if not text.isdigit():
+        raise OrganizationDecisionError("invalid_option")
+    return int(text)
+
+
+def _server_issued_id(value: str | None) -> str:
+    text = _required(value)
+    try:
+        parsed = uuid.UUID(text)
+    except ValueError as error:
+        raise FormDataError("movement authorization ID is invalid") from error
+    if str(parsed) != text:
+        raise FormDataError("movement authorization ID is invalid")
+    return text
+
+
+def _id_array(value: str | None) -> tuple[str, ...]:
+    data = json.loads(_required(value))
+    if (
+        not isinstance(data, list)
+        or len(data) > _MAX_ID_COUNT
+        or not all(
+            isinstance(item, str) and 0 < len(item) <= _MAX_ID_LENGTH for item in data
+        )
+    ):
+        raise OrganizationDecisionError("invalid_option")
+    return tuple(data)
+
+
+def _current_response(request: Request, current) -> JSONResponse:
+    projection = current.projection
+    session = current.session
+    payload = projection.public_slice.to_dict()
+    payload["review"] = organization_review_to_dict(session, projection)
+    payload["execution"] = project_organization_execution(
+        approved_plan=session.approved_plan,
+        operation_repository=request.app.state.organization_operations,
+    ).to_dict()
+    duplicate_batch = current.duplicate_batch
+    payload["duplicate_batch"] = (
+        request.app.state.duplicate_bin_batches.load(duplicate_batch.id)
+        .safe_projection()
+        .to_dict()
+        if duplicate_batch is not None
+        else None
+    )
+    return _json_response(payload)
+
+
+def _decision_error(error: OrganizationDecisionError) -> JSONResponse:
+    status, message = _ERRORS.get(
+        error.code,
+        (400, "The organization request is invalid."),
+    )
+    return _error_response(error.code, message, status)
+
+
+def _movement_error(code: str) -> JSONResponse:
+    status, message = _MOVEMENT_ERRORS.get(
+        code,
+        (400, "The movement request is invalid."),
+    )
+    return _error_response(code, message, status)
+
+
+def _json_response(payload: object, status_code: int = 200) -> JSONResponse:
+    response = JSONResponse(payload, status_code=status_code)
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+def _error_response(code: str, message: str, status_code: int) -> JSONResponse:
+    return _json_response(
+        {"error": {"code": code, "message": message}},
+        status_code=status_code,
+    )

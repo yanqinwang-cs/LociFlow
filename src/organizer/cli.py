@@ -1,6 +1,11 @@
 import argparse
 from pathlib import Path
 
+from organizer.application import (
+    create_review_session,
+    resume_review_session,
+    scan_root,
+)
 from organizer.duplicates import find_exact_duplicates
 from organizer.executor import apply_move_plan, undo_operation_log
 from organizer.grouping import build_organization_suggestions, find_project_groups
@@ -35,22 +40,35 @@ from organizer.rule_review import (
     rule_candidates_from_report,
 )
 from organizer.review_session import (
+    DECISION_APPROVED,
+    DECISION_REJECTED,
+    DECISION_UNDECIDED,
+    PageDecisionPreview,
+    ReviewViewState,
+    apply_page_decision_change,
     approve_items,
     approved_plan_items,
-    build_review_session_items,
+    build_review_view,
+    clamp_review_page,
+    clear_review_filters,
+    clear_review_sort,
     find_approved_move_conflicts,
     get_item,
-    load_reviewed_plan_items,
     load_reviewed_plan_move_items,
+    preview_page_decision_change,
     reject_items,
+    review_decision_snapshot,
     save_reviewed_plan,
     save_resumed_reviewed_plan,
+    set_review_filter,
+    set_review_page,
+    set_review_page_size,
+    set_review_sort,
     summarize_review_items,
     undecide_items,
 )
 from organizer.review_state import (
     ReviewState,
-    apply_review_state_to_items,
     load_review_state,
     save_review_state,
     update_review_state_from_items,
@@ -62,6 +80,7 @@ CONFIRM_APPLY_ORGANIZATION_PLAN = "APPLY_ORGANIZATION_PLAN"
 CONFIRM_APPLY_REFINED_ORGANIZATION_PLAN = "APPLY_REFINED_ORGANIZATION_PLAN"
 CONFIRM_APPLY_REVIEWED_PLAN = "APPLY_REVIEWED_PLAN"
 CONFIRM_APPLY_ORGANIZATION_RULES = "APPLY ORGANIZATION RULES"
+CONFIRM_QUIT_WITHOUT_SAVING = "QUIT WITHOUT SAVING"
 DEFAULT_OLLAMA_HOST = "http://localhost:11434"
 
 
@@ -179,7 +198,8 @@ def main() -> int:
         return 0
 
     metadata_items = scan_directory(args.folder, max_depth=args.max_depth)
-    organization_rules = load_organization_rules(args.folder).rules
+    organization_rules_result = load_organization_rules(args.folder)
+    organization_rules = organization_rules_result.rules
     print(f"Metadata report for {args.folder.resolve()}")
     print(f"Items: {len(metadata_items)}")
 
@@ -249,10 +269,14 @@ def main() -> int:
     project_groups = None
 
     if args.project_groups:
+        if organization_rules is None:
+            parser.error(organization_rules_result.message)
         project_groups = find_project_groups(metadata_items, rules=organization_rules)
         _print_project_groups(project_groups)
 
     if args.plan_organization or args.apply_organization_plan:
+        if organization_rules is None:
+            parser.error(organization_rules_result.message)
         if project_groups is None:
             project_groups = find_project_groups(metadata_items, rules=organization_rules)
         suggestions = build_organization_suggestions(project_groups, args.folder)
@@ -280,6 +304,8 @@ def main() -> int:
         or args.plan_refined_organization
         or args.apply_refined_organization_plan
     ):
+        if organization_rules is None:
+            parser.error(organization_rules_result.message)
         _validate_llm_args(parser, args.llm_provider, args.llm_model)
         if project_groups is None:
             project_groups = find_project_groups(metadata_items, rules=organization_rules)
@@ -364,27 +390,29 @@ def _handle_review_plans(
             "undo, report, LLM, or confirmation flags"
         )
 
-    metadata_items = scan_directory(args.folder, max_depth=args.max_depth)
-    items = build_review_session_items(metadata_items, args.folder)
-    state: ReviewState | None = None
-    if args.ignore_review_state:
+    try:
+        session = create_review_session(
+            args.folder,
+            max_depth=args.max_depth,
+            ignore_review_state=args.ignore_review_state,
+        )
+    except ValueError as error:
+        parser.error(str(error))
+
+    state = session.review_state
+    if session.review_state_ignored:
         print("Review state ignored for this session.")
     else:
-        try:
-            state = load_review_state(args.folder)
-        except ValueError as error:
-            parser.error(str(error))
-        if state.decisions:
-            items = apply_review_state_to_items(items, state, args.folder)
+        if state is not None and state.decisions:
             print(f"Review state loaded: {len(state.decisions)} remembered decision(s).")
         else:
             print("No review state found; starting with new suggestions.")
 
     return _run_review_session(
-        items,
+        list(session.items),
         args.folder,
         state=state,
-        persist_review_state=True,
+        persist_review_state=session.persist_review_state,
         empty_message=(
             "No duplicate, organization, or review-candidate move candidates "
             "found for review."
@@ -435,18 +463,17 @@ def _handle_resume_reviewed_plan(
         )
 
     try:
-        items = load_reviewed_plan_items(args.resume_reviewed_plan, args.folder)
+        session = resume_review_session(args.folder, args.resume_reviewed_plan)
     except ValueError as error:
         parser.error(str(error))
 
-    print(f"Resumed reviewed plan: {args.resume_reviewed_plan}")
     print("Saved decisions are authoritative; review state is not loaded.")
     return _run_review_session(
-        items,
+        list(session.items),
         args.folder,
-        state=None,
-        persist_review_state=False,
-        resumed_source_path=args.resume_reviewed_plan,
+        state=session.review_state,
+        persist_review_state=session.persist_review_state,
+        resumed_source_path=session.source_path,
     )
 
 
@@ -463,22 +490,34 @@ def _run_review_session(
         print(empty_message)
         return 0
 
-    print("Batch review session")
+    _print_review_session_header(items, root, resumed_source_path)
     print(
         "Approve/reject/undecide commands update review decisions only; "
         "they do not move files."
     )
-    _print_review_session_help()
-    _print_review_session_summary(items, root)
+    print("Type 'help' to view available commands.")
+    view_state = ReviewViewState()
+    saved_decision_snapshot = review_decision_snapshot(items)
+    has_unsaved_decision_changes = False
+    _print_review_view_state(items, view_state, root, has_unsaved_decision_changes)
     saved_current_plan_path: Path | None = None
 
     while True:
         try:
             command_line = input("review> ").strip()
-        except EOFError:
+        except (EOFError, StopIteration):
             print("")
+            if has_unsaved_decision_changes:
+                print(
+                    "Input ended with unsaved review-decision changes. "
+                    "No files were moved."
+                )
             print("Exiting review session without applying.")
             return 0
+        except KeyboardInterrupt:
+            print("")
+            print("Input cancelled. The review session remains open.")
+            continue
 
         if not command_line:
             continue
@@ -489,6 +528,8 @@ def _run_review_session(
         try:
             if action == "help" and len(command) == 1:
                 _print_review_session_help()
+            elif action == "show" and len(command) == 1:
+                _print_review_view_rows(items, view_state, root)
             elif action == "show" and len(command) == 2 and command[1].lower() == "duplicates":
                 _print_review_session_rows(items, "duplicate", root)
             elif action == "show" and len(command) == 2 and command[1].lower() == "organization":
@@ -499,33 +540,128 @@ def _run_review_session(
                 _print_review_session_summary(items, root)
             elif action == "conflicts" and len(command) == 1:
                 _print_review_session_conflicts(items, root)
+            elif action == "view" and len(command) == 1:
+                _print_review_view_state(
+                    items, view_state, root, has_unsaved_decision_changes
+                )
+            elif action == "filter" and len(command) == 3:
+                view_state = set_review_filter(
+                    view_state,
+                    command[1],
+                    command[2],
+                )
+                _print_review_view_state(
+                    items, view_state, root, has_unsaved_decision_changes
+                )
+            elif action == "clear-filter" and len(command) == 1:
+                view_state = clear_review_filters(view_state)
+                _print_review_view_state(
+                    items, view_state, root, has_unsaved_decision_changes
+                )
+            elif action == "sort" and len(command) in {2, 3}:
+                view_state = set_review_sort(
+                    view_state,
+                    command[1],
+                    command[2] if len(command) == 3 else "asc",
+                )
+                _print_review_view_state(
+                    items, view_state, root, has_unsaved_decision_changes
+                )
+            elif action == "clear-sort" and len(command) == 1:
+                view_state = clear_review_sort(view_state)
+                _print_review_view_state(
+                    items, view_state, root, has_unsaved_decision_changes
+                )
+            elif action == "page" and len(command) == 2:
+                view_state = set_review_page(
+                    view_state,
+                    command[1],
+                    items,
+                    root,
+                )
+                _print_review_view_state(
+                    items, view_state, root, has_unsaved_decision_changes
+                )
+            elif action == "page-size" and len(command) == 2:
+                view_state = set_review_page_size(view_state, command[1])
+                _print_review_view_state(
+                    items, view_state, root, has_unsaved_decision_changes
+                )
+            elif action in {
+                "approve-page",
+                "reject-page",
+                "undecide-page",
+            } and len(command) == 1:
+                decision = {
+                    "approve-page": DECISION_APPROVED,
+                    "reject-page": DECISION_REJECTED,
+                    "undecide-page": DECISION_UNDECIDED,
+                }[action]
+                items, view_state, changed = _confirm_page_decision_change(
+                    items,
+                    view_state,
+                    root,
+                    decision,
+                )
+                if changed:
+                    saved_current_plan_path = None
+                has_unsaved_decision_changes = (
+                    review_decision_snapshot(items) != saved_decision_snapshot
+                )
+                _print_review_view_state(
+                    items, view_state, root, has_unsaved_decision_changes
+                )
             elif action == "reject" and len(command) > 1:
-                items = reject_items(items, command[1:])
-                saved_current_plan_path = None
-                print(f"Rejected {len(command) - 1} reviewed plan item(s).")
+                items, changed_count, already_count = _change_review_decisions(
+                    items, command[1:], DECISION_REJECTED
+                )
+                view_state = clamp_review_page(view_state, items, root)
+                if changed_count:
+                    saved_current_plan_path = None
+                has_unsaved_decision_changes = (
+                    review_decision_snapshot(items) != saved_decision_snapshot
+                )
+                _print_decision_change_result(
+                    DECISION_REJECTED, changed_count, already_count
+                )
             elif action == "approve" and len(command) > 1:
-                items = approve_items(items, command[1:])
-                saved_current_plan_path = None
-                print(f"Approved {len(command) - 1} reviewed plan item(s).")
+                items, changed_count, already_count = _change_review_decisions(
+                    items, command[1:], DECISION_APPROVED
+                )
+                view_state = clamp_review_page(view_state, items, root)
+                if changed_count:
+                    saved_current_plan_path = None
+                has_unsaved_decision_changes = (
+                    review_decision_snapshot(items) != saved_decision_snapshot
+                )
+                _print_decision_change_result(
+                    DECISION_APPROVED, changed_count, already_count
+                )
             elif action == "undecide" and len(command) > 1:
-                items = undecide_items(items, command[1:])
-                saved_current_plan_path = None
-                print(f"Set {len(command) - 1} reviewed plan item(s) to undecided.")
+                items, changed_count, already_count = _change_review_decisions(
+                    items, command[1:], DECISION_UNDECIDED
+                )
+                view_state = clamp_review_page(view_state, items, root)
+                if changed_count:
+                    saved_current_plan_path = None
+                has_unsaved_decision_changes = (
+                    review_decision_snapshot(items) != saved_decision_snapshot
+                )
+                _print_decision_change_result(
+                    DECISION_UNDECIDED, changed_count, already_count
+                )
             elif action == "details" and len(command) == 2:
                 _print_review_session_item(get_item(items, command[1]), root)
             elif action == "save" and len(command) == 1:
-                saved_current_plan_path = (
-                    save_resumed_reviewed_plan(
-                        items,
-                        root,
-                        resumed_source_path,
-                    )
-                    if resumed_source_path is not None
-                    else save_reviewed_plan(items, root)
+                saved_current_plan_path, state = _save_review_session(
+                    items,
+                    root,
+                    state,
+                    persist_review_state,
+                    resumed_source_path,
                 )
-                print(f"Reviewed plan saved: {saved_current_plan_path}")
-                if persist_review_state:
-                    state = _save_review_state_for_items(items, root, state)
+                saved_decision_snapshot = review_decision_snapshot(items)
+                has_unsaved_decision_changes = False
             elif action == "apply" and len(command) == 1:
                 _print_review_session_summary(items, root)
                 plan_items = approved_plan_items(items)
@@ -541,16 +677,15 @@ def _run_review_session(
                     _print_review_session_conflicts(items, root)
                     continue
                 if saved_current_plan_path is None:
-                    saved_current_plan_path = (
-                        save_resumed_reviewed_plan(
-                            items,
-                            root,
-                            resumed_source_path,
-                        )
-                        if resumed_source_path is not None
-                        else save_reviewed_plan(items, root)
+                    saved_current_plan_path, state = _save_review_session(
+                        items,
+                        root,
+                        state,
+                        persist_review_state,
+                        resumed_source_path,
                     )
-                    print(f"Reviewed plan saved: {saved_current_plan_path}")
+                    saved_decision_snapshot = review_decision_snapshot(items)
+                    has_unsaved_decision_changes = False
                 confirmation = input("Type APPLY_REVIEWED_PLAN to continue: ")
                 if confirmation != CONFIRM_APPLY_REVIEWED_PLAN:
                     print("Apply refused: exact confirmation was not provided.")
@@ -560,15 +695,53 @@ def _run_review_session(
                         saved_current_plan_path,
                         root,
                     )
-                if persist_review_state:
-                    state = _save_review_state_for_items(items, root, state)
                 print("Applying approved moves from reviewed plan.")
                 return _apply_plan_items(plan_items, root)
             elif action == "quit" and len(command) == 1:
+                if has_unsaved_decision_changes and not _confirm_quit_without_saving():
+                    continue
                 print("Exiting review session without applying.")
                 return 0
+            elif action == "filter":
+                raise ValueError("usage: filter <field> <value>")
+            elif action == "clear-filter":
+                raise ValueError("usage: clear-filter")
+            elif action == "sort":
+                raise ValueError("usage: sort <field> [asc|desc]")
+            elif action == "clear-sort":
+                raise ValueError("usage: clear-sort")
+            elif action == "page":
+                raise ValueError("usage: page <next|prev|number>")
+            elif action == "page-size":
+                raise ValueError("usage: page-size <number>")
+            elif action == "view":
+                raise ValueError("usage: view")
+            elif action in {
+                "approve-page",
+                "reject-page",
+                "undecide-page",
+            }:
+                raise ValueError(f"usage: {action}")
+            elif action in {"approve", "reject", "undecide"}:
+                raise ValueError(f"usage: {action} <IDs...>")
+            elif action == "details":
+                raise ValueError("usage: details <ID>")
+            elif action == "show":
+                raise ValueError(
+                    "usage: show [duplicates|organization|review-candidates]"
+                )
+            elif action in {
+                "help",
+                "summary",
+                "conflicts",
+                "save",
+                "apply",
+                "quit",
+            }:
+                raise ValueError(f"usage: {action}")
             else:
-                print("Unknown command. Type help for available commands.")
+                print(f"Unknown command: {command[0]}")
+                print("Type 'help' to view available commands.")
         except ValueError as error:
             print(f"Error: {error}")
 
@@ -916,16 +1089,266 @@ def _save_review_state_for_items(
         current_state = load_review_state(root)
     updated_state = update_review_state_from_items(current_state, items, root)
     path = save_review_state(updated_state, root)
-    print(f"Review state saved: {path}")
+    print(f"Review state saved: {_relative_to_root(path, root)}")
     return updated_state
 
 
 def _print_review_session_help() -> None:
-    print(
-        "Commands: help, show duplicates, show organization, show review-candidates, "
-        "summary, conflicts, reject <IDs...>, approve <IDs...>, undecide <IDs...>, "
-        "details <ID>, save, apply, quit"
+    print("Review session commands")
+    print("")
+    print("Inspection")
+    print("  show                                  display the current review page")
+    print("  show duplicates")
+    print("  show organization")
+    print("  show review-candidates")
+    print("  view                                  display current view settings")
+    print("  summary                               display all-session decision totals")
+    print("  details <ID>                          display one review row")
+    print("  conflicts                             display approved move conflicts")
+    print("")
+    print("Single-row decisions (review decisions only; no files move)")
+    print("  approve <IDs...>")
+    print("  reject <IDs...>")
+    print("  undecide <IDs...>")
+    print("")
+    print("Current-page decisions (review decisions only; no files move)")
+    print("  approve-page")
+    print("  reject-page")
+    print("  undecide-page")
+    print("")
+    print("View controls")
+    print("  filter <field> <value>")
+    print("  clear-filter")
+    print("  sort <field> [asc|desc]")
+    print("  clear-sort")
+    print("  page next|prev|<number>")
+    print("  page-size <number>")
+    print("")
+    print("Session actions")
+    print("  save                                  write review decisions; no files move")
+    print("  apply                                 exact-confirm approved file moves")
+    print("  quit                                  exit the review session")
+    print("  help                                  display this command list")
+
+
+def _print_review_session_header(
+    items: list[ReviewedPlanItem],
+    root: Path,
+    resumed_source_path: Path | None,
+) -> None:
+    summary = summarize_review_items(items, root)
+    source_path = (
+        resumed_source_path
+        if resumed_source_path is None or resumed_source_path.is_absolute()
+        else root / resumed_source_path
     )
+    source = (
+        _relative_to_root(source_path, root)
+        if source_path is not None
+        else "generated review plans"
+    )
+    print("Review session")
+    print(f"Source: {source}")
+    print(f"Rows: {len(items)}")
+    print(f"Approved: {summary['approved_move_count']}")
+    print(f"Rejected: {summary['rejected_move_count']}")
+    print(f"Undecided: {summary['undecided_move_count']}")
+
+
+def _change_review_decisions(
+    items: list[ReviewedPlanItem],
+    ids: list[str],
+    decision: str,
+) -> tuple[list[ReviewedPlanItem], int, int]:
+    normalized_ids = list(dict.fromkeys(item_id.upper() for item_id in ids))
+    before = {item.id: item.decision for item in items}
+    if decision == DECISION_APPROVED:
+        updated = approve_items(items, normalized_ids)
+    elif decision == DECISION_REJECTED:
+        updated = reject_items(items, normalized_ids)
+    else:
+        updated = undecide_items(items, normalized_ids)
+    changed_count = sum(
+        before[item.id] != item.decision
+        for item in updated
+        if item.id in normalized_ids
+    )
+    return updated, changed_count, len(normalized_ids) - changed_count
+
+
+def _print_decision_change_result(
+    decision: str,
+    changed_count: int,
+    already_count: int,
+) -> None:
+    past_tense = {
+        DECISION_APPROVED: "Approved",
+        DECISION_REJECTED: "Rejected",
+        DECISION_UNDECIDED: "Set",
+    }[decision]
+    print(f"{past_tense} {changed_count} reviewed plan item(s).")
+    print(f"Updated {changed_count} review rows to {decision}.")
+    print(f"{already_count} rows were already {decision}.")
+    print("No files were moved.")
+
+
+def _save_review_session(
+    items: list[ReviewedPlanItem],
+    root: Path,
+    state: ReviewState | None,
+    persist_review_state: bool,
+    resumed_source_path: Path | None,
+) -> tuple[Path, ReviewState | None]:
+    saved_path = (
+        save_resumed_reviewed_plan(items, root, resumed_source_path)
+        if resumed_source_path is not None
+        else save_reviewed_plan(items, root)
+    )
+    updated_state = state
+    if persist_review_state:
+        updated_state = _save_review_state_for_items(items, root, state)
+    _print_review_save_summary(items, root, saved_path)
+    return saved_path, updated_state
+
+
+def _print_review_save_summary(
+    items: list[ReviewedPlanItem],
+    root: Path,
+    saved_path: Path,
+) -> None:
+    summary = summarize_review_items(items, root)
+    print(f"Reviewed plan saved: {_relative_to_root(saved_path, root)}")
+    print("")
+    print(f"Rows saved: {len(items)}")
+    print(f"Approved: {summary['approved_move_count']}")
+    print(f"Rejected: {summary['rejected_move_count']}")
+    print(f"Undecided: {summary['undecided_move_count']}")
+    print(f"Approved conflicts: {summary['approved_move_conflict_count']}")
+
+
+def _confirm_quit_without_saving() -> bool:
+    print("Unsaved review-decision changes will be lost.")
+    print("Use 'save' first, or confirm that you want to quit without saving.")
+    print("This affects review decisions only. No files will be moved.")
+    try:
+        confirmation = input(
+            f"Type {CONFIRM_QUIT_WITHOUT_SAVING} to continue: "
+        )
+    except (EOFError, KeyboardInterrupt, StopIteration):
+        print("")
+        print("Quit cancelled. The review session remains open.")
+        return False
+    if confirmation != CONFIRM_QUIT_WITHOUT_SAVING:
+        print("Quit cancelled. The review session remains open.")
+        return False
+    return True
+
+
+def _confirm_page_decision_change(
+    items: list[ReviewedPlanItem],
+    state: ReviewViewState,
+    root: Path,
+    decision: str,
+) -> tuple[list[ReviewedPlanItem], ReviewViewState, bool]:
+    preview = preview_page_decision_change(items, state, root, decision)
+    _print_page_decision_preview(preview)
+    if not preview.target_ids:
+        print("No rows are displayed on the current page. No decisions changed.")
+        return items, state, False
+    if not preview.change_ids:
+        print(
+            f"All target rows are already {preview.decision}. "
+            "No changes are required."
+        )
+        return items, state, False
+
+    print("This changes review decisions only. It does not move files.")
+    try:
+        confirmation = input(
+            f"Type {preview.confirmation} to continue: "
+        )
+    except (EOFError, KeyboardInterrupt):
+        print("")
+        print("Page decision change cancelled. No decisions changed.")
+        return items, state, False
+    if confirmation != preview.confirmation:
+        print("Page decision change cancelled. No decisions changed.")
+        return items, state, False
+
+    updated_items = apply_page_decision_change(items, preview)
+    updated_state = clamp_review_page(state, updated_items, root)
+    print(
+        f"Updated {len(preview.change_ids)} review rows to {preview.decision}."
+    )
+    print(
+        f"{preview.already_count} rows were already {preview.decision}."
+    )
+    print("No files were moved.")
+    return updated_items, updated_state, True
+
+
+def _print_page_decision_preview(preview: PageDecisionPreview) -> None:
+    decision_counts = ", ".join(
+        f"{decision}={count}"
+        for decision, count in preview.decision_counts
+    ) or "none"
+    category_counts = ", ".join(
+        f"{category}={count}"
+        for category, count in preview.category_counts
+    ) or "none"
+    target_ids = ", ".join(preview.target_ids) or "none"
+    print("")
+    print("Current-page decision preview")
+    print(f"  requested decision: {preview.action}")
+    print(f"  target rows: {len(preview.target_ids)}")
+    print(f"  will change: {len(preview.change_ids)}")
+    print(f"  already {preview.decision}: {preview.already_count}")
+    print(f"  page: {preview.page} of {preview.total_pages}")
+    print(f"  matching rows: {preview.matching_count}")
+    print(f"  total session rows: {preview.total_count}")
+    print(f"  stable IDs: {target_ids}")
+    print(f"  current decisions: {decision_counts}")
+    print(f"  categories: {category_counts}")
+
+
+def _print_review_view_state(
+    items: list[ReviewedPlanItem],
+    state: ReviewViewState,
+    root: Path,
+    has_unsaved_decision_changes: bool,
+) -> None:
+    view = build_review_view(items, state, root)
+    filters = ", ".join(
+        f"{field}={value}" for field, value in state.filters
+    ) or "none"
+    print("")
+    print("View")
+    print(f"  filters: {filters}")
+    print(f"  sort: {state.sort_field} {state.sort_direction}")
+    print(f"  page: {view.page} of {view.total_pages}")
+    print(f"  page size: {view.page_size}")
+    print(f"  matching rows: {view.matching_count}")
+    print(f"  total session rows: {view.total_count}")
+    print(f"  rows shown: {len(view.rows)}")
+    print(
+        "  unsaved decision changes: "
+        f"{'yes' if has_unsaved_decision_changes else 'no'}"
+    )
+
+
+def _print_review_view_rows(
+    items: list[ReviewedPlanItem],
+    state: ReviewViewState,
+    root: Path,
+) -> None:
+    view = build_review_view(items, state, root)
+    print("")
+    print(f"Current review page ({view.page} of {view.total_pages})")
+    if not view.rows:
+        print("No rows match the current view.")
+        return
+    for item in view.rows:
+        _print_review_session_item_summary(item, root)
 
 
 def _print_review_session_rows(
@@ -1033,31 +1456,36 @@ def _print_review_session_conflicts(
     conflicts = find_approved_move_conflicts(items, root)
     print("")
     print("Approved move conflicts")
+    print(f"Approved conflicts: {len(conflicts)}")
     if not conflicts:
-        print("No approved move conflicts found.")
         return
 
     for conflict in conflicts:
         if conflict.conflict_type == "source":
+            print("")
             print(f"Source conflict: {conflict.relative_path}")
+            print(f"Duplicate approved source: {conflict.relative_path}")
             guidance = "Reject all but one approved move for the same source."
         else:
+            print("")
             print(f"Destination conflict: {conflict.relative_path}")
+            print(f"Duplicate approved destination: {conflict.relative_path}")
             guidance = "Reject all but one approved move targeting the same destination."
         for item in conflict.items:
             plan_item = item.plan_item
-            print(
-                f"  {item.id} "
-                f"{_relative_to_root(plan_item.source, root)} -> "
-                f"{_relative_to_root(plan_item.destination, root)}"
+            conflict_path = (
+                plan_item.source
+                if conflict.conflict_type == "source"
+                else plan_item.destination
             )
+            print(f"  {item.id}: {_relative_to_root(conflict_path, root)}")
         print(guidance)
 
 
 def _relative_to_root(path: Path, root: Path) -> str:
     resolved_root = root.resolve()
     try:
-        return path.relative_to(resolved_root).as_posix()
+        return path.resolve(strict=False).relative_to(resolved_root).as_posix()
     except ValueError:
         return path.as_posix()
 
@@ -1097,12 +1525,13 @@ def _handle_report(
         client = None
 
     try:
-        report = build_scan_report(
+        scan_result = scan_root(
             args.folder,
             max_depth=args.max_depth,
             refine_groups=args.refine_groups,
             llm_client=client,
         )
+        report = scan_result.report
         report_path = write_report(report, args.folder, args.report_output)
     except ValueError as error:
         parser.error(str(error))
@@ -1163,12 +1592,13 @@ def _handle_html_report(
         )
         if html_report_path == json_report_path:
             raise ValueError("HTML report output must be different from JSON report output")
-        report = build_scan_report(
+        scan_result = scan_root(
             args.folder,
             max_depth=args.max_depth,
             refine_groups=args.refine_groups,
             llm_client=client,
         )
+        report = scan_result.report
         written_json_path = write_report(report, args.folder, json_report_path)
         written_html_path = write_html_report(
             report,
