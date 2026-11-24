@@ -14,6 +14,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 from organizer.executor import apply_move_plan, undo_operation_log
 from organizer.models import MovePlanItem
@@ -220,43 +221,39 @@ class StartedBatchAlwaysLeavesLogTests(unittest.TestCase):
 
 
 class OperationLogIsNeverPartialTests(unittest.TestCase):
-    def test_log_is_complete_json_whenever_the_next_move_starts(self) -> None:
+    def test_interrupt_inside_a_log_rewrite_keeps_the_previous_log(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             for name in ("one", "two", "three"):
                 (root / f"{name}.txt").write_text(name, encoding="utf-8")
-            seen: list[int] = []
+            real_dump = json.dump
+            writes = 0
 
-            class Inspect:
-                def before_batch(self, plan_items) -> None: ...
+            def interrupted_dump(data, file, **options):
+                nonlocal writes
+                writes += 1
+                if writes == 2:
+                    file.write('{"operations": [')
+                    raise KeyboardInterrupt
+                return real_dump(data, file, **options)
 
-                def before_move(self, index, item) -> None:
-                    if index:
-                        log = next(
-                            (root / "AI_Review" / "operation_logs").glob("operation_log_*.json")
-                        )
-                        seen.append(
-                            len(json.loads(log.read_text(encoding="utf-8"))["operations"])
-                        )
+            with mock.patch("organizer.executor.json.dump", interrupted_dump):
+                with self.assertRaises(KeyboardInterrupt):
+                    apply_move_plan(
+                        [
+                            plan_item(root / f"{name}.txt", root / "a" / f"{name}.txt")
+                            for name in ("one", "two", "three")
+                        ],
+                        root,
+                    )
 
-                def after_success(self, index, item, result) -> None: ...
-
-                def after_failure(self, index, item, result) -> None: ...
-
-                def after_batch(self, operation_log) -> None: ...
-
-            apply_move_plan(
-                [
-                    plan_item(root / f"{name}.txt", root / "a" / f"{name}.txt")
-                    for name in ("one", "two", "three")
-                ],
-                root,
-                recorder=Inspect(),
-            )
-
-            self.assertEqual(seen, [1, 2])
-            leftovers = list((root / "AI_Review" / "operation_logs").iterdir())
-            self.assertEqual(len(leftovers), 1)
+            log_dir = root / "AI_Review" / "operation_logs"
+            self.assertEqual([p.name for p in log_dir.iterdir() if p.suffix == ".tmp"], [])
+            (log,) = log_dir.glob("operation_log_*.json")
+            logged = json.loads(log.read_text(encoding="utf-8"))
+            self.assertEqual(len(logged["operations"]), 1)
+            undo_operation_log(log, root)
+            self.assertTrue((root / "one.txt").exists())
 
 
 class UndoWorksForDotFolderTests(unittest.TestCase):
