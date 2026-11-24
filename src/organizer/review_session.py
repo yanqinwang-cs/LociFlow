@@ -512,7 +512,7 @@ def _report_plan_items(
             ReviewedPlanItem(
                 id=f"{prefix}{offset}",
                 category=category,
-                decision=DECISION_APPROVED,
+                decision=DECISION_UNDECIDED,
                 plan_item=MovePlanItem(
                     source=source_path,
                     destination=destination_path,
@@ -932,7 +932,7 @@ def _items_for_plan(
             id=f"{prefix}{index}",
             category=category,
             plan_item=plan_item,
-            decision=DECISION_APPROVED,
+            decision=DECISION_UNDECIDED,
         )
         for index, plan_item in enumerate(plan_items, start=1)
     ]
@@ -947,7 +947,7 @@ def _items_for_review_candidate_plan(
             id=f"R{index}",
             category=CATEGORY_REVIEW_CANDIDATE,
             plan_item=plan_item,
-            decision=DECISION_APPROVED,
+            decision=DECISION_UNDECIDED,
             review_category=review_category,
         )
         for index, (plan_item, review_category) in enumerate(

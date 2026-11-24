@@ -23,6 +23,7 @@ from organizer.models import MovePlanItem, ReviewedPlanItem
 from organizer.review_session import (
     DECISION_APPROVED,
     DECISION_REJECTED,
+    DECISION_UNDECIDED,
     ReviewViewState,
     load_reviewed_plan_items,
     save_reviewed_plan,
@@ -61,7 +62,7 @@ class ReviewServiceTests(unittest.TestCase):
             change = change_review_decisions(original, ["d1", "D1"], DECISION_REJECTED)
 
             self.assertIsNot(change.session, original)
-            self.assertEqual(get_review_item(original, "D1").decision, DECISION_APPROVED)
+            self.assertEqual(get_review_item(original, "D1").decision, DECISION_UNDECIDED)
             self.assertEqual(get_review_item(change.session, "D1").decision, DECISION_REJECTED)
             self.assertEqual(change.changed_ids, ("D1",))
             self.assertEqual(change.idempotent_ids, ())
@@ -85,7 +86,7 @@ class ReviewServiceTests(unittest.TestCase):
             session = create_review_session(root)
             session = update_review_page_size(session, "1")
             session = update_review_sort(session, "id", "desc")
-            session = update_review_filter(session, "decision", "approved")
+            session = update_review_filter(session, "decision", "undecided")
 
             view = get_review_view(session)
             self.assertEqual(view.page_size, 1)
@@ -95,7 +96,7 @@ class ReviewServiceTests(unittest.TestCase):
             updated = apply_current_page_decision(session, preview)
             self.assertEqual(updated.changed_ids, preview.change_ids)
             self.assertTrue(updated.session.dirty)
-            self.assertEqual(session.items[0].decision, DECISION_APPROVED)
+            self.assertEqual(session.items[0].decision, DECISION_UNDECIDED)
 
     def test_summary_and_conflicts_reuse_existing_review_logic(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

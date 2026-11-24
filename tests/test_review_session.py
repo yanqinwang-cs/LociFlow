@@ -36,6 +36,10 @@ def build_review_session_items(files, root):
     )
 
 
+def approve_all(items):
+    return approve_items(items, [item.id for item in items])
+
+
 class ReviewSessionConstructionTests(unittest.TestCase):
     def test_duplicate_and_organization_rows_are_built_from_existing_plans(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -46,7 +50,7 @@ class ReviewSessionConstructionTests(unittest.TestCase):
 
             self.assertTrue(any(item.id == "D1" for item in items))
             self.assertTrue(any(item.id == "O1" for item in items))
-            self.assertTrue(all(item.decision == "approved" for item in items))
+            self.assertTrue(all(item.decision == "undecided" for item in items))
             self.assertTrue(
                 all(item.plan_item.operation == "dry-run move" for item in items)
             )
@@ -109,7 +113,7 @@ class ReviewSessionConstructionTests(unittest.TestCase):
             ]
 
             self.assertEqual([item.id for item in review_items], ["R1", "R2"])
-            self.assertTrue(all(item.decision == "approved" for item in review_items))
+            self.assertTrue(all(item.decision == "undecided" for item in review_items))
             self.assertEqual(
                 [item.review_category for item in review_items],
                 ["empty", "temporary"],
@@ -231,14 +235,14 @@ class ReviewSessionDecisionTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 reject_items(items, ["D1", "Z9"])
 
-            self.assertEqual(get_item(items, "D1").decision, "approved")
+            self.assertEqual(get_item(items, "D1").decision, "undecided")
 
     def test_details_and_summary_are_useful(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             create_review_session_fixture(root)
             items = reject_items(
-                build_review_session_items(scan_directory(root), root),
+                approve_all(build_review_session_items(scan_directory(root), root)),
                 ["D1"],
             )
 
@@ -279,7 +283,7 @@ class ReviewSessionDecisionTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 reject_items(items, ["R1", "R99"])
 
-            self.assertEqual(get_item(items, "R1").decision, "approved")
+            self.assertEqual(get_item(items, "R1").decision, "undecided")
 
 
 class ReviewSessionConflictTests(unittest.TestCase):
@@ -448,7 +452,7 @@ class ReviewSessionSaveTests(unittest.TestCase):
             root = Path(directory)
             create_review_session_fixture(root)
             items = reject_items(
-                build_review_session_items(scan_directory(root), root),
+                approve_all(build_review_session_items(scan_directory(root), root)),
                 ["D1"],
             )
 
@@ -516,7 +520,9 @@ class ReviewSessionSaveTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             create_review_candidate_fixture(root)
-            items = build_review_session_items(scan_directory(root), root)
+            items = approve_all(
+                build_review_session_items(scan_directory(root), root)
+            )
 
             path = save_reviewed_plan(items, root)
             data = json.loads(path.read_text(encoding="utf-8"))
@@ -597,7 +603,7 @@ class ReviewSessionCliTests(unittest.TestCase):
 
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("Review state ignored for this session.", result.stdout)
-            self.assertIn("D1 [approved]", result.stdout)
+            self.assertIn("D1 [undecided]", result.stdout)
             self.assertIn("remembered rejected decisions: 0", result.stdout)
 
     def test_ignore_review_state_requires_review_plans(self) -> None:
@@ -618,7 +624,7 @@ class ReviewSessionCliTests(unittest.TestCase):
             result = run_cli(
                 root,
                 "--review-plans",
-                input_text="reject D1\nsave\nquit\n",
+                input_text="approve O1 O2\nreject D1\nsave\nquit\n",
             )
 
             self.assertEqual(result.returncode, 0, result.stderr)
@@ -637,7 +643,7 @@ class ReviewSessionCliTests(unittest.TestCase):
             result = run_cli(
                 root,
                 "--review-plans",
-                input_text="help\nshow review-candidates\nsummary\nquit\n",
+                input_text="approve R1 R2\nhelp\nshow review-candidates\nsummary\nquit\n",
             )
 
             self.assertEqual(result.returncode, 0, result.stderr)
@@ -654,7 +660,7 @@ class ReviewSessionCliTests(unittest.TestCase):
             result = run_cli(
                 root,
                 "--review-plans",
-                input_text="conflicts\nquit\n",
+                input_text="approve D1 D2 D3 R1 R2\nconflicts\nquit\n",
             )
 
             self.assertEqual(result.returncode, 0, result.stderr)
@@ -670,7 +676,7 @@ class ReviewSessionCliTests(unittest.TestCase):
             result = run_cli(
                 root,
                 "--review-plans",
-                input_text="summary\nquit\n",
+                input_text="approve D1 D2 D3 R1 R2\nsummary\nquit\n",
             )
 
             self.assertEqual(result.returncode, 0, result.stderr)
@@ -709,7 +715,7 @@ class ReviewSessionCliTests(unittest.TestCase):
             exit_code, output = run_cli_main(
                 root,
                 "--review-plans",
-                input_text="apply\nquit\n",
+                input_text="approve D1 D2 D3 R1 R2\napply\nquit\n",
                 apply_side_effect=AssertionError("executor should not be called"),
             )
 
@@ -727,7 +733,7 @@ class ReviewSessionCliTests(unittest.TestCase):
             result = run_cli(
                 root,
                 "--review-plans",
-                input_text="reject O1\napply\nWRONG\nquit\n",
+                input_text="approve D1 O2\napply\nWRONG\nquit\n",
             )
 
             self.assertEqual(result.returncode, 0, result.stderr)
@@ -758,7 +764,7 @@ class ReviewSessionCliTests(unittest.TestCase):
             exit_code, output = run_cli_main(
                 root,
                 "--review-plans",
-                input_text="reject O1 O2\napply\nAPPLY_REVIEWED_PLAN\n",
+                input_text="approve D1\nreject O1 O2\napply\nAPPLY_REVIEWED_PLAN\n",
                 apply_side_effect=fake_apply,
             )
 
@@ -791,7 +797,7 @@ class ReviewSessionCliTests(unittest.TestCase):
             exit_code, output = run_cli_main(
                 root,
                 "--review-plans",
-                input_text="reject O1 O2\napply\nAPPLY_REVIEWED_PLAN\n",
+                input_text="approve D1\nreject O1 O2\napply\nAPPLY_REVIEWED_PLAN\n",
                 apply_side_effect=fake_apply,
             )
 
@@ -859,7 +865,7 @@ class ReviewSessionCliTests(unittest.TestCase):
             exit_code, output = run_cli_main(
                 root,
                 "--review-plans",
-                input_text="reject D1 D2 D3 R2\napply\nAPPLY_REVIEWED_PLAN\n",
+                input_text="approve R1\nreject D1 D2 D3 R2\napply\nAPPLY_REVIEWED_PLAN\n",
                 apply_side_effect=fake_apply,
             )
 

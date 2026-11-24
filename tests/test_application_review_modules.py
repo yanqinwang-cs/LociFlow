@@ -71,12 +71,12 @@ class ApplicationReviewModuleTests(unittest.TestCase):
         self.assertEqual(tuple(item.memory_status for item in fresh.items), statuses)
         self.assertFalse(fresh.dirty)
 
-    def test_legacy_report_adapter_keeps_cli_compatible_defaults(self) -> None:
+    def test_legacy_report_adapter_starts_every_row_undecided(self) -> None:
         legacy = create_review_session_from_scan_result(self.result)
         self.assertTrue(legacy.items)
-        self.assertTrue(all(item.decision == "approved" for item in legacy.items))
+        self.assertTrue(all(item.decision == "undecided" for item in legacy.items))
         cli_session = create_review_session(self.root)
-        self.assertTrue(all(item.decision == "approved" for item in cli_session.items))
+        self.assertTrue(all(item.decision == "undecided" for item in cli_session.items))
 
     def test_module_mapping_is_strict_and_rows_are_complete(self) -> None:
         session = create_fresh_web_review_session_from_scan_result(self.result)

@@ -164,6 +164,9 @@ later release-hardening stages.
 - Consumer surfaces are strict enums mapped to fixed routes, never browser-provided return URLs or paths.
 - Internal navigation preserves server-held dirty choices and must not show a global leave-site warning. Dirty replacement scans remain blocked by `409`.
 - Fresh scan-generated web rows with new or stale memory state begin `undecided`; untouched findings must never become approved merely by saving a module.
+- CLI batch review (`--review-plans`) starts every new or stale row `undecided` as well; a remembered rejection whose file changed returns to `undecided`, never `approved`, and saving persists only decisions the user made.
+- The executor refuses a batch whose destinations collide, including names differing only in letter case or Unicode form, and creates each destination exclusively so a move never replaces an existing file. The operation log is rewritten after every move so a batch that stops partway still has a log for undo.
+- `--apply-organization-review` refuses approved rows whose source is a protected path such as `.git/` or `AI_Review/`.
 - Module saves include every row in the selected fixed category, advance only that module's saved baseline, and pass rows through existing review-state eligibility rules.
 - Guided handled/skipped state is generation-bound memory only. Skipped rows retain the existing `undecided` serialized value.
 - A replacement scan remains blocked while any module is dirty and must identify each affected module.
