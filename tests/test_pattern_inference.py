@@ -166,7 +166,7 @@ class PatternInferenceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             for name in ["Wang", "Tan", "Aisha"]:
-                folder = root / "Submissions" / name
+                folder = root / "Students" / name
                 folder.mkdir(parents=True)
                 (folder / "assignment 1.pdf").write_text("x", encoding="utf-8")
                 (folder / "assignment 2.pdf").write_text("x", encoding="utf-8")
@@ -222,7 +222,7 @@ class PatternInferenceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             for name in ["Wang", "Tan", "Aisha"]:
-                folder = root / "Submissions" / name
+                folder = root / "Students" / name
                 folder.mkdir(parents=True)
                 (folder / "assignment 1.pdf").write_text("x", encoding="utf-8")
                 (folder / "assignment 2.pdf").write_text("x", encoding="utf-8")

@@ -173,7 +173,7 @@ class LociFlowPostEWorkflowCycleTests(unittest.TestCase):
               movement:{{execution:{{status:"verified"}},errorCode:"old",errorMessage:"old"}},
               duplicateMovement:{{execution:{{status:"moved"}},errorCode:"old",errorMessage:"old"}},
               duplicateBin:{{items:[{{id:"item"}}],selectedIds:new Set(["item"]),preview:{{token:"old"}}}},
-              destinationDrafts:{{old:"choice"}},duplicateDrafts:{{old:"choice"}},
+              destinationDrafts:{{old:"choice"}},duplicateDrafts:{{old:"choice"}},standards:{{freshScanRequired:true}},
             }};
             const discarded={{movement:0,duplicateMovement:0,restore:0}};
             const discardMovementConfirmation=()=>{{discarded.movement+=1;}};
@@ -192,12 +192,12 @@ class LociFlowPostEWorkflowCycleTests(unittest.TestCase):
             }}}};
             const make=new Function(
               "state","discardMovementConfirmation","discardDuplicateMovementConfirmation",
-              "discardDuplicateRestoreConfirmation","applySnapshot","render","announce","dataSource",
+              "discardDuplicateRestoreConfirmation","discardStandardBuilder","loadStandards","applySnapshot","render","announce","dataSource",
               `${{source.slice(start,end)}};return checkFiles;`,
             );
             const checkFiles=make(
               state,discardMovementConfirmation,discardDuplicateMovementConfirmation,
-              discardDuplicateRestoreConfirmation,applySnapshot,render,announce,dataSource,
+              discardDuplicateRestoreConfirmation,()=>{{}},async()=>{{}},applySnapshot,render,announce,dataSource,
             );
             const first=checkFiles();const second=checkFiles();
             const during={{

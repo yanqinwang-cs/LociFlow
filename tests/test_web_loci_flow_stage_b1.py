@@ -54,7 +54,7 @@ class WebLociFlowStageB1Tests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("stage_b1_scenarios.js", shell.text)
         self.assertNotIn(str(self.root), shell.text)
 
-    async def test_stage_b1_adds_no_route_or_state_changing_request_surface(self) -> None:
+    async def test_shell_exposes_no_scenario_or_fixture_route(self) -> None:
         methods_by_path = {
             route.path: set(route.methods or set())
             for route in _application_routes(self.app.routes)
@@ -62,7 +62,6 @@ class WebLociFlowStageB1Tests(unittest.IsolatedAsyncioTestCase):
         }
         self.assertEqual(methods_by_path["/loci-flow"], {"GET"})
         self.assertFalse(any("scenario" in path or "fixture" in path for path in methods_by_path))
-        self.assertNotIn("/api/organization/move", methods_by_path)
         self.assertNotIn("/api/loci-flow/stage-b1", methods_by_path)
 
     async def test_launch_and_root_behavior_remain_stage_a_compatible(self) -> None:

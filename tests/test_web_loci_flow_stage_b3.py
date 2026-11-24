@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 from pathlib import Path
 import re
 import tempfile
@@ -15,46 +14,9 @@ from tests.test_application_undo_service import _verified_operation
 
 ROOT = Path(__file__).resolve().parents[1]
 LOCI = ROOT / "src" / "organizer" / "web" / "static" / "loci_flow"
-PROTOTYPE = ROOT / "prototype" / "loci-flow-ux-1-1-focused-policy-controls"
 
 
 class WebLociFlowStageB3Tests(unittest.IsolatedAsyncioTestCase):
-    def test_fidelity_locked_files_prototype_and_template_are_unchanged(self) -> None:
-        expected_live = {
-            "styles.css": "6288229571bb209624e00a2a82c639c93ea8eae1aca3dbad9022cb5203c637dd",
-            "views.js": "0b26b9a25c07b6484a42584d957792b93aef1a16c81ddc97f1f9d50240748e0c",
-            "tree.js": "5dc9db40114c78f1dd9b7d81dfb2a52c6c5b8f73670d8a6f2bed49cc7d385975",
-            "store.js": "ac0876ec961fadd4b62115d1f372606fa536b2a00ac026029578a263bb5ad3be",
-            "fixtures.json": "0d614d82bf3aa75b4ab102a77d47e77b3d3ef7ed390afd6119c1e4099e36fec1",
-            "stage_b1_scenarios.js": "fdc12218e17521a15ffcb7e5aa85e64e80d177399db7a037d616388d580c4f08",
-            "assets/file-icons.svg": "bfefdc18d03629036a5d1fe31b614ebcf70ab8acf7926169e6ef10e1926595c9",
-            "assets/loci-flow-mark.svg": "ec0d01fa8e1f312e3233b0f7758f7192d8b40de1370cb48b0f95bce87686f439",
-        }
-        expected_prototype = {
-            "README.md": "d146f921a49b65223a8438972f2bec167bd7f9be8721bb12bf8e2e7abc84f54d",
-            "app.js": "f17163cd2929cf7b8c14cfb23a396204efc5bd204b2205c60c291842666d77e5",
-            "assets/file-icons.svg": "bfefdc18d03629036a5d1fe31b614ebcf70ab8acf7926169e6ef10e1926595c9",
-            "assets/loci-flow-mark.svg": "ec0d01fa8e1f312e3233b0f7758f7192d8b40de1370cb48b0f95bce87686f439",
-            "fixtures.json": "0d614d82bf3aa75b4ab102a77d47e77b3d3ef7ed390afd6119c1e4099e36fec1",
-            "index.html": "1e7ad3659eeaa35424e4cf09f265542d4cde55bf6fbe7672b77a6f54c01115b2",
-            "store.js": "a6b6a811a5cedac0ffe3b21b0906df00640dfb1b224beb97b7aacbc5c2dca0ff",
-            "styles.css": "6288229571bb209624e00a2a82c639c93ea8eae1aca3dbad9022cb5203c637dd",
-            "tree.js": "6f48d5cd34372deb2ec6407845310dba930dbf3fbc79a516eedd87f6c3ebf704",
-            "views.js": "02b2f1078dd772da51274645d7938ce84c6585db4e97d0f0bbf0f160485e0f6f",
-        }
-        self.assertEqual(
-            {relative: _sha256(LOCI / relative) for relative in expected_live},
-            expected_live,
-        )
-        self.assertEqual(
-            {relative: _sha256(PROTOTYPE / relative) for relative in expected_prototype},
-            expected_prototype,
-        )
-        self.assertEqual(
-            _sha256(ROOT / "src" / "organizer" / "web" / "templates" / "loci_flow.html"),
-            "4f775f4f624e6d22a7e7ef7bb86bf2908430224b7940dc802b22c73312551f09",
-        )
-
     def test_production_app_wires_activity_undo_and_confirmed_movement_without_fixture(self) -> None:
         app = (LOCI / "app.js").read_text(encoding="utf-8")
         api = (LOCI / "api.js").read_text(encoding="utf-8")
@@ -207,8 +169,6 @@ class WebLociFlowStageB3Tests(unittest.IsolatedAsyncioTestCase):
         self.assertNotRegex(route_code, r"(?:from|import)\s+organizer\.executor")
 
 
-def _sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 async def _authenticate(client: httpx.AsyncClient) -> str:

@@ -18,7 +18,7 @@ class LeaveWarningTests(ConsumerWebFixture, unittest.IsolatedAsyncioTestCase):
             pages = [
                 await client.get(path)
                 for path in (
-                    "/",
+                    "/loci-flow",
                     "/duplicates",
                     "/organize",
                     "/attention",

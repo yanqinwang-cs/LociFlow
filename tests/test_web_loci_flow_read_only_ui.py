@@ -37,8 +37,8 @@ class WebLociFlowReadOnlyUiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.headers["cache-control"], "no-store")
         self.assertNotIn(str(self.root), response.text)
         self.assertNotIn(self.token, response.text)
-        self.assertIn("Prototype", response.text)
-        self.assertIn("Sample files only. Your files are not changed.", response.text)
+        self.assertIn('class="prototype-notice"', response.text)
+        self.assertNotIn("Sample files only", response.text)
         self.assertNotIn("Backend", response.text)
 
     async def test_shell_rejects_all_query_parameters_and_non_get(self) -> None:

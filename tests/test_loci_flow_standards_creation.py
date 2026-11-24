@@ -465,8 +465,8 @@ class LociFlowStandardsCreationTests(unittest.TestCase):
             builder.open=true;builder.preview=clone(previewPayload.preview);builder.previewToken="route-token";state.activeDialog="standard-builder";state.route="standards";
             const discard=({close})=>{routeResets+=1;builder.open=false;builder.preview=null;builder.previewToken=null;if(close)state.activeDialog=null;};
             const windowObject={location:{hash:"#/standards"}};
-            const navigateMake=new Function("state","routes","window","discardActivityPreview","discardMovementConfirmation","discardDuplicateMovementConfirmation","discardDuplicateRestoreConfirmation","discardStandardBuilder","render","loadActivity","loadDuplicateBin","loadStandards",`${appSource.slice(navigateStart,navigateEnd)};return navigate;`);
-            navigateMake(state,new Set(["home","standards"]),windowObject,()=>{},()=>{},()=>{},()=>{},discard,()=>{},()=>{},()=>{},()=>{})("home");
+            const navigateMake=new Function("state","routes","window","discardActivityPreview","discardMovementConfirmation","discardDuplicateMovementConfirmation","discardDuplicateRestoreConfirmation","discardStandardBuilder","render","loadActivity","loadDuplicateBin","loadStandards","closeDialog",`let recoveryLoadPending=false;let recoveryDialogGeneration=0;let recoveryCheckContext=null;${appSource.slice(navigateStart,navigateEnd)};return navigate;`);
+            navigateMake(state,new Set(["home","standards"]),windowObject,()=>{},()=>{},()=>{},()=>{},discard,()=>{},()=>{},()=>{},()=>{},()=>{})("home");
             console.log(JSON.stringify({afterClose,afterRoute:{token:builder.previewToken,open:builder.open,resets:routeResets,route:state.route,dialog:state.activeDialog}}));
             """,
             f"const appSource={json.dumps(app_source)};",
