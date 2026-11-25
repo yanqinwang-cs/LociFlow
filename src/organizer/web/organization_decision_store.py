@@ -18,8 +18,8 @@ from organizer.application.filesystem_operation_admission import (
     RecoveryAdmissionState,
 )
 from organizer.application.organization_decision_models import (
-    OrganizationDecisionSession,
     STATUS_READY_TO_MOVE,
+    OrganizationDecisionSession,
 )
 from organizer.application.organization_decision_service import (
     OrganizationDecisionError,

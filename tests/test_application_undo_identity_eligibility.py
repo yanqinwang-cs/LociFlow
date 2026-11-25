@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-from dataclasses import replace
 import hashlib
 import os
-from pathlib import Path
-from types import SimpleNamespace
 import tempfile
 import unittest
-from unittest import mock
 import uuid
+from dataclasses import replace
+from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
 
 from organizer.application.content_identity import RegularFileContentIdentity
 from organizer.application.file_identity_capture import FileIdentityCaptureError

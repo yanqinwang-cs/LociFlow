@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
-from enum import StrEnum
 import hashlib
 import json
+from dataclasses import asdict, dataclass
+from enum import StrEnum
 
 from organizer.application.current_recovery_admission_status import (
     CurrentRecoveryAdmissionStatus,

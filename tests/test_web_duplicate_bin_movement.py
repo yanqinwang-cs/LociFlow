@@ -1,15 +1,15 @@
-from pathlib import Path
 import re
 import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
 import httpx
 
 from organizer.application.filesystem_operation_admission import (
+    SAFE_RECOVERY_MESSAGE,
     FilesystemOperationBlockedError,
     RecoveryAdmissionState,
-    SAFE_RECOVERY_MESSAGE,
 )
 from organizer.web.app import create_app
 from organizer.web.config import WebAppConfig

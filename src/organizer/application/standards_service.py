@@ -1,12 +1,18 @@
 from __future__ import annotations
 
-from dataclasses import replace
-from datetime import datetime, timedelta, timezone
-from pathlib import Path
 import re
-from typing import Callable
 import uuid
+from collections.abc import Callable
+from dataclasses import replace
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
+from organizer.application.duplicate_bin_movement_models import OP_TERMINAL_STATUSES
+from organizer.application.duplicate_bin_restore_models import RESTORE_TERMINAL
+from organizer.application.runtime_lifecycle import (
+    RuntimeLifecycle,
+    RuntimeOperationKind,
+)
 from organizer.application.standards_models import (
     PREVIEW_LIFETIME_SECONDS,
     ResolvedStandardScope,
@@ -16,18 +22,12 @@ from organizer.application.standards_models import (
 )
 from organizer.application.standards_read_models import StandardsReadProjection
 from organizer.application.standards_read_service import build_standards_read_projection
-from organizer.application.runtime_lifecycle import (
-    RuntimeLifecycle,
-    RuntimeOperationKind,
-)
 from organizer.application.standards_repository import (
     StandardsRepository,
     StandardsRepositoryError,
     StandardsStorageSnapshot,
 )
 from organizer.application.view_models import ScanApplicationResult
-from organizer.application.duplicate_bin_movement_models import OP_TERMINAL_STATUSES
-from organizer.application.duplicate_bin_restore_models import RESTORE_TERMINAL
 from organizer.models import FileMetadata
 from organizer.organization_rules import (
     DEFAULT_IGNORED_TERMS,
@@ -38,8 +38,8 @@ from organizer.organization_rules import (
     STANDARD_MATCHER_KINDS,
     WRITABLE_STANDARD_TYPES,
     StandardRecord,
-    StandardScope,
     StandardsCatalog,
+    StandardScope,
     conflicting_standard_records,
     equivalent_standard_record,
     normalize_anchor,
@@ -47,7 +47,6 @@ from organizer.organization_rules import (
     normalize_standard_relative_path,
 )
 from organizer.scope import is_protected_context_path
-
 
 _MIGRATION_ID_NAMESPACE = uuid.UUID("66378439-bc92-4ea5-a710-dbb8b7ad3103")
 _COURSE_CODE = re.compile(r"^[A-Za-z]{2,4}\d{3,4}[A-Za-z]?$")
@@ -79,7 +78,7 @@ class StandardsService:
         self._duplicate_bin_operation_repository = duplicate_bin_operation_repository
         self._duplicate_bin_restore_repository = duplicate_bin_restore_repository
         self._additional_plan_blocker = additional_plan_blocker
-        self._now = now or (lambda: datetime.now(timezone.utc))
+        self._now = now or (lambda: datetime.now(UTC))
         self._runtime_lifecycle = runtime_lifecycle or RuntimeLifecycle()
         self._previews: dict[str, StandardPreview] = {}
         self._preview_owners: dict[str, str] = {}
@@ -536,36 +535,22 @@ class StandardsService:
 
     def _ensure_mutation_allowed(self) -> None:
         root = self.repository.root
-        if self._decision_store is not None and getattr(
-            self._decision_store, "has_approved_plan"
-        )(root):
+        if self._decision_store is not None and self._decision_store.has_approved_plan(root):
             raise StandardsApplicationError("active_plan_conflict")
-        if self._execution_coordinator is not None and getattr(
-            self._execution_coordinator, "has_available_movement_authorization"
-        )(self.repository.configured_root_identity):
+        if self._execution_coordinator is not None and self._execution_coordinator.has_available_movement_authorization(self.repository.configured_root_identity):
             raise StandardsApplicationError("active_plan_conflict")
-        if self._operation_repository is not None and getattr(
-            self._operation_repository, "blocking_record"
-        )() is not None:
+        if self._operation_repository is not None and self._operation_repository.blocking_record() is not None:
             raise StandardsApplicationError("active_plan_conflict")
-        if self._duplicate_bin_repository is not None and getattr(
-            self._duplicate_bin_repository, "list_active_approved_batches"
-        )():
+        if self._duplicate_bin_repository is not None and self._duplicate_bin_repository.list_active_approved_batches():
             raise StandardsApplicationError("active_plan_conflict")
         if self._duplicate_bin_operation_repository is not None and any(
             record.status not in OP_TERMINAL_STATUSES
-            for record in getattr(
-                self._duplicate_bin_operation_repository,
-                "list_records",
-            )()
+            for record in self._duplicate_bin_operation_repository.list_records()
         ):
             raise StandardsApplicationError("active_plan_conflict")
         if self._duplicate_bin_restore_repository is not None and any(
             record.status not in RESTORE_TERMINAL
-            for record in getattr(
-                self._duplicate_bin_restore_repository,
-                "list_operations",
-            )()
+            for record in self._duplicate_bin_restore_repository.list_operations()
         ):
             raise StandardsApplicationError("active_plan_conflict")
         if self._additional_plan_blocker is not None and self._additional_plan_blocker():
@@ -573,7 +558,7 @@ class StandardsService:
 
     def _invalidate_planning_state(self) -> None:
         if self._decision_store is not None:
-            getattr(self._decision_store, "invalidate_for_root")(self.repository.root)
+            self._decision_store.invalidate_for_root(self.repository.root)
 
     def _load(self) -> StandardsStorageSnapshot:
         try:

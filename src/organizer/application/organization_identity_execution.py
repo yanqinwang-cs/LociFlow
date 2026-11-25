@@ -1,11 +1,11 @@
 from __future__ import annotations
 
+import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, replace
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
-from typing import Callable
-import uuid
 
 from organizer.application.execution_coordinator import approved_plan_identity
 from organizer.application.file_identity_capture import (
@@ -65,7 +65,6 @@ from organizer.executor_identity import (
     validate_same_volume_identity_move_plan,
 )
 from organizer.models import MovePlanItem, OperationLog
-
 
 _SAFE_MESSAGE = (
     "The approved files could not be moved safely. Check the folder and try again."
@@ -166,7 +165,7 @@ class OrganizationIdentityExecutionService:
         self._operation_id_factory = operation_id_factory or (
             lambda: str(uuid.uuid4())
         )
-        self._clock = clock or (lambda: datetime.now(timezone.utc))
+        self._clock = clock or (lambda: datetime.now(UTC))
         self._publish_verification = publish_verification or (
             OrganizationIdentityVerificationPublicationService(
                 operation_repository,
@@ -460,7 +459,7 @@ class OrganizationIdentityExecutionService:
             raise ValueError("identity movement clock is invalid")
         if value.tzinfo is None:
             raise ValueError("identity movement clock is invalid")
-        return value.astimezone(timezone.utc).isoformat()
+        return value.astimezone(UTC).isoformat()
 
 
 def _result(

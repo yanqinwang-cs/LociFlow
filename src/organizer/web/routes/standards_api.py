@@ -16,6 +16,7 @@ from organizer.organization_rules import (
     STANDARD_KEEP_MATCHING_FILES_TOGETHER,
 )
 from organizer.web.forms import FormDataError, read_urlencoded_form
+from organizer.web.scan_jobs import ScanJobSnapshot
 from organizer.web.security import (
     WebSecurityError,
     is_authenticated,
@@ -23,8 +24,6 @@ from organizer.web.security import (
     validate_csrf_token,
     validate_same_origin,
 )
-from organizer.web.scan_jobs import ScanJobSnapshot
-
 
 _ERRORS = {
     "standard_revision_mismatch": (409, "Standards changed. Reload the latest list."),

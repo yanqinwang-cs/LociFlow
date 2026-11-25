@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-from copy import deepcopy
-from dataclasses import FrozenInstanceError, replace
-from datetime import datetime, timezone
 import json
 import os
-from pathlib import Path
 import tempfile
-from types import MappingProxyType
 import unittest
+from copy import deepcopy
+from dataclasses import FrozenInstanceError, replace
+from datetime import UTC, datetime
+from pathlib import Path
+from types import MappingProxyType
 
 from organizer.application.organization_decision_service import (
     OrganizationDecisionError,
@@ -27,8 +27,7 @@ from organizer.models import ReviewedPlanItem
 from organizer.web.organization_decision_store import OrganizationDecisionStore
 from organizer.web.scan_jobs import ScanJobSnapshot
 
-
-COMPLETED_AT = datetime(2026, 7, 15, 12, tzinfo=timezone.utc)
+COMPLETED_AT = datetime(2026, 7, 15, 12, tzinfo=UTC)
 
 
 class OrganizationDecisionServiceTests(unittest.TestCase):

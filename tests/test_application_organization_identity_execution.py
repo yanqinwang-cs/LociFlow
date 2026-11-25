@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import hashlib
 import os
-from pathlib import Path
 import tempfile
 import unittest
+from datetime import UTC, datetime
+from pathlib import Path
 from unittest import mock
 
 from organizer.application.execution_coordinator import approved_plan_identity
@@ -63,8 +63,7 @@ from organizer.executor_identity import (
 )
 from organizer.models import MovePlanItem, MoveResult, OperationLog, ReviewedPlanItem
 
-
-_NOW = datetime(2026, 7, 27, 3, 4, 5, tzinfo=timezone.utc)
+_NOW = datetime(2026, 7, 27, 3, 4, 5, tzinfo=UTC)
 _OPERATION_ID = "11111111-1111-4111-8111-111111111111"
 _AUTHORIZATION_ID = "22222222-2222-4222-8222-222222222222"
 
@@ -625,7 +624,7 @@ def _inputs(
     for index, name in enumerate(names, start=1):
         source = root / "Inbox" / name
         source.parent.mkdir(parents=True, exist_ok=True)
-        source.write_bytes(f"{name}-content".encode("utf-8"))
+        source.write_bytes(f"{name}-content".encode())
         stat = source.stat()
         reviewed.append(
             ReviewedPlanItem(

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-
 RESTORE_SCHEMA_VERSION = 1
 AUTH_RECORD_TYPE = "loci_duplicate_bin_restore_authorization"
 OP_RECORD_TYPE = "loci_duplicate_bin_restore_operation"

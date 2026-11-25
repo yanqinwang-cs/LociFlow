@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
-from pathlib import Path
 import tempfile
 import unittest
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from unittest.mock import patch
 
 from organizer.application.runtime_lifecycle import (
@@ -241,7 +241,7 @@ class StandardsCreationApplicationServiceTests(unittest.TestCase):
         self.assertEqual(self.lifecycle.snapshot().active_count, 0)
 
     def test_context_is_session_root_scan_revision_generation_and_expiry_bound(self) -> None:
-        now = [datetime(2026, 7, 19, 10, 0, tzinfo=timezone.utc)]
+        now = [datetime(2026, 7, 19, 10, 0, tzinfo=UTC)]
         store = StandardsCreationStore(self.root, now=lambda: now[0])
         first = store.issue_creation_context(
             session_id="session-one",

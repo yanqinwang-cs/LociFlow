@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import replace
-from pathlib import Path
 import tempfile
-from threading import Event, Thread
 import unittest
 import uuid
+from dataclasses import replace
+from pathlib import Path
+from threading import Event, Thread
 from unittest import mock
 
 import organizer.application.organization_movement_service as movement_service
@@ -19,16 +19,15 @@ from organizer.application.filesystem_operation_admission import (
     FilesystemOperationBlockedError,
     RecoveryAdmissionState,
 )
+from organizer.application.organization_identity_execution import (
+    OrganizationIdentityExecutionService,
+)
 from organizer.application.organization_movement_service import (
     OrganizationMovementError,
     execute_organization_movement,
     preview_organization_movement,
     project_organization_execution,
 )
-from organizer.application.organization_identity_execution import (
-    OrganizationIdentityExecutionService,
-)
-from organizer.executor_identity import StrictExecutorError
 from organizer.application.organization_operation_repository import (
     OrganizationOperationRepository,
 )
@@ -36,6 +35,7 @@ from organizer.application.organization_undo_repository import (
     OrganizationUndoRepository,
 )
 from organizer.application.runtime_lifecycle import ApplicationStoppingError
+from organizer.executor_identity import StrictExecutorError
 from tests.test_application_execution_service import _approved_plan
 
 

@@ -5,14 +5,14 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
 from organizer.application.activity_service import list_activity_entries
-from organizer.application.filesystem_operation_admission import (
-    FilesystemOperationBlockedError,
-)
 from organizer.application.duplicate_bin_restore_service import (
     DuplicateBinRestoreError,
     authorization_matches_movement,
     execute_duplicate_bin_restore,
     preview_duplicate_bin_activity_undo,
+)
+from organizer.application.filesystem_operation_admission import (
+    FilesystemOperationBlockedError,
 )
 from organizer.application.runtime_lifecycle import (
     ApplicationStoppingError,
@@ -31,7 +31,6 @@ from organizer.web.security import (
     validate_csrf_token,
     validate_same_origin,
 )
-
 
 _ERRORS = {
     "operation_not_found": (404, "That organization move is unavailable."),

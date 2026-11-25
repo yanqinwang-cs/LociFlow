@@ -15,10 +15,10 @@ from organizer.grouping import (
 from organizer.models import FileMetadata, ProjectGroup, RuleAudit, RuleEffect
 from organizer.organization_rules import (
     ORGANIZATION_RULES_RELATIVE_PATH,
-    OrganizationRulesLoadResult,
     STANDARD_KEEP_MATCHING_FILES_TOGETHER,
     STANDARD_LEGACY_ALIAS,
     STANDARD_LEGACY_IGNORED_TERM,
+    OrganizationRulesLoadResult,
     default_organization_rules,
     normalize_anchor,
 )

@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from dataclasses import replace
 import json
-from pathlib import Path
 import re
 import tempfile
 import unittest
+from dataclasses import replace
+from datetime import UTC, datetime
+from pathlib import Path
 from unittest.mock import patch
 from urllib.parse import urlencode
 
@@ -15,17 +15,16 @@ import httpx
 from organizer.application.organization_slice_service import (
     build_read_only_organization_slice,
 )
+from organizer.application.scan_service import scan_root
 from organizer.application.standards_models import StandardsApplicationError
 from organizer.application.standards_repository import StandardsRepository
 from organizer.application.standards_service import StandardsService
-from organizer.application.scan_service import scan_root
 from organizer.models import FileMetadata
 from organizer.organization_rules import ORGANIZATION_RULES_RELATIVE_PATH
 from organizer.web.app import create_app
 from organizer.web.config import WebAppConfig
 from organizer.web.scan_jobs import ScanJobSnapshot
 from organizer.web.standards_creation_store import StandardsCreationStore
-
 
 ORIGIN = {"Origin": "http://127.0.0.1"}
 
@@ -51,7 +50,7 @@ class WebStandardsCreationTests(unittest.IsolatedAsyncioTestCase):
         self.app.state.scan_jobs._snapshot = ScanJobSnapshot(
             status="completed",
             job_id=generation,
-            completed_at=datetime.now(timezone.utc),
+            completed_at=datetime.now(UTC),
             result=scan_root(self.root),
         )
 
@@ -272,7 +271,7 @@ class WebStandardsCreationTests(unittest.IsolatedAsyncioTestCase):
         projection = build_read_only_organization_slice(
             scan_result=fresh,
             scan_generation="scan-after",
-            completed_at=datetime.now(timezone.utc),
+            completed_at=datetime.now(UTC),
         )
         self.assertFalse(projection.recommended_changes)
         self.assertEqual(

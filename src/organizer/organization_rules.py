@@ -1,17 +1,16 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime
 import hashlib
 import json
 import os
-from pathlib import Path, PurePosixPath
-from typing import Any
 import unicodedata
 import uuid
+from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path, PurePosixPath
+from typing import Any
 
 from organizer.json_values import is_json_version
-
 
 ORGANIZATION_RULES_VERSION = 1
 STANDARDS_CATALOG_VERSION = 2

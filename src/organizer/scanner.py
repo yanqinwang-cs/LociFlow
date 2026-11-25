@@ -1,7 +1,7 @@
-from collections.abc import Callable
 import os
-from pathlib import Path
 import stat
+from collections.abc import Callable
+from pathlib import Path
 
 from organizer.models import FileMetadata
 from organizer.safety import validate_under_root

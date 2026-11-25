@@ -1,18 +1,24 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
-from enum import Enum
 import hashlib
 import os
-from pathlib import Path, PurePosixPath
 import stat
+from dataclasses import asdict, dataclass
+from enum import Enum
+from pathlib import Path, PurePosixPath
 
 from organizer.application.content_identity import OrdinaryFileIdentityCompatibility
 from organizer.application.duplicate_bin_models import canonical_json_bytes
 from organizer.application.duplicate_bin_movement_models import (
     MOVE_ATTEMPTING as DUPLICATE_MOVE_ATTEMPTING,
+)
+from organizer.application.duplicate_bin_movement_models import (
     MOVE_MOVED as DUPLICATE_MOVE_MOVED,
+)
+from organizer.application.duplicate_bin_movement_models import (
     MOVE_PENDING as DUPLICATE_MOVE_PENDING,
+)
+from organizer.application.duplicate_bin_movement_models import (
     OP_INTERRUPTED,
     OP_MOVED_UNVERIFIED,
     OP_MOVING,
@@ -20,8 +26,14 @@ from organizer.application.duplicate_bin_movement_models import (
 )
 from organizer.application.duplicate_bin_restore_models import (
     ITEM_ATTEMPTING as DUPLICATE_RESTORE_ATTEMPTING,
+)
+from organizer.application.duplicate_bin_restore_models import (
     ITEM_PENDING as DUPLICATE_RESTORE_PENDING,
+)
+from organizer.application.duplicate_bin_restore_models import (
     ITEM_RESTORED as DUPLICATE_RESTORE_RESTORED,
+)
+from organizer.application.duplicate_bin_restore_models import (
     RESTORE_INTERRUPTED,
     RESTORE_PREPARED,
     RESTORE_RESTORED_UNVERIFIED,

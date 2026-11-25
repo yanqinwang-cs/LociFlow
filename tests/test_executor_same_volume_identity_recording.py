@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-from contextlib import nullcontext
-from dataclasses import replace
 import errno
 import json
 import os
-from pathlib import Path
 import tempfile
 import unittest
-from unittest import mock
 import uuid
+from contextlib import nullcontext
+from dataclasses import replace
+from pathlib import Path
+from unittest import mock
 
 import organizer.executor as executor
 from organizer.application.content_identity import RegularFileContentIdentity

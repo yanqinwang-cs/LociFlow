@@ -1,23 +1,28 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
-from datetime import datetime, timezone
 import json
 import os
+from dataclasses import dataclass, replace
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from organizer.json_values import is_json_integer, is_json_version
 from organizer.duplicates import find_exact_duplicates
 from organizer.grouping import build_organization_suggestions, find_project_groups
-from organizer.models import FileMetadata, MovePlanItem, OrganizationSuggestion, ReviewedPlanItem
+from organizer.json_values import is_json_integer, is_json_version
+from organizer.models import (
+    FileMetadata,
+    MovePlanItem,
+    OrganizationSuggestion,
+    ReviewedPlanItem,
+)
 from organizer.organization_rules import OrganizationRules
 from organizer.planner import build_duplicate_review_plan
+from organizer.reports import validate_report_data
 from organizer.review import build_review_candidate_plan, detect_review_candidates
 from organizer.safety import validate_under_root
 from organizer.scanner import scan_directory
 from organizer.scope import is_actionable_destination_path, is_actionable_source_path
-from organizer.reports import validate_report_data
 
 REVIEW_SESSION_SCHEMA_VERSION = 1
 REVIEW_PLAN_TYPE = "batch_review"
@@ -864,7 +869,7 @@ def reviewed_plan_to_json_data(
     resolved_root = root.resolve()
     return {
         "schema_version": REVIEW_SESSION_SCHEMA_VERSION,
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
         "scan_root": ".",
         "plan_type": REVIEW_PLAN_TYPE,
         "summary": summarize_review_items(items, resolved_root),
@@ -1179,7 +1184,7 @@ def _relative_path(path: Path, root: Path) -> str:
 
 
 def _next_reviewed_plan_path(log_dir: Path) -> Path:
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
     candidate = log_dir / f"{timestamp}_reviewed_plan.json"
     counter = 1
     while os.path.lexists(candidate):

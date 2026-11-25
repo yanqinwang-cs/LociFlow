@@ -306,22 +306,22 @@ def _load_bindings() -> _AppKitBindings:
         NSAlertStyleWarning,
         NSApplication,
         NSApplicationActivationPolicyRegular,
+        NSBackingStoreBuffered,
         NSEventModifierFlagCommand,
         NSMenu,
         NSMenuItem,
         NSModalResponseOK,
         NSOpenPanel,
         NSPanel,
-        NSTextAlignmentCenter,
-        NSTextField,
-        NSWindowStyleMaskTitled,
-        NSBackingStoreBuffered,
         NSTerminateCancel,
         NSTerminateLater,
         NSTerminateNow,
+        NSTextAlignmentCenter,
+        NSTextField,
+        NSWindowStyleMaskTitled,
         NSWorkspace,
     )
-    from Foundation import NSMakeRect, NSObject, NSURL
+    from Foundation import NSURL, NSMakeRect, NSObject
     from PyObjCTools import AppHelper
 
     return _AppKitBindings(

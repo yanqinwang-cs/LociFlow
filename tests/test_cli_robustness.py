@@ -1,9 +1,9 @@
 import contextlib
 import io
 import os
-from pathlib import Path
 import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from organizer.cli import main

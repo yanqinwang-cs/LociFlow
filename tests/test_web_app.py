@@ -1,14 +1,14 @@
 import asyncio
-from pathlib import Path
 import tempfile
 import unittest
+from pathlib import Path
 
 import httpx
 
+from organizer.application.runtime_lifecycle import RuntimeOperationKind
 from organizer.web.app import app_runtime_lifecycle, create_app
 from organizer.web.config import WebAppConfig
 from organizer.web.security import CONTENT_SECURITY_POLICY, SECURITY_HEADERS
-from organizer.application.runtime_lifecycle import RuntimeOperationKind
 
 
 class WebAppTests(unittest.IsolatedAsyncioTestCase):

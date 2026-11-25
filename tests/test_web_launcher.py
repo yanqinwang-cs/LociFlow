@@ -1,20 +1,20 @@
 from __future__ import annotations
 
-from pathlib import Path
 import tempfile
-from threading import Thread
 import unittest
+from pathlib import Path
+from threading import Thread
 from unittest import mock
 
 from organizer.application.runtime_lifecycle import RuntimeLifecycle
 from organizer.macos_launcher.process_lease import ProcessLeaseError
 from organizer.web.config import WebAppConfig
 from organizer.web.launcher import (
+    LauncherDependencies,
+    LauncherError,
     LaunchPhase,
     LaunchRuntimeHandle,
     LaunchStopController,
-    LauncherDependencies,
-    LauncherError,
     launch,
     launch_configured,
 )

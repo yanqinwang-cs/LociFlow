@@ -1,31 +1,30 @@
 from __future__ import annotations
 
-from copy import deepcopy
-from dataclasses import replace
-from datetime import datetime, timezone
 import json
 import os
-from pathlib import Path
 import tempfile
 import unittest
+from copy import deepcopy
+from dataclasses import replace
+from datetime import UTC, datetime
+from pathlib import Path
 from unittest import mock
 
 from organizer.application.file_kinds import consumer_file_kind
 from organizer.application.organization_slice_service import (
     build_read_only_organization_slice,
 )
-from organizer.application.standards_read_models import OrganizationUnavailableError
 from organizer.application.scan_service import scan_root
+from organizer.application.standards_read_models import OrganizationUnavailableError
 from organizer.application.standards_repository import StandardsRepository
 from organizer.application.standards_service import StandardsService
-from organizer.organization_rules import ORGANIZATION_RULES_RELATIVE_PATH
 from organizer.organization_rules import (
+    ORGANIZATION_RULES_RELATIVE_PATH,
     STANDARD_KEEP_FOLDER_UNCHANGED,
     STANDARD_KEEP_MATCHING_FILES_TOGETHER,
 )
 
-
-COMPLETED_AT = datetime(2026, 7, 14, 10, 20, 30, tzinfo=timezone.utc)
+COMPLETED_AT = datetime(2026, 7, 14, 10, 20, 30, tzinfo=UTC)
 
 
 class FileKindTests(unittest.TestCase):
@@ -93,7 +92,7 @@ class OrganizationSliceServiceTests(unittest.TestCase):
             self.assertEqual(item.size_bytes, len(b"scanned"))
             self.assertEqual(
                 item.modified_at,
-                datetime.fromtimestamp(scanned_mtime, timezone.utc).isoformat(),
+                datetime.fromtimestamp(scanned_mtime, UTC).isoformat(),
             )
             self.assertEqual(item.extension, ".pdf")
             self.assertEqual(item.relative_path, "Submissions/record.PDF")

@@ -10,7 +10,7 @@ from organizer.grouping import (
     normalize_token,
 )
 from organizer.models import FileMetadata
-from organizer.scope import is_allowed_organization_file, is_actionable_source_path
+from organizer.scope import is_actionable_source_path, is_allowed_organization_file
 
 PATTERN_COURSE_CODE_FOLDERING = "course_code_foldering"
 PATTERN_PROJECT_FOLDERING = "project_foldering"

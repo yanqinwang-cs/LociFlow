@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import hashlib
-from pathlib import Path
 import uuid
+from pathlib import Path
 
 from organizer.application.duplicate_bin_models import (
     BATCH_APPROVED,
@@ -24,7 +24,6 @@ from organizer.application.organization_slice_service import (
 )
 from organizer.safety import validate_under_root
 from organizer.scope import validate_duplicate_bin_item_destination
-
 
 _BATCH_NAMESPACE = uuid.UUID("106e34de-754f-54fc-a7eb-700c53a365d6")
 _GROUP_NAMESPACE = uuid.UUID("03c4fe9f-73e2-522e-a7ee-ec40324fe492")

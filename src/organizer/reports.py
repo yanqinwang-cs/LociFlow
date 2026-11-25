@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import json
 import os
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from organizer.json_values import is_json_version
 from organizer.duplicates import find_exact_duplicates
 from organizer.grouping import (
     ANCHOR_DECISION_IGNORED,
@@ -17,6 +16,7 @@ from organizer.grouping import (
     build_organization_suggestions,
     find_project_groups,
 )
+from organizer.json_values import is_json_version
 from organizer.llm_refinement import (
     build_refined_organization_suggestion,
     refine_project_groups_with_ollama,
@@ -211,7 +211,7 @@ def build_scan_report(
 
     return {
         "schema_version": REPORT_SCHEMA_VERSION,
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": datetime.now(UTC).isoformat(),
         "scan_root": ".",
         "summary": {
             "file_count": len(file_items),
@@ -395,7 +395,7 @@ def _validate_non_negative_report_count(value: object, field: str) -> None:
 
 def default_report_path(root: Path) -> Path:
     reports_dir = root / "AI_Review" / "reports"
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
     candidate = reports_dir / f"{timestamp}_report.json"
     counter = 1
     while os.path.lexists(candidate):

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
 import re
-from typing import Iterable, Mapping
 import uuid
+from collections.abc import Iterable, Mapping
+from dataclasses import dataclass, replace
 
 from organizer.application.content_identity import RegularFileContentIdentity
 from organizer.application.execution_coordinator import approved_plan_identity
@@ -12,8 +12,8 @@ from organizer.application.file_identity_capture import (
     RegularFileStatFingerprint,
 )
 from organizer.application.organization_decision_models import (
-    ApprovedOrganizationPlan,
     STATUS_READY_TO_MOVE,
+    ApprovedOrganizationPlan,
 )
 from organizer.application.organization_operation_models import (
     AUTHORIZATION_AVAILABLE,
@@ -25,7 +25,6 @@ from organizer.application.organization_operation_models import (
     OrganizationOperationRecord,
     OrganizationOperationVerification,
 )
-
 
 _ROOT_IDENTITY = re.compile(r"[0-9a-f]{64}")
 

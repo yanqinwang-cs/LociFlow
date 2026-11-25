@@ -1,23 +1,23 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime, timezone
-from copy import deepcopy
 import logging
-from pathlib import Path
 import secrets
+from collections.abc import Callable
+from copy import deepcopy
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
 from threading import Lock, Thread, current_thread
-from typing import Callable
 
-from organizer.application.scan_service import (
-    ScanApplicationResult,
-    scan_root,
-    write_scan_report,
-)
 from organizer.application.runtime_lifecycle import (
     OperationLease,
     RuntimeLifecycle,
     RuntimeOperationKind,
+)
+from organizer.application.scan_service import (
+    ScanApplicationResult,
+    scan_root,
+    write_scan_report,
 )
 
 logger = logging.getLogger(__name__)
@@ -163,4 +163,4 @@ class ScanJobController:
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)

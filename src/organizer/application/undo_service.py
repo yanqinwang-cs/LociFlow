@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import replace
-from datetime import datetime, timezone
 import os
-from pathlib import Path
 import uuid
+from dataclasses import replace
+from datetime import UTC, datetime
+from pathlib import Path
 
 from organizer.application.activity_service import calculate_undo_eligibility
 from organizer.application.current_recovery_admission_status import (
@@ -15,13 +15,26 @@ from organizer.application.filesystem_operation_admission import (
     FilesystemOperationAdmission,
     FilesystemOperationInspector,
 )
-from organizer.application.runtime_lifecycle import RuntimeOperationKind
 from organizer.application.organization_operation_models import (
     ORGANIZATION_OPERATION_SCHEMA_VERSION,
     ORGANIZATION_OPERATION_SCHEMA_VERSION_V2,
     OrganizationOperationRecord,
 )
-from organizer.application.organization_operation_repository import OrganizationOperationRepository
+from organizer.application.organization_operation_repository import (
+    OrganizationOperationRepository,
+)
+from organizer.application.organization_undo_identity_authorization import (
+    V2UndoAuthorizationError,
+)
+from organizer.application.organization_undo_identity_eligibility import (
+    IdentityUndoEligibilityReason,
+)
+from organizer.application.organization_undo_identity_orchestration import (
+    IdentityUndoConfirmationState,
+    IdentityUndoPreviewState,
+    OrganizationIdentityUndoOrchestrationError,
+    OrganizationIdentityUndoOrchestrationService,
+)
 from organizer.application.organization_undo_models import (
     UNDO_AUTHORIZATION_AVAILABLE,
     UNDO_FAILED,
@@ -46,19 +59,10 @@ from organizer.application.organization_undo_models import (
     UndoPreview,
     UndoVerificationResult,
 )
-from organizer.application.organization_undo_repository import OrganizationUndoRepository
-from organizer.application.organization_undo_identity_orchestration import (
-    IdentityUndoConfirmationState,
-    IdentityUndoPreviewState,
-    OrganizationIdentityUndoOrchestrationError,
-    OrganizationIdentityUndoOrchestrationService,
+from organizer.application.organization_undo_repository import (
+    OrganizationUndoRepository,
 )
-from organizer.application.organization_undo_identity_authorization import (
-    V2UndoAuthorizationError,
-)
-from organizer.application.organization_undo_identity_eligibility import (
-    IdentityUndoEligibilityReason,
-)
+from organizer.application.runtime_lifecycle import RuntimeOperationKind
 from organizer.executor import UndoRecordingError, undo_operation_log
 from organizer.models import MoveResult, OperationLog
 from organizer.organization_verify import (
@@ -66,7 +70,6 @@ from organizer.organization_verify import (
     verify_organization_undo,
 )
 from organizer.safety import validate_under_root
-
 
 CONFIRM_UNDO_FILE_MOVE = "UNDO FILE MOVE"
 
@@ -595,4 +598,4 @@ def _relative(path: Path, root: Path) -> str:
 
 
 def _utc_timestamp() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import FrozenInstanceError
 import unittest
+from dataclasses import FrozenInstanceError
 
 from organizer.application.content_identity import (
     OrdinaryFileIdentityCompatibility,

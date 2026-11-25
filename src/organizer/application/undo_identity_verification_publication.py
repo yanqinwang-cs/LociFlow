@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, replace
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
-from typing import Callable
 
 from organizer.application.organization_operation_repository import (
     OrganizationOperationRepository,
@@ -86,7 +86,7 @@ class OrganizationUndoIdentityVerificationPublicationService:
         self._operation_repository = operation_repository
         self._undo_repository = undo_repository
         self._verifier = verifier
-        self._now = now or (lambda: datetime.now(timezone.utc))
+        self._now = now or (lambda: datetime.now(UTC))
 
     def publish(
         self,
@@ -211,7 +211,7 @@ class OrganizationUndoIdentityVerificationPublicationService:
             return None
 
         try:
-            completed_at = self._now().astimezone(timezone.utc).isoformat()
+            completed_at = self._now().astimezone(UTC).isoformat()
         except Exception:
             return None
         return replace(

@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import json
-from pathlib import Path
 import tempfile
 import unittest
-from unittest import mock
 import uuid
+from datetime import UTC, datetime
+from pathlib import Path
+from unittest import mock
 
 from organizer.application.standards_repository import (
     StandardsRepository,
@@ -16,8 +16,8 @@ from organizer.organization_rules import (
     ORGANIZATION_RULES_RELATIVE_PATH,
     STANDARD_KEEP_FOLDER_UNCHANGED,
     StandardRecord,
-    StandardScope,
     StandardsCatalog,
+    StandardScope,
     normalize_standard_relative_path,
 )
 
@@ -106,7 +106,7 @@ class StandardsRepositoryTests(unittest.TestCase):
 
 
 def _catalog(repository: StandardsRepository, *, revision: int) -> StandardsCatalog:
-    timestamp = datetime(2026, 1, 1, tzinfo=timezone.utc).isoformat()
+    timestamp = datetime(2026, 1, 1, tzinfo=UTC).isoformat()
     record = StandardRecord(
         id=str(uuid.uuid4()),
         type=STANDARD_KEEP_FOLDER_UNCHANGED,

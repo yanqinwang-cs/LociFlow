@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import hashlib
 import json
 import os
-from pathlib import Path
 import re
-from typing import Any, Iterable
+from collections.abc import Iterable
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
 
 from organizer.json_values import is_json_integer, is_json_version
 from organizer.models import RuleCandidate, RuleDecision
@@ -332,7 +333,7 @@ def _merge_rule_decisions(
     }
     result = {
         "schema_version": RULE_REVIEW_SCHEMA_VERSION,
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": datetime.now(UTC).isoformat(),
         "applied": applied,
         "skipped": skipped,
         "warnings": warnings,

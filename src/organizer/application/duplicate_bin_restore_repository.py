@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-from dataclasses import asdict, replace
-from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import os
-from pathlib import Path
 import tempfile
-from threading import Lock
 import uuid
+from dataclasses import asdict, replace
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from threading import Lock
 
 from organizer.application.duplicate_bin_models import ITEM_STATES
 from organizer.application.duplicate_bin_restore_models import (
@@ -32,7 +32,6 @@ from organizer.application.duplicate_bin_restore_models import (
 )
 from organizer.safety import validate_under_root
 from organizer.scope import DUPLICATE_BIN_RELATIVE_ROOT
-
 
 AUTHORIZATION_LIFETIME = timedelta(minutes=15)
 
@@ -72,7 +71,7 @@ class DuplicateBinRestoreRepository:
         ordered = tuple(sorted(items, key=lambda item: item.bin_item_id))
         if len({item.bin_item_id for item in ordered}) != len(ordered):
             raise DuplicateBinRestoreRepositoryError("duplicate_restore_item")
-        issued = _timestamp(issued_at or datetime.now(timezone.utc).isoformat())
+        issued = _timestamp(issued_at or datetime.now(UTC).isoformat())
         authorization_id = str(uuid.uuid4())
         authorization = DuplicateBinRestoreAuthorization(
             authorization_id=authorization_id,

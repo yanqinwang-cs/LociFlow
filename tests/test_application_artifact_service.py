@@ -1,8 +1,8 @@
 import json
 import os
-from pathlib import Path
 import tempfile
 import unittest
+from pathlib import Path
 
 from organizer.application.artifact_service import (
     ARTIFACT_REVIEWED_PLAN,

@@ -8,8 +8,8 @@ from urllib.parse import urlencode
 from organizer.application.review_service import (
     get_review_item_metadata,
     get_review_source_key,
-    review_module_items,
     review_module_is_dirty,
+    review_module_items,
     review_module_saved_path,
     summarize_review_module,
     summarize_review_session,
@@ -22,7 +22,6 @@ from organizer.web.formatting import (
     readable_folder,
 )
 from organizer.web.review_explorer import ModuleQueueSnapshot
-
 
 _PAGE_SIZE = 25
 _CATEGORY_PRIORITY = {

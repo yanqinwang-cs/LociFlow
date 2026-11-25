@@ -15,11 +15,11 @@ from organizer.organization_rules import (
     ORGANIZATION_RULES_STATUS_LOADED,
     ORGANIZATION_RULES_UNAVAILABLE_CODE,
     ORGANIZATION_RULES_UNAVAILABLE_MESSAGE,
-    OrganizationRules,
-    OrganizationRulesLoadResult,
     STANDARD_KEEP_FOLDER_UNCHANGED,
     STANDARD_KEEP_MATCHING_FILES_TOGETHER,
     STANDARD_LEGACY_IGNORED_TERM,
+    OrganizationRules,
+    OrganizationRulesLoadResult,
     StandardRecord,
     canonical_anchor,
     display_anchor,
@@ -30,7 +30,6 @@ from organizer.scope import (
     SHARED_PROTECTION_STANDARD_ID,
     SUBMISSION_PROTECTION_STANDARD_ID,
 )
-
 
 EXISTING_FOLDER_POLICY_STANDARD_ID = "builtin-use-existing-folders-only"
 _READ_ID_NAMESPACE = uuid.UUID("66378439-bc92-4ea5-a710-dbb8b7ad3103")

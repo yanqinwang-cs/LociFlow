@@ -1,10 +1,10 @@
-from pathlib import Path
 import io
 import os
 import subprocess
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from organizer.executor import apply_move_plan, undo_operation_log

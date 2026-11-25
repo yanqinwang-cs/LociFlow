@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime, timezone
-from enum import Enum
-from typing import Callable
 import uuid
+from collections.abc import Callable
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from enum import Enum
 
 from organizer.application.organization_operation_repository import (
     OrganizationOperationRepository,
@@ -37,7 +37,6 @@ from organizer.application.undo_identity_verification_publication import (
     IdentityUndoVerificationPublicationState,
     OrganizationUndoIdentityVerificationPublicationService,
 )
-
 
 UNDO_FILE_MOVE_CONFIRMATION = "UNDO FILE MOVE"
 
@@ -146,7 +145,7 @@ class OrganizationIdentityUndoOrchestrationService:
                 operation_repository, undo_repository
             )
         )
-        self._now = now or (lambda: datetime.now(timezone.utc))
+        self._now = now or (lambda: datetime.now(UTC))
         self._id_source = id_source or (lambda: str(uuid.uuid4()))
         self._executor = executor
         self._refresh_recovery_status = refresh_recovery_status
@@ -354,4 +353,4 @@ class OrganizationIdentityUndoOrchestrationService:
         value = self._now()
         if not isinstance(value, datetime) or value.tzinfo is None:
             raise ValueError("identity Undo orchestration clock is invalid")
-        return value.astimezone(timezone.utc).isoformat()
+        return value.astimezone(UTC).isoformat()

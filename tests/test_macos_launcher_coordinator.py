@@ -1,20 +1,21 @@
 from __future__ import annotations
 
+import json
+import os
+import signal
+import tempfile
+import unittest
 from collections.abc import Callable
 from concurrent.futures import Future
 from contextlib import redirect_stderr
 from io import StringIO
-import json
-import os
 from pathlib import Path
 from queue import Empty, Queue
-import tempfile
-import signal
 from threading import Event, Thread, current_thread, main_thread
-import unittest
 from unittest import mock
 
 from organizer.application.runtime_lifecycle import RuntimeLifecycle
+from organizer.macos_launcher import coordinator as coordinator_module
 from organizer.macos_launcher.application_paths import MacOSApplicationPaths
 from organizer.macos_launcher.coordinator import (
     NativeLauncherCoordinator,
@@ -22,15 +23,14 @@ from organizer.macos_launcher.coordinator import (
     development_diagnostic_sink,
     native_message_for,
 )
-from organizer.macos_launcher.process_lease import (
-    acquire_application_instance_lease,
-    acquire_root_process_lease,
-)
 from organizer.macos_launcher.packaged_diagnostics import (
     PackagedDiagnosticSink,
     PackagedReleaseIdentity,
 )
-from organizer.macos_launcher import coordinator as coordinator_module
+from organizer.macos_launcher.process_lease import (
+    acquire_application_instance_lease,
+    acquire_root_process_lease,
+)
 from organizer.web.config import WebAppConfig
 from organizer.web.launcher import LauncherDependencies, LauncherError
 from organizer.web.server import build_launcher_dependencies
@@ -413,7 +413,7 @@ class _PreRootQuitAdapter(_Adapter):
 
 
 class _ControlledSignalCoordinator:
-    instances: list["_ControlledSignalCoordinator"] = []
+    instances: list[_ControlledSignalCoordinator] = []
     capture_results: list[SignalIntent | None] = []
 
     def __init__(self, on_signal, **_kwargs: object) -> None:

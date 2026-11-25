@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime, timezone
 import json
 import os
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -214,7 +214,7 @@ def _build_apply_result(
     return {
         "schema_version": ORGANIZATION_REVIEW_APPLY_SCHEMA_VERSION,
         "source": ORGANIZATION_REVIEW_APPLY_SOURCE,
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": datetime.now(UTC).isoformat(),
         "review_file": _relative_path(review_file, root),
         "confirmation": CONFIRM_APPLY_ORGANIZATION_REVIEW,
         "approved_count": len(approved_rows),

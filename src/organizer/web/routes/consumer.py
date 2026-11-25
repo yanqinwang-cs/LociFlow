@@ -9,8 +9,8 @@ from starlette.templating import Jinja2Templates
 
 from organizer.application.runtime_lifecycle import ApplicationStoppingError
 from organizer.web.consumer_presenter import (
-    ConsumerSurface,
     SURFACE_SPECS,
+    ConsumerSurface,
     build_guided_module_page,
     feedback_for_card,
     module_for_surface,

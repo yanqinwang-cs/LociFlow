@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime, timezone
 import json
-from pathlib import Path
 import stat
 import tempfile
-from threading import Thread
 import unittest
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
+from threading import Thread
 from unittest import mock
 
 from organizer.macos_launcher.application_paths import MacOSApplicationPaths
@@ -15,17 +15,16 @@ from organizer.macos_launcher.packaged_diagnostics import (
     ACTIVE_LOG_NAME,
     LOCK_NAME,
     MAX_ACTIVE_BYTES,
+    ROTATED_LOG_NAMES,
     PackagedDiagnosticInput,
     PackagedDiagnosticSink,
     PackagedReleaseIdentity,
-    ROTATED_LOG_NAMES,
     create_packaged_diagnostic_sink,
     read_runtime_identity,
 )
 
-
 _IDENTITY = PackagedReleaseIdentity("0.1.0-beta.1", 7)
-_NOW = datetime(2026, 7, 27, 12, 30, tzinfo=timezone.utc)
+_NOW = datetime(2026, 7, 27, 12, 30, tzinfo=UTC)
 
 
 class MacOSPackagedDiagnosticsTests(unittest.TestCase):

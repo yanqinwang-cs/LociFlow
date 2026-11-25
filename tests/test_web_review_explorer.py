@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from pathlib import Path
 import tempfile
-from threading import Event, Thread
 import unittest
+from pathlib import Path
+from threading import Event, Thread
 from unittest import mock
 
+import organizer.web.review_explorer as review_explorer_module
 from organizer.application.runtime_lifecycle import (
     ApplicationStoppingError,
     RuntimeLifecycle,
@@ -13,7 +14,6 @@ from organizer.application.runtime_lifecycle import (
 )
 from organizer.application.scan_service import scan_root
 from organizer.application.view_models import ReviewModule
-import organizer.web.review_explorer as review_explorer_module
 from organizer.web.review_explorer import ReviewExplorerStore
 from organizer.web.scan_jobs import ScanJobSnapshot
 

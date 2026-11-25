@@ -12,7 +12,6 @@ from organizer.web.signal_coordinator import (
     ShutdownSequenceState,
 )
 
-
 SAFE_SHUTDOWN_FAILURE_MESSAGE = (
     "Loci Flow couldn’t close safely. Keep the application open."
 )

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
 import sys
+from collections.abc import Callable, Sequence
 from typing import Any
 
 from organizer.macos_launcher.application_paths import MacOSApplicationPaths
@@ -29,12 +29,12 @@ def main(
         return 2
 
     try:
+        from organizer.macos_launcher.appkit_adapter import AppKitAdapter
         from organizer.macos_launcher.coordinator import (
             NativeDiagnostic,
             NativeLauncherCoordinator,
             development_diagnostic_sink,
         )
-        from organizer.macos_launcher.appkit_adapter import AppKitAdapter
 
         adapter = AppKitAdapter()
     except ModuleNotFoundError as error:

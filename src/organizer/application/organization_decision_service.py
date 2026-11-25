@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import replace
-from datetime import datetime, timezone
 import os
+from dataclasses import replace
+from datetime import UTC, datetime
 from pathlib import Path
 
 from organizer.application.organization_decision_models import (
@@ -530,4 +530,4 @@ def _has_move_chain_conflict(items: list[ReviewedPlanItem]) -> bool:
 
 
 def _utc_timestamp() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()

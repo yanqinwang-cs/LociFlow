@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import math
-from pathlib import Path
 import re
 import uuid
+from dataclasses import dataclass
+from pathlib import Path
 
 from organizer.application.content_identity import RegularFileContentIdentity
 from organizer.application.organization_operation_models import (
@@ -26,7 +26,6 @@ from organizer.application.organization_undo_models import (
     UndoVerificationResult,
 )
 from organizer.file_identity import RegularFileStatFingerprint
-
 
 _ROOT_IDENTITY = re.compile(r"[0-9a-f]{64}")
 

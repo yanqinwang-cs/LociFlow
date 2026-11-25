@@ -1,15 +1,15 @@
 from __future__ import annotations
 
+import os
+import re
+import sys
+import traceback
 from collections.abc import Callable
 from concurrent.futures import Future
 from dataclasses import dataclass
 from enum import StrEnum
-import os
 from pathlib import Path
-import re
-import sys
 from threading import Event, Lock, Thread
-import traceback
 from typing import Protocol, TextIO
 
 from organizer.macos_launcher.application_paths import MacOSApplicationPaths
@@ -24,9 +24,9 @@ from organizer.macos_launcher.shutdown_coordinator import (
 )
 from organizer.web.config import WebAppConfig
 from organizer.web.launcher import (
-    LaunchPhase,
     LauncherDependencies,
     LauncherError,
+    LaunchPhase,
     LaunchResult,
     LaunchRuntimeHandle,
     LaunchStopController,

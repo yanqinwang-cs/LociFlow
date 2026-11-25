@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-from dataclasses import replace
 import copy
 import json
 import os
-from pathlib import Path
 import tempfile
 import unittest
-from unittest import mock
 import uuid
+from dataclasses import replace
+from pathlib import Path
+from unittest import mock
 
 from organizer.application.content_identity import (
     OrdinaryFileIdentityCompatibility,
@@ -23,7 +23,9 @@ from organizer.application.organization_undo_models import (
     OrganizationUndoRecord,
     UndoVerificationResult,
 )
-from organizer.application.organization_undo_repository import OrganizationUndoRepository
+from organizer.application.organization_undo_repository import (
+    OrganizationUndoRepository,
+)
 
 
 class OrganizationUndoRepositoryTests(unittest.TestCase):

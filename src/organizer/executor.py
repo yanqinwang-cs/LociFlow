@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime, timezone
 import errno
 import json
 import os
-from pathlib import Path
 import shutil
 import stat
 import sys
 import unicodedata
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import Protocol
 
 from organizer.executor_identity import (
@@ -20,15 +20,14 @@ from organizer.executor_identity import (
     validate_same_volume_identity_move_plan,
 )
 from organizer.file_identity import (
-    RequiredRegularFileIdentity,
     RegularFileStatFingerprint,
+    RequiredRegularFileIdentity,
     StableFileIdentityError,
     fingerprint_from_stat,
     open_verified_regular_file,
     verify_open_regular_file_descriptor,
 )
 from organizer.models import MovePlanItem, MoveResult, OperationLog
-
 
 _DIR_FD_FUNCTIONS = (os.open, os.mkdir, os.stat, os.link, os.unlink)
 _LINK_FUNCTION = os.link
@@ -387,7 +386,9 @@ def _execute_same_volume_identity_item(
                 source_context.__exit__(*active_exception)
             except BaseException as close_error:
                 if active_exception[0] is not None:
-                    raise active_exception[1].with_traceback(active_exception[2])
+                    # Re-raises the original exception object unchanged; chaining it to
+                    # close_error would change what the traceback reports.
+                    raise active_exception[1].with_traceback(active_exception[2])  # noqa: B904
                 if published:
                     if isinstance(close_error, (KeyboardInterrupt, SystemExit)):
                         raise StrictExecutorInterrupted() from None
@@ -1232,7 +1233,7 @@ def _is_under_root(path: Path, root: Path) -> bool:
 
 def _next_log_path(root: Path, log_dir_name: str, prefix: str) -> Path:
     log_dir = root / "AI_Review" / log_dir_name
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
     candidate = log_dir / f"{prefix}_{timestamp}.json"
     counter = 1
     while candidate.exists():

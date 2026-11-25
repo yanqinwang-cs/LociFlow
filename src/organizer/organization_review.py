@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import json
 import os
-from pathlib import Path, PureWindowsPath
 import re
+from datetime import UTC, datetime
+from pathlib import Path, PureWindowsPath
 from typing import Any
 
 from organizer.json_values import is_json_version
@@ -178,7 +178,7 @@ def build_organization_review(report: dict[str, Any]) -> dict[str, Any]:
     data = {
         "schema_version": ORGANIZATION_REVIEW_SCHEMA_VERSION,
         "source": ORGANIZATION_REVIEW_SOURCE,
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": datetime.now(UTC).isoformat(),
         "scan_root": _required_string(report.get("scan_root"), "report scan_root"),
         "instructions": ORGANIZATION_REVIEW_INSTRUCTIONS,
         "rules_loaded": rules_loaded,

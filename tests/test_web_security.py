@@ -1,6 +1,6 @@
 import hmac
-from concurrent.futures import ThreadPoolExecutor
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from unittest import mock
 
 from starlette.requests import Request

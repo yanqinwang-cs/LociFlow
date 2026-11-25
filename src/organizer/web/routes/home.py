@@ -7,15 +7,6 @@ from starlette.responses import JSONResponse, RedirectResponse, Response
 from starlette.templating import Jinja2Templates
 
 from organizer.application.runtime_lifecycle import ApplicationStoppingError
-from organizer.web.security import (
-    LaunchTokenGate,
-    csrf_token_for_session,
-    initialize_authenticated_session,
-    is_authenticated,
-    validate_csrf_token,
-    validate_same_origin,
-)
-from organizer.web.forms import FormDataError, read_urlencoded_form
 from organizer.web.consumer_presenter import (
     ConsumerSurface,
     build_home_module_statuses,
@@ -25,11 +16,20 @@ from organizer.web.consumer_presenter import (
     surface_url,
 )
 from organizer.web.formatting import folder_name, format_bytes, format_local_time
+from organizer.web.forms import FormDataError, read_urlencoded_form
 from organizer.web.review_explorer import (
     ReviewExplorerStore,
     UnsavedReviewChanges,
 )
 from organizer.web.scan_jobs import ScanAlreadyRunning, ScanJobController
+from organizer.web.security import (
+    LaunchTokenGate,
+    csrf_token_for_session,
+    initialize_authenticated_session,
+    is_authenticated,
+    validate_csrf_token,
+    validate_same_origin,
+)
 
 _SESSION_UNAVAILABLE = (
     "This bootAI session is not available. "

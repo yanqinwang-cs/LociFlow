@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from dataclasses import asdict
 import hashlib
 import json
 import os
-from pathlib import Path
 import tempfile
-from typing import Any
 import uuid
+from dataclasses import asdict
+from pathlib import Path
+from typing import Any
 
 from organizer.application.content_identity import RegularFileContentIdentity
 from organizer.application.organization_undo_models import (
@@ -35,7 +35,6 @@ from organizer.application.organization_undo_models import (
     UndoVerificationResult,
 )
 from organizer.safety import validate_under_root
-
 
 DEFAULT_UNDO_DIRECTORY = Path("AI_Review") / "organization_undos"
 

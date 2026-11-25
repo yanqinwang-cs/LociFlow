@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import replace
-from pathlib import Path
 import tempfile
 import unittest
+from dataclasses import replace
+from pathlib import Path
 from unittest import mock
 
 from organizer.application.activity_service import list_activity_entries
@@ -22,14 +22,14 @@ from organizer.application.identity_verification_publication import (
 from organizer.application.organization_operation_repository import (
     OrganizationOperationRepository,
 )
-from organizer.application.organization_undo_repository import (
-    OrganizationUndoRepository,
-)
 from organizer.application.organization_undo_models import (
     UNDO_ITEM_RESTORED,
     UNDO_RESTORED_UNVERIFIED,
     UNDO_VERIFICATION_NOT_RUN,
     UndoVerificationResult,
+)
+from organizer.application.organization_undo_repository import (
+    OrganizationUndoRepository,
 )
 from organizer.application.recovery_check_context import (
     RecoveryCheckContextState,
@@ -50,12 +50,12 @@ from organizer.application.runtime_lifecycle import (
 from organizer.application.undo_identity_verification_publication import (
     OrganizationUndoIdentityVerificationPublicationService,
 )
-from tests.test_application_identity_verification_publication import (
-    _operation,
-)
 from tests.test_application_filesystem_operation_admission import (
     _ordinary_operation,
     _ordinary_undo,
+)
+from tests.test_application_identity_verification_publication import (
+    _operation,
 )
 from tests.test_application_recovery_evidence import (
     _duplicate_move_state,

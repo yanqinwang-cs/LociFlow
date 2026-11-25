@@ -8,7 +8,6 @@ from starlette.templating import Jinja2Templates
 
 from organizer.web.security import csrf_token_for_session, is_authenticated
 
-
 _SESSION_UNAVAILABLE = (
     "This bootAI session is not available. "
     "Launch bootAI again from the local application."

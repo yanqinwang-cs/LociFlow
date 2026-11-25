@@ -3,9 +3,9 @@ from __future__ import annotations
 import errno
 import hashlib
 import os
-from pathlib import Path
 import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from organizer.file_identity import (

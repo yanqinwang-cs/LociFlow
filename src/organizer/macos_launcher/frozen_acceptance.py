@@ -1,14 +1,14 @@
 from __future__ import annotations
 
+import json
+import re
+import time
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from http.cookiejar import CookieJar
-import json
 from pathlib import Path
 from queue import Empty, Queue
-import re
 from threading import Event
-import time
 from typing import Final
 from urllib.parse import urlencode, urljoin, urlsplit
 from urllib.request import (
@@ -35,7 +35,6 @@ from organizer.macos_launcher.process_lease import (
 )
 from organizer.web.launcher import launch
 from organizer.web.server import build_launcher_dependencies
-
 
 _CSRF_PATTERN: Final = re.compile(
     r'<meta name="csrf-token" content="([^"]+)">'

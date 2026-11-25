@@ -1,15 +1,15 @@
-from pathlib import Path
-from datetime import datetime, timezone
 import json
 import tempfile
 import unittest
 import uuid
+from datetime import UTC, datetime
+from pathlib import Path
 
-from organizer.duplicates import find_exact_duplicates
 from organizer.application.organization_slice_service import (
     build_internal_organization_projection,
 )
 from organizer.application.scan_service import scan_root
+from organizer.duplicates import find_exact_duplicates
 from organizer.scanner import scan_directory
 from organizer.scope import (
     is_actionable_destination_path,
@@ -41,7 +41,7 @@ class DuplicateBinScopeTests(unittest.TestCase):
             projection = build_internal_organization_projection(
                 scan_result=result,
                 scan_generation="scan-one",
-                completed_at=datetime(2026, 7, 16, tzinfo=timezone.utc),
+                completed_at=datetime(2026, 7, 16, tzinfo=UTC),
             )
             self.assertNotIn("duplicate_bin", json.dumps(result.report))
             self.assertTrue(

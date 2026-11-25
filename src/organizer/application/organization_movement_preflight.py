@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import os
+from dataclasses import dataclass
 from pathlib import Path
 
 from organizer.application.organization_decision_models import (
@@ -25,7 +25,6 @@ from organizer.scope import (
     evaluate_actionable_source_path,
     is_actionable_destination_path,
 )
-
 
 _ERROR_CODES = {
     "approved_plan_stale",

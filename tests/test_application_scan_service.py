@@ -1,7 +1,7 @@
 import io
-from pathlib import Path
 import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from organizer.application.scan_service import scan_root, write_scan_report

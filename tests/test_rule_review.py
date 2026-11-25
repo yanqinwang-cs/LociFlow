@@ -1,22 +1,22 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 import os
 import subprocess
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 
 from organizer.models import RuleCandidate
 from organizer.organization_rules import ORGANIZATION_RULES_RELATIVE_PATH
-from organizer.reports import build_scan_report, write_report
 from organizer.pattern_inference import RULE_LOCK_ANCHOR_CANDIDATE
+from organizer.reports import build_scan_report, write_report
 from organizer.rule_review import (
-    _review_file_item_to_candidate,
     DECISION_ACCEPT,
     DECISION_REJECT,
     RULE_REVIEW_DIR,
+    _review_file_item_to_candidate,
     apply_rule_decisions,
     export_rule_candidates,
     load_reviewed_rule_file,

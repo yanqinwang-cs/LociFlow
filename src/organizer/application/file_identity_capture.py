@@ -16,7 +16,6 @@ from organizer.file_identity import (
     capture_open_regular_file,
 )
 
-
 DEFAULT_IDENTITY_CAPTURE_CHUNK_SIZE = DEFAULT_HASH_CHUNK_SIZE
 IDENTITY_CAPTURE_SAFE_MESSAGE = (
     "The file changed before it could be moved. Check the folder and try again."

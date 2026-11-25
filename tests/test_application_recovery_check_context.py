@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
-from threading import Barrier, Thread
 import unittest
 import uuid
+from datetime import UTC, datetime, timedelta
+from threading import Barrier, Thread
 
 from organizer.application.recovery_check_context import (
     RECOVERY_CHECK_ACTION,
@@ -13,7 +13,6 @@ from organizer.application.recovery_check_context import (
     RecoveryCheckFamily,
 )
 
-
 _ROOT = "a" * 64
 _OPERATION = "11111111-1111-4111-8111-111111111111"
 _PARENT = "22222222-2222-4222-8222-222222222222"
@@ -21,7 +20,7 @@ _PARENT = "22222222-2222-4222-8222-222222222222"
 
 class RecoveryCheckContextStoreTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.current = [datetime(2026, 7, 27, tzinfo=timezone.utc)]
+        self.current = [datetime(2026, 7, 27, tzinfo=UTC)]
         self.ids = iter(str(uuid.uuid4()) for _ in range(40))
         self.store = RecoveryCheckContextStore(
             _ROOT,

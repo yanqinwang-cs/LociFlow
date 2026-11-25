@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import json
 import os
-from pathlib import Path
 import tempfile
-from threading import Event, Thread
 import unittest
-from unittest import mock
 import uuid
+from pathlib import Path
+from threading import Event, Thread
+from unittest import mock
 
 import organizer.application.undo_service as undo_service
 from organizer.application.execution_coordinator import OrganizationExecutionCoordinator
@@ -24,24 +24,28 @@ from organizer.application.organization_operation_models import (
     OrganizationOperationRecord,
     OrganizationOperationVerification,
 )
-from organizer.application.organization_operation_repository import OrganizationOperationRepository
+from organizer.application.organization_operation_repository import (
+    OrganizationOperationRepository,
+)
 from organizer.application.organization_undo_models import (
     UNDO_ITEM_FAILED,
     UNDO_ITEM_RESTORED,
     UNDO_PARTIAL,
     UNDO_RESTORED,
 )
-from organizer.application.organization_undo_repository import OrganizationUndoRepository
+from organizer.application.organization_undo_repository import (
+    OrganizationUndoRepository,
+)
+from organizer.application.runtime_lifecycle import (
+    ApplicationStoppingError,
+    RuntimeOperationKind,
+)
 from organizer.application.undo_service import (
     CONFIRM_UNDO_FILE_MOVE,
     OrganizationUndoError,
     inspect_incomplete_organization_undo,
     preview_organization_undo,
     undo_organization_operation,
-)
-from organizer.application.runtime_lifecycle import (
-    ApplicationStoppingError,
-    RuntimeOperationKind,
 )
 from organizer.executor import apply_move_plan
 from organizer.models import MovePlanItem

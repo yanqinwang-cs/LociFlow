@@ -5,7 +5,6 @@ from pathlib import Path
 
 from organizer.models import ReviewedPlanItem
 
-
 DECISION_UNDECIDED = "undecided"
 RECOMMENDATION_ACCEPT = "accept"
 RECOMMENDATION_KEEP = "keep"

@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import errno
 import os
-from pathlib import Path
 import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
 import organizer.executor as executor

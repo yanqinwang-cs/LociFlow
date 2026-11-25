@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-from pathlib import Path
 import importlib.util
 import json
 import subprocess
 import tempfile
 import tomllib
 import unittest
-
+from pathlib import Path
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 SPEC = REPOSITORY_ROOT / "packaging" / "macos" / "loci_flow.spec"

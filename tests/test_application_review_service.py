@@ -1,7 +1,7 @@
 import io
-from pathlib import Path
 import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from organizer.application.review_service import (
@@ -19,6 +19,7 @@ from organizer.application.review_service import (
     update_review_page_size,
     update_review_sort,
 )
+from organizer.application.view_models import ReviewApplicationSession
 from organizer.models import MovePlanItem, ReviewedPlanItem
 from organizer.review_session import (
     DECISION_APPROVED,
@@ -29,7 +30,6 @@ from organizer.review_session import (
     save_reviewed_plan,
 )
 from organizer.review_state import ReviewState
-from organizer.application.view_models import ReviewApplicationSession
 
 
 class ReviewServiceTests(unittest.TestCase):

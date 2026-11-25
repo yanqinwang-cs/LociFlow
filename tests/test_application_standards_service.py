@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
 import json
-from pathlib import Path
 import tempfile
-from threading import Event, Thread
 import unittest
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from threading import Event, Thread
 from unittest.mock import patch
 
 from organizer.application.runtime_lifecycle import (
@@ -256,7 +256,7 @@ class StandardsServiceTests(unittest.TestCase):
     def test_preview_expiry_supersession_and_wrong_root_or_stale_scope_reject(self) -> None:
         with tempfile.TemporaryDirectory() as first, tempfile.TemporaryDirectory() as second:
             root = Path(first)
-            now = [datetime(2026, 1, 1, tzinfo=timezone.utc)]
+            now = [datetime(2026, 1, 1, tzinfo=UTC)]
             service = StandardsService(StandardsRepository(root), now=lambda: now[0])
             scope = service.resolve_root_scope()
             old = service.preview(

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import os
 import signal
-from threading import Event
 import unittest
+from threading import Event
 from unittest import mock
 
 from organizer.application.runtime_lifecycle import (

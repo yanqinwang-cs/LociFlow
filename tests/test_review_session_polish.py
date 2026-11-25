@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import io
 import json
-from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from organizer import cli as cli_module

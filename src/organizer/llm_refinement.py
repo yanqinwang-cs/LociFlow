@@ -1,9 +1,14 @@
 import json
 from pathlib import Path
 
-from organizer.json_values import is_json_integer
 from organizer.grouping import infer_subfolder
-from organizer.models import LLMRefinement, MovePlanItem, OrganizationSuggestion, ProjectGroup
+from organizer.json_values import is_json_integer
+from organizer.models import (
+    LLMRefinement,
+    MovePlanItem,
+    OrganizationSuggestion,
+    ProjectGroup,
+)
 
 ALLOWED_SUBFOLDERS = {
     "papers",

@@ -1,15 +1,14 @@
 from __future__ import annotations
 
-from contextlib import redirect_stderr, redirect_stdout
-from io import StringIO
 import os
-from pathlib import Path
 import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
-
+from contextlib import redirect_stderr, redirect_stdout
+from io import StringIO
+from pathlib import Path
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 PACKAGING_ROOT = REPOSITORY_ROOT / "packaging" / "macos"
@@ -28,7 +27,6 @@ from validate_app_bundle import (  # noqa: E402
     BundleValidationResult,
     MachORecord,
 )
-
 
 FINGERPRINT = "A" * 40
 TEAM_ID = "TEAMID1234"

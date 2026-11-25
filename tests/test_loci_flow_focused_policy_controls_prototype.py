@@ -1,15 +1,14 @@
 from __future__ import annotations
 
-from html.parser import HTMLParser
 import hashlib
 import json
-from pathlib import Path
 import re
 import shutil
 import subprocess
 import textwrap
 import unittest
-
+from html.parser import HTMLParser
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PROTOTYPE = ROOT / "prototype" / "loci-flow-ux-1-1-focused-policy-controls"

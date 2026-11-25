@@ -1,18 +1,18 @@
 from __future__ import annotations
 
 import argparse
-from collections.abc import Callable, Sequence
-from contextlib import closing, contextmanager
 import errno
-from pathlib import Path
 import socket
 import sys
-from threading import Event, Thread
 import time
+import webbrowser
+from collections.abc import Callable, Sequence
+from contextlib import closing, contextmanager
+from pathlib import Path
+from threading import Event, Thread
 from typing import Any
 from urllib.error import URLError
 from urllib.request import urlopen
-import webbrowser
 
 import uvicorn
 
@@ -25,21 +25,21 @@ from organizer.macos_launcher.process_lease import (
 from organizer.web.app import app_runtime_lifecycle, create_app
 from organizer.web.config import WebAppConfig
 from organizer.web.launcher import (
+    LauncherDependencies,
+    LauncherError,
     LaunchPhase,
     LaunchResult,
     LaunchRuntimeHandle,
     LaunchStopController,
-    LauncherDependencies,
-    LauncherError,
     launch,
     launch_configured,
 )
+from organizer.web.root_admission import RootAdmissionError, admit_root
 from organizer.web.signal_coordinator import (
     LifecycleShutdownCoordinator,
     ProcessSignalCoordinator,
     ShutdownSequenceState,
 )
-from organizer.web.root_admission import RootAdmissionError, admit_root
 
 LOOPBACK_HOST = "127.0.0.1"
 DEFAULT_READY_TIMEOUT_SECONDS = 5.0
@@ -297,23 +297,24 @@ def build_launcher_dependencies(
 ) -> LauncherDependencies:
     if root_lease_factory is _DEFAULT_ROOT_LEASE_FACTORY:
         paths = application_paths or MacOSApplicationPaths.for_home()
-        effective_root_lease_factory = (
-            lambda root: acquire_root_process_lease(paths, root)
-        )
+        def effective_root_lease_factory(root):
+            return acquire_root_process_lease(paths, root)
+
     else:
         effective_root_lease_factory = root_lease_factory
     if fail_closed_readiness:
         if browser_opener is None:
             raise ValueError("fail-closed readiness requires a browser opener")
-        readiness_factory = lambda health, launch, stop, request_exit: (
-            _FailClosedReadinessObserver(
+
+        def readiness_factory(health, launch, stop, request_exit):
+            return _FailClosedReadinessObserver(
                 health,
                 launch,
                 stop,
                 request_exit,
                 browser_opener,
             )
-        )
+
     else:
         readiness_factory = _create_readiness_thread
     return LauncherDependencies(

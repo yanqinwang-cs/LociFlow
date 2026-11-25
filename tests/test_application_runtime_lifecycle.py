@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import unittest
 from dataclasses import asdict
 from threading import Barrier, Event, Thread
-import unittest
 
+from organizer.application.execution_coordinator import OrganizationExecutionCoordinator
 from organizer.application.runtime_lifecycle import (
     APPLICATION_STOPPING_MESSAGE,
     ApplicationStoppingError,
@@ -11,7 +12,6 @@ from organizer.application.runtime_lifecycle import (
     RuntimeOperationKind,
     RuntimeSnapshot,
 )
-from organizer.application.execution_coordinator import OrganizationExecutionCoordinator
 
 
 class RuntimeLifecycleTests(unittest.TestCase):

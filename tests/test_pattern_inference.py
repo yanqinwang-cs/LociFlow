@@ -1,6 +1,6 @@
-from pathlib import Path
 import tempfile
 import unittest
+from pathlib import Path
 
 from organizer.grouping import analyze_anchor_decisions
 from organizer.pattern_inference import (

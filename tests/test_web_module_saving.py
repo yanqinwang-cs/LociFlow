@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import json
-from unittest import mock
 import unittest
+from unittest import mock
 
 from tests.web_consumer_support import ConsumerWebFixture
 

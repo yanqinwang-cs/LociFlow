@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
-from pathlib import Path
 import secrets
+from collections.abc import Callable
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from threading import Lock
-from typing import Callable
 
 from organizer.application.standards_models import (
     PREVIEW_LIFETIME_SECONDS,
@@ -58,7 +58,7 @@ class StandardsCreationStore:
         now: Callable[[], datetime] | None = None,
     ) -> None:
         self._root = root.resolve(strict=True)
-        self._now = now or (lambda: datetime.now(timezone.utc))
+        self._now = now or (lambda: datetime.now(UTC))
         self._lock = Lock()
         self._scopes: dict[str, _ScopeBinding] = {}
         self._session_contexts: dict[str, _CreationContextBinding] = {}

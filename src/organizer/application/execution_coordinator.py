@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import replace
-from datetime import datetime, timezone
 import hashlib
 import json
-from threading import Lock
 import uuid
+from dataclasses import replace
+from datetime import UTC, datetime
+from threading import Lock
 
 from organizer.application.organization_decision_models import ApprovedOrganizationPlan
 from organizer.application.organization_operation_models import (
@@ -172,7 +172,7 @@ class OrganizationExecutionCoordinator:
 
 
 def _utc_timestamp() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def approved_plan_identity(approved_plan: ApprovedOrganizationPlan) -> str:

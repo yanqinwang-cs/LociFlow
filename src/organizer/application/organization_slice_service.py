@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from types import MappingProxyType
 from typing import Any
@@ -267,7 +267,7 @@ def _consumer_snapshot(
         size_bytes=metadata.size_bytes,
         modified_at=datetime.fromtimestamp(
             metadata.modified_time,
-            tz=timezone.utc,
+            tz=UTC,
         ).isoformat(),
         relative_path=relative_path,
         current_folder=current_folder,

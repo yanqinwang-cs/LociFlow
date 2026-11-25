@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import json
-from pathlib import Path
 import re
 import tempfile
 import unittest
+from datetime import UTC, datetime
+from pathlib import Path
 
 import httpx
 
@@ -36,7 +36,7 @@ class WebOrganizationSliceTests(unittest.IsolatedAsyncioTestCase):
                 testing=True,
             )
         )
-        self.completed_at = datetime(2026, 7, 14, 18, 52, tzinfo=timezone.utc)
+        self.completed_at = datetime(2026, 7, 14, 18, 52, tzinfo=UTC)
 
     async def asyncTearDown(self) -> None:
         self.directory.cleanup()

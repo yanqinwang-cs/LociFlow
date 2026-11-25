@@ -1,18 +1,17 @@
-from pathlib import Path
 import json
 import tempfile
 import unittest
-
-from datetime import datetime, timezone
 import uuid
+from datetime import UTC, datetime
+from pathlib import Path
 
 from organizer.application.standards_repository import StandardsRepository
 from organizer.html_report import render_html_report
 from organizer.organization_rules import (
     STANDARD_LEGACY_IGNORED_TERM,
     StandardRecord,
-    StandardScope,
     StandardsCatalog,
+    StandardScope,
 )
 from organizer.reports import build_scan_report
 from organizer.rule_audit import _expansion_warnings
@@ -85,7 +84,7 @@ class RuleAuditTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             repository = StandardsRepository(root)
-            timestamp = datetime(2026, 1, 1, tzinfo=timezone.utc).isoformat()
+            timestamp = datetime(2026, 1, 1, tzinfo=UTC).isoformat()
 
             def record(standard_type, parameters, *, active, archived_at=None):
                 return StandardRecord(

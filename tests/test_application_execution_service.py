@@ -1,27 +1,29 @@
 from __future__ import annotations
 
-from dataclasses import replace
 import json
 import os
-from pathlib import Path
 import shutil
 import tempfile
-from threading import Event, Thread
 import unittest
+from dataclasses import replace
+from pathlib import Path
+from threading import Event, Thread
 from unittest import mock
 
 from organizer.application.execution_coordinator import OrganizationExecutionCoordinator
-from organizer.application.filesystem_operation_admission import (
-    FilesystemOperationAdmission,
-    FilesystemOperationBlockedError,
-    FilesystemOperationInspector,
-)
 from organizer.application.execution_service import (
     CONFIRM_MOVE_APPROVED_FILES,
     OrganizationExecutionError,
     inspect_incomplete_organization_operation,
-    issue_movement_authorization as _issue_movement_authorization,
     move_approved_organization,
+)
+from organizer.application.execution_service import (
+    issue_movement_authorization as _issue_movement_authorization,
+)
+from organizer.application.filesystem_operation_admission import (
+    FilesystemOperationAdmission,
+    FilesystemOperationBlockedError,
+    FilesystemOperationInspector,
 )
 from organizer.application.organization_decision_models import (
     ApprovedOrganizationPlan,
@@ -680,7 +682,7 @@ def _approved_plan(
     for index, source_name in enumerate(source_names, start=1):
         source = root / source_name
         source.parent.mkdir(parents=True, exist_ok=True)
-        source.write_bytes(f"{Path(source_name).name}-bytes".encode("utf-8"))
+        source.write_bytes(f"{Path(source_name).name}-bytes".encode())
         destination = root / "Organized" / Path(source_name).name
         reviewed.append(
             ReviewedPlanItem(

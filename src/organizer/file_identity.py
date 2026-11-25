@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-from contextlib import contextmanager
-from dataclasses import dataclass
 import errno
 import hashlib
 import os
-from pathlib import Path
 import re
 import stat
-from typing import Iterator
+from collections.abc import Iterator
+from contextlib import contextmanager
+from dataclasses import dataclass
+from pathlib import Path
 
 REGULAR_FILE_TYPE = "regular_file"
 SHA256_ALGORITHM = "sha256"

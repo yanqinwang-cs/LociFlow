@@ -6,7 +6,6 @@ from organizer.application.standards_read_models import StandardsReadProjection
 from organizer.models import FileMetadata
 from organizer.organization_rules import StandardRecord, StandardScope
 
-
 PREVIEW_LIFETIME_SECONDS = 15 * 60
 
 

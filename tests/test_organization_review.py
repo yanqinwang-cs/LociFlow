@@ -1,11 +1,11 @@
-from copy import deepcopy
 import json
 import os
-from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import unittest
+from copy import deepcopy
+from pathlib import Path
 
 from organizer.organization_review import (
     ORGANIZATION_REVIEW_INSTRUCTIONS,

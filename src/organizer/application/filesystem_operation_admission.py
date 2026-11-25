@@ -12,11 +12,17 @@ from organizer.application.duplicate_bin_models import (
     BATCH_APPROVED,
     BATCH_CANCELLED,
     BATCH_SUPERSEDED,
+)
+from organizer.application.duplicate_bin_models import (
     ITEM_RESTORED as BIN_ITEM_RESTORED,
 )
 from organizer.application.duplicate_bin_movement_models import (
     AUTH_AVAILABLE as MOVE_AUTH_AVAILABLE,
+)
+from organizer.application.duplicate_bin_movement_models import (
     AUTH_CONSUMED as MOVE_AUTH_CONSUMED,
+)
+from organizer.application.duplicate_bin_movement_models import (
     OP_TERMINAL_STATUSES,
 )
 from organizer.application.duplicate_bin_operation_repository import (
@@ -25,9 +31,17 @@ from organizer.application.duplicate_bin_operation_repository import (
 from organizer.application.duplicate_bin_repository import DuplicateBinRepository
 from organizer.application.duplicate_bin_restore_models import (
     AUTH_AVAILABLE as RESTORE_AUTH_AVAILABLE,
+)
+from organizer.application.duplicate_bin_restore_models import (
     AUTH_CONSUMED as RESTORE_AUTH_CONSUMED,
+)
+from organizer.application.duplicate_bin_restore_models import (
     AUTH_SUPERSEDED as RESTORE_AUTH_SUPERSEDED,
+)
+from organizer.application.duplicate_bin_restore_models import (
     ITEM_VERIFIED as RESTORE_ITEM_VERIFIED,
+)
+from organizer.application.duplicate_bin_restore_models import (
     RESTORE_TERMINAL,
 )
 from organizer.application.duplicate_bin_restore_repository import (
@@ -51,7 +65,6 @@ from organizer.application.organization_undo_models import (
 from organizer.application.organization_undo_repository import (
     OrganizationUndoRepository,
 )
-
 
 SAFE_RECOVERY_MESSAGE = (
     "Loci Flow found an unfinished file operation. New file changes are paused."

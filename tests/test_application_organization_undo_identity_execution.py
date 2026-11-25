@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import replace
 import json
-from pathlib import Path
 import tempfile
 import unittest
+from dataclasses import replace
+from pathlib import Path
 from unittest import mock
 
 from organizer.application.content_identity import RegularFileContentIdentity
@@ -35,7 +35,6 @@ from organizer.application.organization_undo_models import (
 from organizer.executor import apply_same_volume_identity_move_plan
 from organizer.executor_identity import StrictExecutorInterrupted
 from tests.test_application_undo_identity_eligibility import _stored_parent
-
 
 _TIME = "2026-07-23T08:00:00+00:00"
 

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from pathlib import Path
 import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from organizer.application.review_service import (
@@ -14,8 +14,8 @@ from organizer.application.review_service import (
     update_review_page_size,
     update_review_sort,
 )
-from organizer.application.standards_read_models import OrganizationUnavailableError
 from organizer.application.scan_service import scan_root
+from organizer.application.standards_read_models import OrganizationUnavailableError
 from organizer.organization_rules import ORGANIZATION_RULES_RELATIVE_PATH
 
 

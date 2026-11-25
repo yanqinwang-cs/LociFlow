@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
 import importlib
-from pathlib import Path
 import sys
+from collections.abc import Sequence
+from pathlib import Path
 
 _PACKAGING_SMOKE_ARGUMENT = "--packaging-smoke-test"
 _FROZEN_WORKFLOW_ARGUMENT = "--packaging-workflow-acceptance"

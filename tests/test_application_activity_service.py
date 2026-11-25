@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from dataclasses import replace
 import json
 import os
-from pathlib import Path
 import tempfile
 import unittest
 import uuid
+from dataclasses import replace
+from pathlib import Path
 
 from organizer.application.activity_service import list_activity_entries
 from organizer.application.content_identity import RegularFileContentIdentity
@@ -25,7 +25,9 @@ from organizer.application.organization_operation_models import (
     OrganizationOperationRecord,
     OrganizationOperationVerification,
 )
-from organizer.application.organization_operation_repository import OrganizationOperationRepository
+from organizer.application.organization_operation_repository import (
+    OrganizationOperationRepository,
+)
 from organizer.application.organization_undo_models import (
     UNDO_ITEM_RESTORED,
     UNDO_PARTIAL,
@@ -36,7 +38,9 @@ from organizer.application.organization_undo_models import (
     OrganizationUndoRecord,
     UndoVerificationResult,
 )
-from organizer.application.organization_undo_repository import OrganizationUndoRepository
+from organizer.application.organization_undo_repository import (
+    OrganizationUndoRepository,
+)
 
 
 class ActivityServiceTests(unittest.TestCase):

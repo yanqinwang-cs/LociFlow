@@ -1,8 +1,8 @@
-from dataclasses import replace
 import json
-from pathlib import Path
 import tempfile
 import unittest
+from dataclasses import replace
+from pathlib import Path
 
 from organizer.models import MovePlanItem, ReviewedPlanItem
 from organizer.review_state import (

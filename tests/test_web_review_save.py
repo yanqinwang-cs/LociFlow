@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import json
-from unittest import mock
 import unittest
+from unittest import mock
 
 from organizer.review_session import load_reviewed_plan_items
 from tests.web_review_support import WebReviewFixture

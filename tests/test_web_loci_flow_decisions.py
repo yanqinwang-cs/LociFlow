@@ -1,17 +1,16 @@
 from __future__ import annotations
 
-from pathlib import Path
 import re
 import subprocess
-import textwrap
 import tempfile
+import textwrap
 import unittest
+from pathlib import Path
 
 import httpx
 
 from organizer.web.app import create_app
 from organizer.web.config import WebAppConfig
-
 
 ROOT = Path(__file__).resolve().parents[1]
 WEB = ROOT / "src" / "organizer" / "web"

@@ -1,19 +1,19 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import json
-from pathlib import Path
 import re
 import tempfile
 import unittest
+from datetime import UTC, datetime
+from pathlib import Path
 from unittest import mock
 
 import httpx
 
 from organizer.application.filesystem_operation_admission import (
+    SAFE_RECOVERY_MESSAGE,
     FilesystemOperationBlockedError,
     RecoveryAdmissionState,
-    SAFE_RECOVERY_MESSAGE,
 )
 from organizer.application.scan_service import scan_root
 from organizer.application.standards_models import StandardsApplicationError
@@ -24,8 +24,7 @@ from organizer.web.app import create_app
 from organizer.web.config import WebAppConfig
 from organizer.web.scan_jobs import ScanJobSnapshot
 
-
-COMPLETED_AT = datetime(2026, 7, 15, 12, tzinfo=timezone.utc)
+COMPLETED_AT = datetime(2026, 7, 15, 12, tzinfo=UTC)
 
 
 class WebOrganizationDecisionTests(unittest.IsolatedAsyncioTestCase):

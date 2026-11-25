@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 import hashlib
-from pathlib import Path
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 
 from PIL import Image
-
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 PACKAGING_ROOT = REPOSITORY_ROOT / "packaging" / "macos"
@@ -18,7 +17,6 @@ from generate_icon import (  # noqa: E402
     IconGenerationError,
     generate_icon,
 )
-
 
 SOURCE_ICON = (
     PACKAGING_ROOT / "icon" / "loci-flow-app-icon-1024.png"

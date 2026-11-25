@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 import tempfile
 import unittest
+from pathlib import Path
 
 from organizer.macos_launcher.application_paths import MacOSApplicationPaths
 from organizer.macos_launcher.frozen_acceptance import (

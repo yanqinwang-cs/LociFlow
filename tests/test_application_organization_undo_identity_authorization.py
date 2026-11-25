@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import replace
-from datetime import datetime, timedelta, timezone
-from pathlib import Path
 import tempfile
-from threading import Barrier, Thread
 import unittest
+from dataclasses import replace
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from threading import Barrier, Thread
 
 from organizer.application.organization_undo_identity_authorization import (
     IDENTITY_V2_UNDO_MODE,
@@ -23,9 +23,8 @@ from organizer.application.organization_undo_identity_eligibility import (
 )
 from tests.test_application_undo_identity_eligibility import _stored_parent
 
-
 _TOKEN = "11111111-1111-4111-8111-111111111111"
-_NOW = datetime(2026, 7, 27, 8, 0, tzinfo=timezone.utc)
+_NOW = datetime(2026, 7, 27, 8, 0, tzinfo=UTC)
 
 
 class V2UndoAuthorizationTests(unittest.TestCase):

@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import replace
 import json
-from pathlib import Path
 import tempfile
 import unittest
+from dataclasses import replace
+from pathlib import Path
 from unittest import mock
 
 from organizer.application.review_service import (
@@ -13,12 +13,12 @@ from organizer.application.review_service import (
     create_review_session,
     create_review_session_from_scan_result,
     dirty_review_modules,
+    resume_review_session,
     review_module_category,
     review_module_is_dirty,
     review_module_items,
     save_review_module,
     save_review_session,
-    resume_review_session,
 )
 from organizer.application.scan_service import scan_root
 from organizer.application.view_models import ReviewModule

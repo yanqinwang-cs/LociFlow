@@ -1,9 +1,8 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from enum import Enum
-import re
-
 
 REGULAR_FILE_IDENTITY_KIND = "regular_file"
 SHA256_IDENTITY_ALGORITHM = "sha256"

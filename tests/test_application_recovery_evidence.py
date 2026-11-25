@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-from dataclasses import replace
-from datetime import timedelta
 import json
 import os
-from pathlib import Path
 import shutil
 import tempfile
 import unittest
-from unittest import mock
 import uuid
+from dataclasses import replace
+from datetime import timedelta
+from pathlib import Path
+from unittest import mock
 
 from organizer.application.content_identity import RegularFileContentIdentity
 from organizer.application.duplicate_bin_models import (
@@ -18,8 +18,14 @@ from organizer.application.duplicate_bin_models import (
 )
 from organizer.application.duplicate_bin_movement_models import (
     MOVE_ATTEMPTING as DUPLICATE_MOVE_ATTEMPTING,
+)
+from organizer.application.duplicate_bin_movement_models import (
     MOVE_MOVED as DUPLICATE_MOVE_MOVED,
+)
+from organizer.application.duplicate_bin_movement_models import (
     MOVE_PENDING as DUPLICATE_MOVE_PENDING,
+)
+from organizer.application.duplicate_bin_movement_models import (
     OP_INTERRUPTED,
     OP_MOVED_UNVERIFIED,
     OP_MOVING,
@@ -28,8 +34,14 @@ from organizer.application.duplicate_bin_movement_models import (
 )
 from organizer.application.duplicate_bin_restore_models import (
     ITEM_ATTEMPTING as RESTORE_ITEM_ATTEMPTING,
+)
+from organizer.application.duplicate_bin_restore_models import (
     ITEM_PENDING as RESTORE_ITEM_PENDING,
+)
+from organizer.application.duplicate_bin_restore_models import (
     ITEM_RESTORED as RESTORE_ITEM_RESTORED,
+)
+from organizer.application.duplicate_bin_restore_models import (
     RESTORE_INTERRUPTED,
     RESTORE_PREPARED,
     RESTORE_RESTORED_UNVERIFIED,
@@ -47,13 +59,13 @@ from organizer.application.organization_operation_models import (
     MOVE_ATTEMPTING,
     MOVE_MOVED,
     MOVE_PENDING,
+    ORGANIZATION_OPERATION_SCHEMA_VERSION_V2,
     STATUS_INTERRUPTED,
     STATUS_MOVED_UNVERIFIED,
     STATUS_MOVING,
     STATUS_PARTIAL_MOVEMENT,
     STATUS_PREPARED,
     VERIFICATION_NOT_RUN,
-    ORGANIZATION_OPERATION_SCHEMA_VERSION_V2,
     OrganizationOperationVerification,
 )
 from organizer.application.organization_undo_models import (
@@ -68,16 +80,16 @@ from organizer.application.organization_undo_models import (
     UNDO_UNDOING,
     UndoVerificationResult,
 )
+from organizer.application.recovery_check_service import (
+    RecoveryCheckEligibilityInspector,
+)
 from organizer.application.recovery_evidence import (
     FilesystemEvidence,
-    RecoveryActionKind,
     RecoveryActionability,
+    RecoveryActionKind,
     RecoveryEvidenceInspector,
     RecoveryEvidenceState,
     RecoveryOperationFamily,
-)
-from organizer.application.recovery_check_service import (
-    RecoveryCheckEligibilityInspector,
 )
 from organizer.application.recovery_projection_service import (
     RecoveryProjectionService,
@@ -87,6 +99,8 @@ from organizer.web.config import WebAppConfig
 from tests.test_application_duplicate_bin_movement_service import ISSUED
 from tests.test_application_duplicate_bin_restore_service import (
     _moved as _duplicate_moved,
+)
+from tests.test_application_duplicate_bin_restore_service import (
     _restore,
     _restore_preview,
 )

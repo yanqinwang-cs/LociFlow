@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, replace
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
-from typing import Callable
 
 from organizer.application.organization_identity_verification import (
     IdentityMismatchCategory,
@@ -75,7 +75,7 @@ class OrganizationIdentityVerificationPublicationService:
     ) -> None:
         self._repository = repository
         self._verifier = verifier
-        self._now = now or (lambda: datetime.now(timezone.utc))
+        self._now = now or (lambda: datetime.now(UTC))
 
     def publish(self, operation_id: str) -> IdentityVerificationPublicationResult:
         try:
@@ -184,7 +184,7 @@ class OrganizationIdentityVerificationPublicationService:
             return None
 
         try:
-            completed_at = self._now().astimezone(timezone.utc).isoformat()
+            completed_at = self._now().astimezone(UTC).isoformat()
         except Exception:
             return None
         return replace(

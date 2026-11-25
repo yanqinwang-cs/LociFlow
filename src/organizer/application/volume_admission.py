@@ -1,17 +1,16 @@
 from __future__ import annotations
 
+import os
+import stat
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
-import os
 from pathlib import Path
-import stat
-from typing import Callable
 
 from organizer.application.organization_decision_models import (
     ApprovedOrganizationPlan,
 )
 from organizer.safety import validate_under_root
-
 
 SAFE_CROSS_VOLUME_MESSAGE = (
     "Some approved files are on different storage volumes. Nothing was moved."

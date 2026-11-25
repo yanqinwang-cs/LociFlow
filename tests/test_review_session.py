@@ -1,4 +1,3 @@
-from pathlib import Path
 import io
 import json
 import os
@@ -6,22 +5,25 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from organizer.executor import apply_move_plan
 from organizer.models import MovePlanItem, MoveResult, OperationLog, ReviewedPlanItem
+from organizer.organization_rules import load_organization_rules
 from organizer.review_session import (
     approve_items,
-    build_review_session_items as build_review_session_items_from_rules_snapshot,
     find_approved_move_conflicts,
     get_item,
     load_reviewed_plan_move_items,
     reject_items,
-    save_reviewed_plan,
     reviewed_plan_data_to_move_items,
+    save_reviewed_plan,
     summarize_review_items,
 )
-from organizer.organization_rules import load_organization_rules
+from organizer.review_session import (
+    build_review_session_items as build_review_session_items_from_rules_snapshot,
+)
 from organizer.review_state import load_review_state, review_state_path
 from organizer.scanner import scan_directory
 

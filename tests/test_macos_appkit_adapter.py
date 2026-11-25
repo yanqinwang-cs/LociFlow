@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from pathlib import Path
-from types import SimpleNamespace
-from threading import Event, Thread
 import tempfile
 import unittest
+from pathlib import Path
+from threading import Event, Thread
+from types import SimpleNamespace
 from unittest import mock
 
 from organizer.macos_launcher.appkit_adapter import AppKitAdapter
@@ -219,7 +219,7 @@ class _ContentView:
 
 
 class _FinishingPanel(_Allocated):
-    created: list["_FinishingPanel"] = []
+    created: list[_FinishingPanel] = []
 
     def __init__(self) -> None:
         self.values: dict[str, object] = {}

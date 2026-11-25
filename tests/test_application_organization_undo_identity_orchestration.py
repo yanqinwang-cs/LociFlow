@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
-from pathlib import Path
 import tempfile
 import unittest
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from unittest import mock
 
 from organizer.application.organization_undo_identity_authorization import (
@@ -13,11 +13,11 @@ from organizer.application.organization_undo_identity_authorization import (
     V2UndoAuthorizationStore,
 )
 from organizer.application.organization_undo_identity_orchestration import (
+    UNDO_FILE_MOVE_CONFIRMATION,
     IdentityUndoConfirmationState,
     IdentityUndoPreviewState,
     OrganizationIdentityUndoOrchestrationError,
     OrganizationIdentityUndoOrchestrationService,
-    UNDO_FILE_MOVE_CONFIRMATION,
 )
 from organizer.application.organization_undo_models import (
     UNDO_INTERRUPTED,
@@ -31,8 +31,7 @@ from organizer.application.undo_identity_verification_publication import (
 from organizer.executor import apply_same_volume_identity_move_plan
 from tests.test_application_undo_identity_eligibility import _stored_parent
 
-
-_NOW = datetime(2026, 7, 27, 8, 0, tzinfo=timezone.utc)
+_NOW = datetime(2026, 7, 27, 8, 0, tzinfo=UTC)
 _TOKEN = "11111111-1111-4111-8111-111111111111"
 _UNDO = "22222222-2222-4222-8222-222222222222"
 

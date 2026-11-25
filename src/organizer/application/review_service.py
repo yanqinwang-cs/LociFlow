@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import replace
 from pathlib import Path
 
+from organizer.application.standards_read_models import OrganizationUnavailableError
 from organizer.application.view_models import (
     ModuleReviewSaveResult,
     ModuleReviewSummary,
@@ -11,9 +12,8 @@ from organizer.application.view_models import (
     ReviewItemMetadata,
     ReviewModule,
     ReviewSaveResult,
+    ScanApplicationResult,
 )
-from organizer.application.view_models import ScanApplicationResult
-from organizer.application.standards_read_models import OrganizationUnavailableError
 from organizer.models import FileMetadata, ReviewedPlanItem
 from organizer.organization_rules import (
     ORGANIZATION_RULES_UNAVAILABLE_CODE,
@@ -25,10 +25,9 @@ from organizer.review_session import (
     DECISION_REJECTED,
     DECISION_UNDECIDED,
     PageDecisionPreview,
+    ReviewedPlanConflict,
     ReviewViewPage,
     ReviewViewState,
-    ReviewedPlanConflict,
-    apply_page_decision_change as apply_page_decision_change_to_items,
     approve_items,
     build_review_session_items,
     build_review_session_items_from_report,
@@ -51,6 +50,9 @@ from organizer.review_session import (
     summarize_review_items,
     undecide_items,
 )
+from organizer.review_session import (
+    apply_page_decision_change as apply_page_decision_change_to_items,
+)
 from organizer.review_state import (
     MEMORY_APPROVED,
     MEMORY_NEW,
@@ -64,7 +66,6 @@ from organizer.review_state import (
 )
 from organizer.safety import validate_under_root
 from organizer.scanner import scan_directory
-
 
 _MODULE_CATEGORIES = {
     ReviewModule.DUPLICATES: "duplicate",

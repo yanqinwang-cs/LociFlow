@@ -22,17 +22,16 @@ from organizer.application.review_service import (
 )
 from organizer.application.runtime_lifecycle import ApplicationStoppingError
 from organizer.application.view_models import ReviewApplicationSession
-from organizer.web.forms import FormDataError, read_urlencoded_form
 from organizer.web.consumer_presenter import (
-    ConsumerSurface,
     SURFACE_SPECS,
+    ConsumerSurface,
     build_consumer_page,
     is_current_guided_item,
     module_for_surface,
     parse_surface,
     surface_url,
 )
-from organizer.web.routes.consumer import render_consumer_page
+from organizer.web.forms import FormDataError, read_urlencoded_form
 from organizer.web.review_explorer import (
     ReviewConfirmationRejected,
     ReviewExplorerSnapshot,
@@ -41,6 +40,7 @@ from organizer.web.review_explorer import (
     ReviewPreviewUnavailable,
     ReviewSessionUnavailable,
 )
+from organizer.web.routes.consumer import render_consumer_page
 from organizer.web.security import (
     csrf_token_for_session,
     is_authenticated,

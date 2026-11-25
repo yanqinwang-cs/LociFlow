@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import asyncio
-from pathlib import Path
 import re
 import tempfile
 import unittest
+from pathlib import Path
 
 import httpx
 

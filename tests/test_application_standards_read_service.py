@@ -1,7 +1,7 @@
-from pathlib import Path
 import json
 import tempfile
 import unittest
+from pathlib import Path
 
 from organizer.application.scan_service import scan_root
 from organizer.application.standards_read_service import (

@@ -1,9 +1,9 @@
-from collections.abc import Sequence
-from dataclasses import dataclass
 import os
-from pathlib import Path
 import unicodedata
 import uuid
+from collections.abc import Sequence
+from dataclasses import dataclass
+from pathlib import Path
 
 from organizer.models import FileMetadata
 from organizer.safety import validate_under_root

@@ -1,16 +1,16 @@
 from __future__ import annotations
 
-from dataclasses import asdict, replace
-from datetime import datetime, timezone
 import hashlib
 import json
 import math
 import os
-from pathlib import Path
 import tempfile
+import uuid
+from dataclasses import asdict, replace
+from datetime import UTC, datetime
+from pathlib import Path
 from threading import Lock
 from typing import Any
-import uuid
 
 from organizer.application.duplicate_bin_models import (
     BATCH_APPROVED,
@@ -36,7 +36,6 @@ from organizer.application.duplicate_bin_models import (
 )
 from organizer.safety import validate_under_root
 from organizer.scope import DUPLICATE_BIN_RELATIVE_ROOT
-
 
 DUPLICATE_BIN_CATALOG = DUPLICATE_BIN_RELATIVE_ROOT / "catalog.json"
 
@@ -240,7 +239,7 @@ class DuplicateBinRepository:
         catalog = self._read_catalog_unlocked()
         reconciled = _reconcile_fully_restored_batches(
             catalog,
-            updated_at=datetime.now(timezone.utc).isoformat(),
+            updated_at=datetime.now(UTC).isoformat(),
         )
         if reconciled is not catalog:
             self._atomic_write(_catalog_to_dict(reconciled))

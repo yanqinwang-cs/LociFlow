@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import replace
-from datetime import datetime, timezone
-from pathlib import Path
 import tempfile
 import unittest
+from dataclasses import replace
+from datetime import UTC, datetime
+from pathlib import Path
 
 from organizer.application.duplicate_bin_approval_service import (
     create_or_recover_duplicate_batch,
@@ -31,8 +31,7 @@ from organizer.web.organization_decision_store import (
 )
 from organizer.web.scan_jobs import ScanJobSnapshot
 
-
-COMPLETED_AT = datetime(2026, 7, 16, 10, tzinfo=timezone.utc)
+COMPLETED_AT = datetime(2026, 7, 16, 10, tzinfo=UTC)
 APPROVED_AT = "2026-07-16T10:01:00+00:00"
 
 

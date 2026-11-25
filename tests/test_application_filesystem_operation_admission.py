@@ -1,18 +1,24 @@
 from __future__ import annotations
 
-from dataclasses import replace
 import json
-from pathlib import Path
 import tempfile
 import unittest
-from unittest import mock
 import uuid
+from dataclasses import replace
+from pathlib import Path
+from unittest import mock
 
 from organizer.application.duplicate_bin_models import BATCH_MOVED, ITEM_RESTORED
 from organizer.application.duplicate_bin_movement_models import (
     MOVE_ATTEMPTING as DUPLICATE_MOVE_ATTEMPTING,
+)
+from organizer.application.duplicate_bin_movement_models import (
     MOVE_MOVED as DUPLICATE_MOVE_MOVED,
+)
+from organizer.application.duplicate_bin_movement_models import (
     MOVE_PENDING as DUPLICATE_MOVE_PENDING,
+)
+from organizer.application.duplicate_bin_movement_models import (
     OP_INTERRUPTED,
     OP_MOVED_UNVERIFIED,
     OP_MOVING,
@@ -22,8 +28,14 @@ from organizer.application.duplicate_bin_movement_models import (
 )
 from organizer.application.duplicate_bin_restore_models import (
     ITEM_ATTEMPTING as RESTORE_ITEM_ATTEMPTING,
+)
+from organizer.application.duplicate_bin_restore_models import (
     ITEM_PENDING as RESTORE_ITEM_PENDING,
+)
+from organizer.application.duplicate_bin_restore_models import (
     ITEM_RESTORED as RESTORE_ITEM_RESTORED,
+)
+from organizer.application.duplicate_bin_restore_models import (
     RESTORE_INTERRUPTED,
     RESTORE_PREPARED,
     RESTORE_RESTORED_UNVERIFIED,

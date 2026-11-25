@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime, timezone
 import json
 import os
-from pathlib import Path
 import re
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 from organizer.json_values import is_json_version
@@ -524,7 +524,7 @@ def _base_report(apply_result_path: Path, root: Path) -> dict[str, Any]:
     return {
         "schema_version": VERIFICATION_SCHEMA_VERSION,
         "source": VERIFICATION_SOURCE,
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": datetime.now(UTC).isoformat(),
         "verification_root": ".",
         "apply_result_file": apply_result_path.relative_to(root).as_posix(),
         "operation_log_file": None,

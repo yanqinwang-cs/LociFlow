@@ -1,9 +1,9 @@
-from pathlib import Path
 import os
 import subprocess
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 
 from organizer.grouping import (
     ANCHOR_DECISION_IGNORED,

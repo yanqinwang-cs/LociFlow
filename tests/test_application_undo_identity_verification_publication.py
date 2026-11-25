@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import replace
-from datetime import datetime, timezone
-from pathlib import Path
 import tempfile
 import unittest
+from dataclasses import replace
+from datetime import UTC, datetime
+from pathlib import Path
 from unittest import mock
 
 from organizer.application.activity_service import list_activity_entries
@@ -28,8 +28,7 @@ from tests.test_application_organization_undo_identity_verification import (
     _restored_pair,
 )
 
-
-_COMPLETED = datetime(2026, 7, 23, 9, 10, 11, tzinfo=timezone.utc)
+_COMPLETED = datetime(2026, 7, 23, 9, 10, 11, tzinfo=UTC)
 
 
 class IdentityUndoVerificationPublicationTests(unittest.TestCase):

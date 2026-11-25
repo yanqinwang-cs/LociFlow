@@ -1,9 +1,9 @@
-from pathlib import Path
 import os
 import subprocess
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 
 from organizer.review import build_review_candidate_plan, detect_review_candidates
 from organizer.scanner import scan_directory

@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from enum import Enum
 import errno
 import hashlib
 import math
 import os
-from pathlib import Path
 import stat
 import uuid
+from dataclasses import dataclass
+from enum import Enum
+from pathlib import Path
 
 from organizer.application.content_identity import (
     REGULAR_FILE_IDENTITY_KIND,

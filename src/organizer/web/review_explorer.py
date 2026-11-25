@@ -1,12 +1,12 @@
 from __future__ import annotations
 
+import hmac
+import secrets
+from collections.abc import Callable
 from dataclasses import dataclass
 from functools import wraps
-import hmac
 from pathlib import Path
-import secrets
 from threading import Lock
-from collections.abc import Callable
 
 from organizer.application.review_service import (
     apply_current_page_decision,

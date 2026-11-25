@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
-from datetime import datetime, timezone
-from enum import Enum
 import os
-from pathlib import Path
-from typing import Callable
 import uuid
+from collections.abc import Callable
+from dataclasses import dataclass, replace
+from datetime import UTC, datetime
+from enum import Enum
+from pathlib import Path
 
 from organizer.application.organization_operation_repository import (
     OrganizationOperationRepository,
@@ -627,4 +627,4 @@ def _canonical_uuid(value: object) -> bool:
 
 
 def _utc_timestamp() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()

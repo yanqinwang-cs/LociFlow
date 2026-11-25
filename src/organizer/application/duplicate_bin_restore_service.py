@@ -1,21 +1,27 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
-from datetime import datetime, timezone
 import os
-from pathlib import Path
 import stat
 import unicodedata
 import uuid
+from dataclasses import dataclass, replace
+from datetime import UTC, datetime
+from pathlib import Path
 
 from organizer.application.duplicate_bin_models import (
     BATCH_COMPLETED,
-    ITEM_ATTENTION as BIN_ITEM_ATTENTION,
-    ITEM_AVAILABLE as BIN_ITEM_AVAILABLE,
-    ITEM_RESTORED as BIN_ITEM_RESTORED,
     ApprovedDuplicateBatch,
     SelectedDuplicateBinItem,
     canonical_digest,
+)
+from organizer.application.duplicate_bin_models import (
+    ITEM_ATTENTION as BIN_ITEM_ATTENTION,
+)
+from organizer.application.duplicate_bin_models import (
+    ITEM_AVAILABLE as BIN_ITEM_AVAILABLE,
+)
+from organizer.application.duplicate_bin_models import (
+    ITEM_RESTORED as BIN_ITEM_RESTORED,
 )
 from organizer.application.duplicate_bin_movement_models import (
     MOVE_VERIFIED,
@@ -74,7 +80,6 @@ from organizer.scope import (
     DUPLICATE_BIN_ITEMS_RELATIVE_ROOT,
     is_protected_context_path,
 )
-
 
 CONFIRM_RESTORE_COPIES = "RESTORE COPIES"
 
@@ -971,4 +976,4 @@ def _time(value: str) -> datetime:
 
 
 def _utc() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()

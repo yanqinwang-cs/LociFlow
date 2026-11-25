@@ -2,13 +2,12 @@ from __future__ import annotations
 
 import base64
 import hashlib
-from pathlib import Path
 import re
 import subprocess
 import sys
 import tomllib
 import unittest
-
+from pathlib import Path
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 WEB_ROOT = REPOSITORY_ROOT / "src" / "organizer" / "web"

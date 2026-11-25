@@ -1,17 +1,21 @@
 from __future__ import annotations
 
-from datetime import timedelta
-from dataclasses import replace
-from pathlib import Path
 import json
 import shutil
 import tempfile
-from threading import Event, Thread
 import unittest
-from unittest import mock
 import uuid
+from dataclasses import replace
+from datetime import timedelta
+from pathlib import Path
+from threading import Event, Thread
+from unittest import mock
 
 import organizer.application.duplicate_bin_restore_service as restore_service
+from organizer.application.duplicate_bin_approval_service import (
+    DuplicateBinApprovalError,
+    create_or_recover_duplicate_batch,
+)
 from organizer.application.duplicate_bin_models import (
     BATCH_APPROVED,
     BATCH_COMPLETED,
@@ -21,10 +25,6 @@ from organizer.application.duplicate_bin_models import (
     ApprovedDuplicateMember,
     SelectedDuplicateBinItem,
     canonical_digest,
-)
-from organizer.application.duplicate_bin_approval_service import (
-    DuplicateBinApprovalError,
-    create_or_recover_duplicate_batch,
 )
 from organizer.application.duplicate_bin_repository import DuplicateBinRepository
 from organizer.application.duplicate_bin_restore_repository import (
@@ -53,16 +53,16 @@ from organizer.application.organization_decision_service import (
 from organizer.application.organization_slice_service import (
     build_internal_organization_projection,
 )
-from organizer.application.scan_service import scan_root
 from organizer.application.runtime_lifecycle import (
     ApplicationStoppingError,
     RuntimeOperationKind,
 )
+from organizer.application.scan_service import scan_root
 from organizer.duplicates import hash_file
 from tests.test_application_duplicate_bin_movement_service import (
     ISSUED,
-    _Owners,
     _execute,
+    _Owners,
     _owners,
     _preview,
 )

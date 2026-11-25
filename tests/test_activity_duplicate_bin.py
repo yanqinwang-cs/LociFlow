@@ -1,9 +1,9 @@
-from datetime import timedelta
 import json
-from pathlib import Path
 import shutil
 import tempfile
 import unittest
+from datetime import timedelta
+from pathlib import Path
 from unittest import mock
 
 from organizer.application.activity_service import list_activity_entries

@@ -1,11 +1,11 @@
 from __future__ import annotations
 
+import os
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-import os
 from pathlib import Path
-from typing import Callable
 
 from organizer.application.file_identity_capture import (
     CapturedRegularFileIdentity,

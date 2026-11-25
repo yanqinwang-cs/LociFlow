@@ -1,10 +1,10 @@
-from dataclasses import replace
-from pathlib import Path
 import json
 import tempfile
 import unittest
-from unittest import mock
 import uuid
+from dataclasses import replace
+from pathlib import Path
+from unittest import mock
 
 from organizer.application.duplicate_bin_models import (
     BATCH_APPROVED,
@@ -29,7 +29,6 @@ from organizer.application.duplicate_bin_repository import (
     DuplicateBinRepositoryError,
 )
 from tests.test_application_duplicate_bin_movement_service import _approved_batch
-
 
 STAMP = "2026-07-16T10:00:00+00:00"
 

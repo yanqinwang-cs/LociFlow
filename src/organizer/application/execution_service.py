@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import replace
-from datetime import datetime, timezone
 import os
-from pathlib import Path
 import uuid
+from dataclasses import replace
+from datetime import UTC, datetime
+from pathlib import Path
 
 from organizer.application.execution_coordinator import (
     OrganizationExecutionCoordinator,
@@ -14,14 +14,16 @@ from organizer.application.filesystem_operation_admission import (
     FilesystemOperationAdmission,
     FilesystemOperationInspector,
 )
-from organizer.application.runtime_lifecycle import RuntimeOperationKind
-from organizer.application.volume_admission import (
-    OrganizationVolumeAdmission,
-    VolumeAdmissionError,
-)
 from organizer.application.organization_decision_models import (
     STATUS_READY_TO_MOVE,
     ApprovedOrganizationPlan,
+)
+from organizer.application.organization_movement_preflight import (
+    OrganizationMovementPreflightError,
+    preflight_organization_movement,
+)
+from organizer.application.organization_movement_recorder import (
+    DurableOrganizationMovementRecorder as _DurableMovementRecorder,
 )
 from organizer.application.organization_operation_models import (
     AUTHORIZATION_AVAILABLE,
@@ -51,12 +53,10 @@ from organizer.application.organization_operation_models import (
 from organizer.application.organization_operation_repository import (
     OrganizationOperationRepository,
 )
-from organizer.application.organization_movement_preflight import (
-    OrganizationMovementPreflightError,
-    preflight_organization_movement,
-)
-from organizer.application.organization_movement_recorder import (
-    DurableOrganizationMovementRecorder as _DurableMovementRecorder,
+from organizer.application.runtime_lifecycle import RuntimeOperationKind
+from organizer.application.volume_admission import (
+    OrganizationVolumeAdmission,
+    VolumeAdmissionError,
 )
 from organizer.executor import MovementRecordingError, apply_move_plan
 from organizer.models import OperationLog
@@ -65,7 +65,6 @@ from organizer.organization_verify import (
     verify_organization_operation,
 )
 from organizer.safety import validate_under_root
-
 
 CONFIRM_MOVE_APPROVED_FILES = "MOVE APPROVED FILES"
 
@@ -588,4 +587,4 @@ def _relative(path: Path, root: Path) -> str:
 
 
 def _utc_timestamp() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()

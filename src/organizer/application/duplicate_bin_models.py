@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import hashlib
 import json
 import unicodedata
-
+from dataclasses import dataclass
 
 DUPLICATE_BIN_SCHEMA_VERSION = 1
 DUPLICATE_BIN_BATCH_RECORD_TYPE = "loci_duplicate_bin_approved_batch"

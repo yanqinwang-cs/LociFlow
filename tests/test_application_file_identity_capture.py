@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from dataclasses import FrozenInstanceError
 import errno
 import hashlib
 import os
-from pathlib import Path
 import stat
 import tempfile
 import unittest
+from dataclasses import FrozenInstanceError
+from pathlib import Path
 from unittest import mock
 
 from organizer.application.file_identity_capture import (
