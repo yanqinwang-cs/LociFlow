@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from organizer.json_values import is_json_integer, is_json_version
 from organizer.models import ReviewedPlanItem
 from organizer.safety import validate_under_root
 
@@ -71,7 +72,7 @@ def load_review_state(root: Path, review_folder_name: str = "AI_Review") -> Revi
 def review_state_from_json_data(data: object) -> ReviewState:
     if not isinstance(data, dict):
         raise ValueError("review state must contain a JSON object")
-    if data.get("schema_version") != REVIEW_STATE_SCHEMA_VERSION:
+    if not is_json_version(data.get("schema_version"), REVIEW_STATE_SCHEMA_VERSION):
         raise ValueError("review state schema_version must be 1")
 
     decisions = data.get("decisions")
@@ -308,9 +309,9 @@ def _validated_fingerprint(value: object, index: int) -> dict[str, int]:
         raise ValueError(f"review state decision {index} fingerprint must be an object")
     size_bytes = value.get("size_bytes")
     modified_ns = value.get("modified_ns")
-    if not isinstance(size_bytes, int) or size_bytes < 0:
+    if not is_json_integer(size_bytes) or size_bytes < 0:
         raise ValueError(f"review state decision {index} fingerprint size_bytes is invalid")
-    if not isinstance(modified_ns, int) or modified_ns < 0:
+    if not is_json_integer(modified_ns) or modified_ns < 0:
         raise ValueError(f"review state decision {index} fingerprint modified_ns is invalid")
     return {"size_bytes": size_bytes, "modified_ns": modified_ns}
 

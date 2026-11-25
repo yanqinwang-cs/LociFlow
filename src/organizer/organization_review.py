@@ -7,6 +7,7 @@ from pathlib import Path, PureWindowsPath
 import re
 from typing import Any
 
+from organizer.json_values import is_json_version
 from organizer.organization_rules import normalize_anchor
 from organizer.reports import validate_report_output_path
 from organizer.safety import validate_under_root
@@ -247,7 +248,7 @@ def validate_organization_review_data(data: object) -> dict[str, Any]:
     if not isinstance(data, dict):
         raise ValueError("organization review must contain a JSON object")
     _require_exact_fields(data, _TOP_LEVEL_FIELDS, "organization review")
-    if data.get("schema_version") != ORGANIZATION_REVIEW_SCHEMA_VERSION:
+    if not is_json_version(data.get("schema_version"), ORGANIZATION_REVIEW_SCHEMA_VERSION):
         raise ValueError("organization review schema_version must be 1")
     if data.get("source") != ORGANIZATION_REVIEW_SOURCE:
         raise ValueError("organization review source is invalid")

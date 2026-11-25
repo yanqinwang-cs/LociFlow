@@ -6,6 +6,7 @@ from organizer.grouping import (
     ANCHOR_DECISION_NEEDS_DECISION,
     AnchorDecision,
     extract_course_code,
+    is_course_code,
     normalize_token,
 )
 from organizer.models import FileMetadata
@@ -69,7 +70,6 @@ PROJECT_NAME_STOPWORDS = ROLE_FOLDER_NAMES | set(FORMAT_FOLDER_EXTENSIONS) | {
     "resources",
     "renamed",
 }
-COURSE_PATTERN = re.compile(r"^[A-Za-z]{2,4}\d{4}[A-Za-z]?$")
 NOISY_ANCHOR_TOKENS = {
     "builtins",
     "combined",
@@ -763,7 +763,7 @@ def _example_paths(files: list[FileMetadata]) -> list[str]:
 
 def _folder_course_code(folder_name: str) -> str | None:
     for token in _folder_tokens(folder_name):
-        if COURSE_PATTERN.fullmatch(token) is not None:
+        if is_course_code(token):
             return token.upper()
     return None
 
@@ -790,7 +790,7 @@ def _folder_project_anchors(
     for raw_token, normalized in zip(raw_tokens, normalized_tokens):
         if not _is_project_anchor_token(normalized):
             continue
-        if COURSE_PATTERN.fullmatch(raw_token) is not None:
+        if is_course_code(raw_token):
             continue
         if _looks_name_like(raw_token):
             continue

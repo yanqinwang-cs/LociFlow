@@ -25,6 +25,28 @@ class OrganizationRulesTests(unittest.TestCase):
             self.assertIn("summary", result.rules.ignored_terms)
             self.assertFalse((root / ORGANIZATION_RULES_RELATIVE_PATH).exists())
 
+    def test_true_is_not_accepted_as_the_rules_version(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / ORGANIZATION_RULES_RELATIVE_PATH
+            path.parent.mkdir(parents=True)
+            path.write_text(json.dumps({"version": True}), encoding="utf-8")
+
+            result = load_organization_rules(root)
+
+            self.assertEqual(result.status, "unavailable")
+
+    def test_alias_the_review_export_would_reject_is_ignored_on_load(self) -> None:
+        rules, warnings = organization_rules_from_data(
+            {
+                "version": 1,
+                "anchor_aliases": {"cs1010: intro": "CS1010", "a..b": "CS1010"},
+            }
+        )
+
+        self.assertEqual(rules.anchor_aliases, {})
+        self.assertEqual(len(warnings), 2)
+
     def test_valid_config_loads_locked_ignored_and_aliases(self) -> None:
         data = {
             "version": 1,

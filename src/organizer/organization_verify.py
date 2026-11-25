@@ -8,6 +8,7 @@ from pathlib import Path
 import re
 from typing import Any
 
+from organizer.json_values import is_json_version
 from organizer.reports import validate_report_output_path
 from organizer.safety import validate_under_root
 
@@ -285,7 +286,7 @@ def _validate_apply_result(data: dict[str, Any], root: Path) -> dict[str, Any]:
     }
     if set(data) != required:
         raise VerificationInputError("apply result fields do not match schema version 1")
-    if data["schema_version"] != APPLY_RESULT_SCHEMA_VERSION:
+    if not is_json_version(data["schema_version"], APPLY_RESULT_SCHEMA_VERSION):
         raise VerificationInputError("unsupported apply result schema version")
     if data["source"] != APPLY_RESULT_SOURCE:
         raise VerificationInputError("unexpected apply result source")

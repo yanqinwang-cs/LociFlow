@@ -152,5 +152,28 @@ class DuplicateTests(unittest.TestCase):
             self.assertNotIn("delete", result.stdout.lower())
 
 
+class UnreadableFileTests(unittest.TestCase):
+    @unittest.skipIf(os.geteuid() == 0, "root can read any file")
+    def test_unreadable_file_is_skipped_not_fatal(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "a.txt").write_text("same", encoding="utf-8")
+            (root / "b.txt").write_text("same", encoding="utf-8")
+            locked = root / "locked.txt"
+            locked.write_text("same", encoding="utf-8")
+            files = scan_directory(root)
+            locked.chmod(0)
+            try:
+                groups = find_exact_duplicates(files)
+            finally:
+                locked.chmod(0o644)
+
+        self.assertEqual(len(groups), 1)
+        self.assertEqual(
+            [item.relative_path.as_posix() for item in groups[0].files],
+            ["a.txt", "b.txt"],
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

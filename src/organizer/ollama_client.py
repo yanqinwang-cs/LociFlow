@@ -1,3 +1,4 @@
+import http.client
 import json
 from urllib import error, request
 
@@ -31,7 +32,12 @@ class OllamaClient:
             with request.urlopen(http_request, timeout=self.timeout_seconds) as response:
                 status = getattr(response, "status", 200)
                 response_body = response.read()
-        except error.URLError as exc:
+        except TimeoutError as exc:
+            # A stalled response raises TimeoutError from read(), not URLError.
+            raise RuntimeError(
+                f"Ollama did not answer within {self.timeout_seconds:g} seconds"
+            ) from exc
+        except (error.URLError, OSError, http.client.HTTPException) as exc:
             raise RuntimeError(f"Ollama connection failed: {exc}") from exc
 
         if status < 200 or status >= 300:

@@ -28,7 +28,7 @@ def find_exact_duplicates(files: list[FileMetadata]) -> list[DuplicateGroup]:
             continue
         try:
             sha256 = hash_file(metadata.path)
-        except ValueError:
+        except (ValueError, OSError):
             continue
         groups_by_hash.setdefault(sha256, []).append(metadata)
 

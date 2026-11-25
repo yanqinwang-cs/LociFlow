@@ -11,7 +11,9 @@ import unittest
 from organizer.models import RuleCandidate
 from organizer.organization_rules import ORGANIZATION_RULES_RELATIVE_PATH
 from organizer.reports import build_scan_report, write_report
+from organizer.pattern_inference import RULE_LOCK_ANCHOR_CANDIDATE
 from organizer.rule_review import (
+    _review_file_item_to_candidate,
     DECISION_ACCEPT,
     DECISION_REJECT,
     RULE_REVIEW_DIR,
@@ -422,6 +424,21 @@ class RuleReviewTests(unittest.TestCase):
             encoding="utf-8",
         )
         return path
+
+
+class BooleanConfidenceTests(unittest.TestCase):
+    def test_true_is_not_accepted_as_candidate_confidence(self) -> None:
+        raw = {
+            "candidate_id": "locked-anchor-cs1010",
+            "rule_type": RULE_LOCK_ANCHOR_CANDIDATE,
+            "value": "CS1010",
+            "confidence": True,
+            "reason": "files share a course code",
+            "decision": "reject",
+        }
+
+        with self.assertRaisesRegex(ValueError, "confidence must be an integer"):
+            _review_file_item_to_candidate(raw, 1)
 
 
 if __name__ == "__main__":

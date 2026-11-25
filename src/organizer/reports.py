@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 from typing import Any
 
+from organizer.json_values import is_json_version
 from organizer.duplicates import find_exact_duplicates
 from organizer.grouping import (
     ANCHOR_DECISION_IGNORED,
@@ -329,7 +330,7 @@ def validate_report_data(data: object) -> dict[str, Any]:
         raise ValueError("report must contain a JSON object")
     if set(data) != REPORT_TOP_LEVEL_FIELDS:
         raise ValueError("report fields do not match schema version 1")
-    if data.get("schema_version") != REPORT_SCHEMA_VERSION:
+    if not is_json_version(data.get("schema_version"), REPORT_SCHEMA_VERSION):
         raise ValueError("report schema_version must be 1")
     if not isinstance(data.get("generated_at"), str) or not data["generated_at"]:
         raise ValueError("report generated_at must be a non-empty string")

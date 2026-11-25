@@ -69,7 +69,13 @@ ALLOWED_ORGANIZATION_EVIDENCE = {
     GROUP_EVIDENCE_QUESTION_SOLUTION_SET,
     GROUP_EVIDENCE_TITLE_VARIANT_SET,
 }
-COURSE_CODE_PATTERN = re.compile(r"[A-Za-z]{2,4}\d{4}[A-Za-z]?")
+COURSE_CODE_PATTERN = re.compile(
+    r"(?<![A-Za-z])[A-Za-z]{2,4}\d{4}[A-Za-z]?(?![A-Za-z0-9])"
+)
+# Word-plus-year names such as "Fall2023" have the shape of a course code.
+NON_COURSE_CODE_PREFIXES = frozenset(
+    {"fall", "spring", "summer", "winter", "autumn", "term", "sem", "year"}
+)
 PAPER_TOKENS = {"paper", "article", "journal", "reading", "reference"}
 RESULT_TOKENS = {"result", "results", "output", "experiment", "eval", "evaluation"}
 CODE_EXTENSIONS = {".py", ".js", ".ts", ".java", ".c", ".cpp", ".h", ".html", ".css", ".ipynb"}
@@ -166,10 +172,20 @@ def extract_filename_tokens(file: FileMetadata) -> set[str]:
 
 
 def extract_course_code(file: FileMetadata) -> str | None:
-    match = COURSE_CODE_PATTERN.search(file.relative_path.as_posix())
-    if match is None:
-        return None
-    return match.group(0).upper()
+    for match in COURSE_CODE_PATTERN.finditer(file.relative_path.as_posix()):
+        if not _has_non_course_prefix(match.group(0)):
+            return match.group(0).upper()
+    return None
+
+
+def is_course_code(token: str) -> bool:
+    match = COURSE_CODE_PATTERN.fullmatch(token)
+    return match is not None and not _has_non_course_prefix(token)
+
+
+def _has_non_course_prefix(code: str) -> bool:
+    letters = re.match(r"[A-Za-z]+", code)
+    return letters is not None and letters.group(0).lower() in NON_COURSE_CODE_PREFIXES
 
 
 def infer_subfolder(file: FileMetadata) -> str:

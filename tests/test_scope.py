@@ -53,6 +53,48 @@ class ProjectContextPathTests(unittest.TestCase):
 
             self.assertTrue(is_project_context_path(Path("project/notes.txt"), metadata))
 
+    def test_setup_py_and_cmake_mark_a_code_project(self) -> None:
+        for marker in ("setup.py", "setup.cfg", "CMakeLists.txt"):
+            with self.subTest(marker=marker), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                project = root / "project"
+                project.mkdir()
+                (project / marker).write_text("x", encoding="utf-8")
+                (project / "notes.txt").write_text("notes", encoding="utf-8")
+                metadata = scan_directory(root)
+
+                self.assertTrue(
+                    is_project_context_path(Path("project/notes.txt"), metadata)
+                )
+
+    def test_scan_started_inside_a_repository_subfolder_is_project_context(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            repository = Path(directory)
+            (repository / ".git").mkdir()
+            scanned = repository / "docs"
+            scanned.mkdir()
+            (scanned / "guide.txt").write_text("guide", encoding="utf-8")
+            metadata = scan_directory(scanned)
+
+            self.assertTrue(is_project_context_path(Path("guide.txt"), metadata))
+            self.assertFalse(
+                evaluate_actionable_plan_eligibility(
+                    next(item for item in metadata if item.name == "guide.txt"),
+                    metadata,
+                ).allowed
+            )
+
+    def test_scan_outside_any_repository_is_not_project_context(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "guide.txt").write_text("guide", encoding="utf-8")
+            metadata = scan_directory(root)
+
+            self.assertFalse(is_project_context_path(Path("guide.txt"), metadata))
+
+    def test_rtfd_package_contents_are_protected(self) -> None:
+        self.assertTrue(is_protected_context_path(Path("Notes.rtfd/TXT.rtf")))
+
     def test_actionable_plan_eligible_excludes_project_context(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

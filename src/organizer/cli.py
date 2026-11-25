@@ -1,4 +1,6 @@
 import argparse
+import os
+import sys
 from pathlib import Path
 
 from organizer.application import (
@@ -7,7 +9,7 @@ from organizer.application import (
     scan_root,
 )
 from organizer.duplicates import find_exact_duplicates
-from organizer.executor import apply_move_plan, undo_operation_log
+from organizer.executor import UndoRecordingError, apply_move_plan, undo_operation_log
 from organizer.grouping import build_organization_suggestions, find_project_groups
 from organizer.html_report import html_report_output_path, write_html_report
 from organizer.llm_refinement import (
@@ -85,7 +87,10 @@ DEFAULT_OLLAMA_HOST = "http://localhost:11434"
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Print a read-only file metadata report.")
+    parser = argparse.ArgumentParser(
+        description="Print a read-only file metadata report.",
+        allow_abbrev=False,
+    )
     parser.add_argument("folder", type=Path)
     parser.add_argument("--max-depth", type=int, default=None)
     parser.add_argument("--duplicates", action="store_true")
@@ -137,6 +142,8 @@ def main() -> int:
     if args.ignore_review_state and not args.review_plans:
         parser.error("--ignore-review-state requires --review-plans")
 
+    _validate_folder(parser, args.folder)
+
     if args.verify_organization_apply is not None:
         return _handle_verify_organization_apply(parser, args)
 
@@ -167,6 +174,8 @@ def main() -> int:
     if args.review_plans:
         return _handle_review_plans(parser, args)
 
+    _reject_conflicting_actions(parser, args)
+
     if args.undo_log is not None:
         if (
             args.duplicates
@@ -192,9 +201,16 @@ def main() -> int:
             or args.llm_model is not None
         ):
             parser.error("--undo-log cannot be combined with planning or review flags")
-        operation_log = undo_operation_log(args.undo_log, args.folder)
+        try:
+            operation_log = undo_operation_log(args.undo_log, args.folder)
+        except (ValueError, OSError, UndoRecordingError) as error:
+            print(f"Undo failed: {error}", file=sys.stderr)
+            return 1
         print("Undo operation results")
         _print_operation_log(operation_log)
+        if any(not result.success for result in operation_log.operations):
+            print("Undo completed with failures.", file=sys.stderr)
+            return 1
         return 0
 
     metadata_items = scan_directory(args.folder, max_depth=args.max_depth)
@@ -237,7 +253,7 @@ def main() -> int:
             all_metadata=metadata_items,
         )
         _print_duplicate_review_plan(plan_items)
-        if not plan_items:
+        if not plan_items and args.apply_duplicate_plan:
             return 0
 
         if args.apply_duplicate_plan:
@@ -282,7 +298,7 @@ def main() -> int:
         suggestions = build_organization_suggestions(project_groups, args.folder)
         _print_organization_suggestions(suggestions)
         plan_items = _flatten_plan_items(suggestions)
-        if not plan_items:
+        if not plan_items and args.apply_organization_plan:
             return 0
 
         if args.apply_organization_plan:
@@ -344,6 +360,53 @@ def main() -> int:
             return _apply_plan_items(plan_items, args.folder)
 
     return 0
+
+
+def _validate_folder(parser: argparse.ArgumentParser, folder: Path) -> None:
+    if not folder.exists():
+        parser.error(f"folder does not exist: {folder}")
+    if not folder.is_dir():
+        parser.error(f"not a folder: {folder}")
+    if not os.access(folder, os.R_OK | os.X_OK):
+        parser.error(f"folder is not readable: {folder}")
+
+
+def _reject_conflicting_actions(
+    parser: argparse.ArgumentParser,
+    args: argparse.Namespace,
+) -> None:
+    # The first apply returns before the others run, so a second one would be
+    # dropped without a word; refuse the combination instead. The report,
+    # review and undo modes check their own combinations.
+    actions = {
+        "--apply-duplicate-plan": args.apply_duplicate_plan,
+        "--apply-organization-plan": args.apply_organization_plan,
+        "--apply-refined-organization-plan": args.apply_refined_organization_plan,
+    }
+    chosen = [name for name, is_set in actions.items() if is_set]
+    if len(chosen) > 1:
+        parser.error(f"choose one action; got {', '.join(chosen)}")
+
+    # An apply returns before any later step, so later steps would be skipped.
+    later_than_duplicate_apply = (
+        args.review_candidates,
+        args.plan_review_candidates,
+        args.project_groups,
+        args.plan_organization,
+        args.refine_groups,
+        args.plan_refined_organization,
+    )
+    if args.apply_duplicate_plan and any(later_than_duplicate_apply):
+        parser.error(
+            "--apply-duplicate-plan cannot be combined with later review or "
+            "organization options"
+        )
+    if args.apply_organization_plan and (
+        args.refine_groups or args.plan_refined_organization
+    ):
+        parser.error(
+            "--apply-organization-plan cannot be combined with refinement options"
+        )
 
 
 def _validate_llm_args(
@@ -686,7 +749,11 @@ def _run_review_session(
                     )
                     saved_decision_snapshot = review_decision_snapshot(items)
                     has_unsaved_decision_changes = False
-                confirmation = input("Type APPLY_REVIEWED_PLAN to continue: ")
+                try:
+                    confirmation = input("Type APPLY_REVIEWED_PLAN to continue: ")
+                except (EOFError, KeyboardInterrupt):
+                    print("")
+                    confirmation = ""
                 if confirmation != CONFIRM_APPLY_REVIEWED_PLAN:
                     print("Apply refused: exact confirmation was not provided.")
                     continue
