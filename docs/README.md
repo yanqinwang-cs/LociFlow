@@ -6,9 +6,7 @@ Deterministic Python is the source of truth for facts. LLM output is advisory on
 
 ## Current Status
 
-Stages 1 through 10.14 and Stages 11.0 through 11.5.2 are implemented. Guided Duplicates, Organize, and Needs attention queues now save independently while Advanced review retains the complete-session workflow.
-
-Fresh web sessions normalize new/stale suggestions to `undecided` and preserve remembered decisions. Module artifacts reuse the reviewed-plan schema, include every underlying module row, and never move files. Queue progress and skipped state are generation-bound memory only. There is no scheduling, tree, autosave, web apply, or restore.
+The command-line tool, the local web application with its six areas, and the macOS app are implemented. The stage-by-stage history is in [ROADMAP](ROADMAP.md) and [RELEASE_NOTES](RELEASE_NOTES.md).
 
 ## Quick Navigation
 
@@ -22,8 +20,9 @@ Fresh web sessions normalize new/stale suggestions to `undecided` and preserve r
 - [MANUAL_TESTING](MANUAL_TESTING.md)
 - [RELEASE_NOTES](RELEASE_NOTES.md)
 - [DESIGN_DECISIONS](DESIGN_DECISIONS.md)
-- [DEVELOPMENT_GUIDE](DEVELOPMENT_GUIDE.md)
-- [CODEX_INSTRUCTIONS](CODEX_INSTRUCTIONS.md)
+- [DEVELOPMENT_GUIDE](development/DEVELOPMENT_GUIDE.md)
+- [CODEX_INSTRUCTIONS](development/CODEX_INSTRUCTIONS.md)
+- [STAGE_8_PRECHECK](development/STAGE_8_PRECHECK.md)
 - [ADR 0001: Local Web Stack](adr/0001-local-web-stack.md)
 - [ADR 0002: Local Web Security Boundary](adr/0002-web-security-boundary.md)
 - [ADR 0003: Application-Service Layer](adr/0003-application-service-layer.md)

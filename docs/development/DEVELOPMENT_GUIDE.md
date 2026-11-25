@@ -3,10 +3,11 @@
 ## Setup
 
 ```bash
-PYTHONPATH=src python -m unittest tests.test_scanner tests.test_safety tests.test_duplicates tests.test_planner tests.test_executor tests.test_review tests.test_grouping tests.test_llm_refinement
+python3 -m pip install -e ".[web,web-test]"
+PYTHONPATH=src python3 -m unittest discover -s tests
 ```
 
-No third-party test runner is required.
+The suite uses only `unittest`. The optional `web` and `web-test` extras are needed for the web tests.
 
 ## Branch Workflow
 
