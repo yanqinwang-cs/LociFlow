@@ -38,3 +38,14 @@ The command-line tool, the local web application with its six areas, and the mac
 ## Safety Philosophy
 
 The system separates facts, suggestions, reviewed decisions, approved moves, execution, and undo. Scanners and detectors collect facts. Planners build suggested dry-run actions. Review state remembers human decisions only. Execution requires explicit approval and writes an operation log. Never permanently delete files.
+
+## Current Limitations
+
+There is no Search, general Files browser,
+permanent deletion, Empty Bin, system Trash handoff, multi-root execution,
+root switching within a running process, scheduler daemon, notifications,
+natural-language Standards interpretation, automatic LLM execution, or
+speculative Settings workflow. Duplicate Bin remains reversible protected
+storage, and occupied exact restore destinations block restoration rather than
+being overwritten. Standards expose guided deterministic controls rather than
+raw JSON, filesystem paths, regex, or LLM-dependent interpretation.
