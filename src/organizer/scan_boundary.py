@@ -6,10 +6,7 @@ from pathlib import Path
 
 from organizer.models import FileMetadata
 
-
-DIFFERENT_VOLUME_SUMMARY = (
-    "Items stored on another volume were left where they are."
-)
+DIFFERENT_VOLUME_SUMMARY = "Items stored on another volume were left where they are."
 UNAVAILABLE_ITEMS_SUMMARY = (
     "Some items could not be checked and were left where they are."
 )

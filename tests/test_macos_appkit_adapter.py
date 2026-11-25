@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from pathlib import Path
-from types import SimpleNamespace
-from threading import Event, Thread
 import tempfile
 import unittest
+from pathlib import Path
+from threading import Event, Thread
+from types import SimpleNamespace
 from unittest import mock
 
 from organizer.macos_launcher.appkit_adapter import AppKitAdapter
@@ -219,7 +219,7 @@ class _ContentView:
 
 
 class _FinishingPanel(_Allocated):
-    created: list["_FinishingPanel"] = []
+    created: list[_FinishingPanel] = []
 
     def __init__(self) -> None:
         self.values: dict[str, object] = {}
@@ -461,9 +461,7 @@ class MacOSAppKitAdapterTests(unittest.TestCase):
             panel = _Panel(0, [])
             adapter = self.adapter(panel, Path(directory))
             adapter.initialize()
-            handler = mock.Mock(
-                side_effect=adapter.cancel_active_directory_selection
-            )
+            handler = mock.Mock(side_effect=adapter.cancel_active_directory_selection)
             adapter.set_termination_handler(handler)
             panel.on_run = lambda: _NSApplication.application.terminate_(None)
 
@@ -483,7 +481,9 @@ class MacOSAppKitAdapterTests(unittest.TestCase):
             adapter = self.adapter(_Panel(0, []), Path(directory))
             launch_url = "http://127.0.0.1:48191/launch/" + "t" * 32
             result: list[bool] = []
-            worker = Thread(target=lambda: result.append(adapter.open_browser(launch_url)))
+            worker = Thread(
+                target=lambda: result.append(adapter.open_browser(launch_url))
+            )
 
             worker.start()
             self.assertTrue(_AppHelper.callback_ready.wait(1))

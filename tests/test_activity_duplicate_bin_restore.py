@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from datetime import timedelta
-from pathlib import Path
 import shutil
 import tempfile
 import unittest
+from datetime import timedelta
+from pathlib import Path
 from unittest import mock
 
 from organizer.application.activity_service import list_activity_entries
@@ -72,11 +72,12 @@ class DuplicateBinRestoreActivityTests(unittest.TestCase):
                 for group in owners.batch.groups
                 for member in group.members
             }
-            with mock.patch(
-                "organizer.executor.shutil.move"
-            ) as unexpected_move, mock.patch(
-                "organizer.application.duplicate_bin_restore_service.apply_move_plan"
-            ) as unexpected_restore:
+            with (
+                mock.patch("organizer.executor.shutil.move") as unexpected_move,
+                mock.patch(
+                    "organizer.application.duplicate_bin_restore_service.apply_move_plan"
+                ) as unexpected_restore,
+            ):
                 owners.batches = DuplicateBinRepository(owners.root)
             unexpected_move.assert_not_called()
             unexpected_restore.assert_not_called()

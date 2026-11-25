@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from contextlib import redirect_stderr, redirect_stdout
-from io import StringIO
-from pathlib import Path
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
+from io import StringIO
+from pathlib import Path
 from unittest import mock
 
 from organizer.macos_launcher import frozen_main
@@ -27,9 +27,7 @@ class MacOSFrozenEntryTests(unittest.TestCase):
 
     def test_packaging_smoke_imports_resources_without_native_launch(self) -> None:
         with (
-            mock.patch(
-                "organizer.macos_launcher.__main__.main"
-            ) as native_main,
+            mock.patch("organizer.macos_launcher.__main__.main") as native_main,
             mock.patch(
                 "organizer.web.config._launch_token",
                 side_effect=AssertionError("token creation is forbidden"),
@@ -41,9 +39,7 @@ class MacOSFrozenEntryTests(unittest.TestCase):
             mock.patch(
                 "organizer.macos_launcher.appkit_adapter.AppKitAdapter"
             ) as adapter,
-            mock.patch(
-                "organizer.web.server.bind_loopback_socket"
-            ) as socket_binder,
+            mock.patch("organizer.web.server.bind_loopback_socket") as socket_binder,
         ):
             result = frozen_main.main(["--packaging-smoke-test"])
 
@@ -122,9 +118,7 @@ class MacOSFrozenEntryTests(unittest.TestCase):
             ),
             redirect_stdout(stdout),
         ):
-            result = frozen_main.main(
-                ["--packaging-workflow-acceptance"]
-            )
+            result = frozen_main.main(["--packaging-workflow-acceptance"])
 
         self.assertEqual(result, 0)
         preflight.assert_called_once_with(include_runtime_identity=True)
@@ -241,9 +235,7 @@ class MacOSFrozenEntryTests(unittest.TestCase):
                     return_value=identity,
                 ),
             ):
-                frozen_main._verify_packaged_resources(
-                    include_runtime_identity=True
-                )
+                frozen_main._verify_packaged_resources(include_runtime_identity=True)
 
     def test_packaged_failure_alert_uses_only_bounded_native_copy(self) -> None:
         adapter = mock.Mock()

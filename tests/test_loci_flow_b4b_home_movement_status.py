@@ -1,15 +1,14 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 import shutil
 import subprocess
 import textwrap
 import unittest
+from pathlib import Path
 
 from tests.test_loci_flow_stage_b2_adapter import _payload
 from tests.test_loci_flow_stage_b4b_movement_adapter import _ready_payload
-
 
 ROOT = Path(__file__).resolve().parents[1]
 LOCI = ROOT / "src" / "organizer" / "web" / "static" / "loci_flow"
@@ -25,11 +24,11 @@ class LociFlowB4BHomeMovementStatusTests(unittest.TestCase):
             self.skipTest("Node is unavailable")
         script = textwrap.dedent(
             f"""
-            import {{ validateOrganizationResponse }} from {json.dumps((LOCI / 'data_source.js').as_uri())};
+            import {{ validateOrganizationResponse }} from {json.dumps((LOCI / "data_source.js").as_uri())};
             import {{
               buildProductionStageB1Contract,buildRouteViewModel,buildShellViewModel,
-            }} from {json.dumps((LOCI / 'view_models.js').as_uri())};
-            import {{ renderRoute }} from {json.dumps((LOCI / 'views.js').as_uri())};
+            }} from {json.dumps((LOCI / "view_models.js").as_uri())};
+            import {{ renderRoute }} from {json.dumps((LOCI / "views.js").as_uri())};
             const clone=(value)=>JSON.parse(JSON.stringify(value));
             const base={json.dumps(_payload())};
             const ready={json.dumps(_ready_payload())};
@@ -64,7 +63,9 @@ class LociFlowB4BHomeMovementStatusTests(unittest.TestCase):
         self.assertEqual(completed.returncode, 0, completed.stderr)
         return json.loads(completed.stdout)
 
-    def test_startup_activity_load_is_backgrounded_coalesced_and_renders_home(self) -> None:
+    def test_startup_activity_load_is_backgrounded_coalesced_and_renders_home(
+        self,
+    ) -> None:
         app_path = LOCI / "app.js"
         script = textwrap.dedent(
             f"""
@@ -122,7 +123,9 @@ class LociFlowB4BHomeMovementStatusTests(unittest.TestCase):
         )
         self.assertEqual(completed.returncode, 0, completed.stderr)
         result = json.loads(completed.stdout)
-        self.assertEqual(result["during"], {"requests": 1, "renders": 0, "status": "loading"})
+        self.assertEqual(
+            result["during"], {"requests": 1, "renders": 0, "status": "loading"}
+        )
         self.assertEqual(
             result["after"],
             {"requests": 1, "renders": 1, "status": "ready", "entries": 1},
@@ -131,9 +134,14 @@ class LociFlowB4BHomeMovementStatusTests(unittest.TestCase):
         self.assertEqual(result["final"]["status"], "ready")
         self.assertEqual(result["final"]["renders"], 3)
 
-        startup = app_path.read_text(encoding="utf-8").rsplit("state.route = routeFromHash();", 1)[1]
+        startup = app_path.read_text(encoding="utf-8").rsplit(
+            "state.route = routeFromHash();", 1
+        )[1]
         self.assertLess(startup.index("render();"), startup.index("loadCurrent();"))
-        self.assertLess(startup.index("loadCurrent();"), startup.index("loadActivity({ force: true });"))
+        self.assertLess(
+            startup.index("loadCurrent();"),
+            startup.index("loadActivity({ force: true });"),
+        )
         self.assertNotIn('if (state.route === "activity") loadActivity()', startup)
 
     def test_no_history_and_verified_completed_movement_are_truthful(self) -> None:
@@ -162,18 +170,30 @@ class LociFlowB4BHomeMovementStatusTests(unittest.TestCase):
             result["noHistory"]["freshness"]["lastOrganizedLabel"],
             "Not organized yet",
         )
-        self.assertEqual(result["noHistory"]["shell"]["movementStatusLabel"], "No move ready")
-        self.assertEqual(result["noHistory"]["shell"]["bannerStatusLabel"], "Review changes")
+        self.assertEqual(
+            result["noHistory"]["shell"]["movementStatusLabel"], "No move ready"
+        )
+        self.assertEqual(
+            result["noHistory"]["shell"]["bannerStatusLabel"], "Review changes"
+        )
         self.assertNotIn("Not organized yet", result["verified"]["homeHtml"])
         self.assertIn("2 files moved and checked.", result["verified"]["homeHtml"])
-        self.assertEqual(result["verified"]["shell"]["movementStatusLabel"], "Move verified")
-        self.assertEqual(result["verified"]["shell"]["bannerStatusLabel"], "Move verified")
+        self.assertEqual(
+            result["verified"]["shell"]["movementStatusLabel"], "Move verified"
+        )
+        self.assertEqual(
+            result["verified"]["shell"]["bannerStatusLabel"], "Move verified"
+        )
         self.assertNotEqual(
             result["verified"]["freshness"]["lastOrganizedLabel"],
             "Completed",
         )
-        self.assertEqual(result["recovered"]["freshness"]["lastOrganizedLabel"], "Completed")
-        self.assertEqual(result["recovered"]["shell"]["movementStatusLabel"], "Move verified")
+        self.assertEqual(
+            result["recovered"]["freshness"]["lastOrganizedLabel"], "Completed"
+        )
+        self.assertEqual(
+            result["recovered"]["shell"]["movementStatusLabel"], "Move verified"
+        )
         self.assertNotIn("Movement off", json.dumps(result))
 
     def test_production_banner_maps_only_truthful_user_states(self) -> None:
@@ -216,16 +236,21 @@ class LociFlowB4BHomeMovementStatusTests(unittest.TestCase):
             }));
             """
         )
-        self.assertEqual(result, {
-            "loading": "Checking files",
-            "ready": "Ready to move",
-            "moving": "Moving files",
-            "verified": "Move verified",
-            "failed": "Move needs attention",
-        })
+        self.assertEqual(
+            result,
+            {
+                "loading": "Checking files",
+                "ready": "Ready to move",
+                "moving": "Moving files",
+                "verified": "Move verified",
+                "failed": "Move needs attention",
+            },
+        )
         self.assertNotIn("No files can move in this stage", json.dumps(result))
 
-    def test_in_progress_failed_and_activity_history_do_not_claim_false_completion(self) -> None:
+    def test_in_progress_failed_and_activity_history_do_not_claim_false_completion(
+        self,
+    ) -> None:
         result = self.run_node(
             """
             const execution=(status,overrides={})=>({
@@ -265,9 +290,15 @@ class LociFlowB4BHomeMovementStatusTests(unittest.TestCase):
             }));
             """
         )
-        self.assertEqual(result["moving"]["shell"]["movementStatusLabel"], "Moving files")
-        self.assertEqual(result["failed"]["shell"]["movementStatusLabel"], "Move needs attention")
-        self.assertNotEqual(result["failed"]["shell"]["movementStatusLabel"], "Move verified")
+        self.assertEqual(
+            result["moving"]["shell"]["movementStatusLabel"], "Moving files"
+        )
+        self.assertEqual(
+            result["failed"]["shell"]["movementStatusLabel"], "Move needs attention"
+        )
+        self.assertNotEqual(
+            result["failed"]["shell"]["movementStatusLabel"], "Move verified"
+        )
         self.assertNotEqual(
             result["laterScan"]["freshness"]["lastOrganizedLabel"],
             "Not organized yet",
@@ -279,19 +310,35 @@ class LociFlowB4BHomeMovementStatusTests(unittest.TestCase):
         template = TEMPLATE.read_text(encoding="utf-8")
         self.assertIn('document.querySelector(".sample-label")', app)
         self.assertIn("movementStatus.textContent = shell.movementStatusLabel", app)
-        self.assertIn('document.querySelector(".prototype-notice span:last-child")', app)
+        self.assertIn(
+            'document.querySelector(".prototype-notice span:last-child")', app
+        )
         self.assertIn("bannerStatus.textContent = shell.bannerStatusLabel", app)
         self.assertIn('<span class="sample-label">Movement off</span>', template)
-        home = views[views.index("function renderContractHome"):views.index("export function renderHome")]
-        organize = views[views.index("function renderContractOrganize"):views.index("export function renderOrganize")]
+        home = views[
+            views.index("function renderContractHome") : views.index(
+                "export function renderHome"
+            )
+        ]
+        organize = views[
+            views.index("function renderContractOrganize") : views.index(
+                "export function renderOrganize"
+            )
+        ]
         self.assertIn("home-status", home)
         self.assertNotIn("organize-layout", home)
         self.assertIn("organize-layout", organize)
         self.assertNotIn("undo-move", organize)
         combined = app + views + template
         for forbidden in (
-            "authorization token", "plan digest", "decision revision", "scan generation",
-            "durable operation", "executor", "safe to delete", "Trash",
+            "authorization token",
+            "plan digest",
+            "decision revision",
+            "scan generation",
+            "durable operation",
+            "executor",
+            "safe to delete",
+            "Trash",
         ):
             self.assertNotIn(forbidden, combined)
 

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from types import SimpleNamespace
 import unittest
+from types import SimpleNamespace
 from unittest import mock
 
 from organizer.application.recovery_evidence import (
@@ -44,7 +44,9 @@ class RecoveryProjectionServiceTests(unittest.TestCase):
             "Loci Flow can check what happened before you continue.",
         )
         self.assertEqual(inspect_only.title, "File changes need attention.")
-        self.assertEqual(inspect_only.message, "Review what happened before continuing.")
+        self.assertEqual(
+            inspect_only.message, "Review what happened before continuing."
+        )
         self.assertNotIn("can check", inspect_only.message)
         self.assertEqual(check.affected_items, 2)
         self.assertTrue(check.can_check_result)
@@ -56,7 +58,9 @@ class RecoveryProjectionServiceTests(unittest.TestCase):
             RecoveryActionability.CONTINUE_POSSIBLE,
             3,
         ).to_dict()
-        self.assertEqual(projection["message"], "Review what happened before continuing.")
+        self.assertEqual(
+            projection["message"], "Review what happened before continuing."
+        )
         self.assertFalse(projection["can_check_result"])
         self.assertEqual(
             set(projection),
@@ -84,7 +88,9 @@ class RecoveryProjectionServiceTests(unittest.TestCase):
         inspector = mock.Mock()
         inspector.inspect.side_effect = RuntimeError("/private/root secret.json")
         eligibility = mock.Mock()
-        projection = RecoveryProjectionService(inspector, eligibility).current().to_dict()
+        projection = (
+            RecoveryProjectionService(inspector, eligibility).current().to_dict()
+        )
         self.assertEqual(projection["state"], "cannot_continue_automatically")
         self.assertFalse(projection["can_check_result"])
         eligibility.inspect.assert_not_called()
@@ -113,7 +119,11 @@ def _project(state, actionability, affected_items, *, eligible=False):
         eligibility.inspect.return_value = object()
     else:
         eligibility.inspect.side_effect = RuntimeError("not eligible")
-    case = None if affected_items is None else SimpleNamespace(affected_items=affected_items)
+    case = (
+        None
+        if affected_items is None
+        else SimpleNamespace(affected_items=affected_items)
+    )
     inspector.inspect.return_value = SimpleNamespace(
         state=state,
         actionability=actionability,

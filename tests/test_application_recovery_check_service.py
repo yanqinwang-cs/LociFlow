@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import replace
-from pathlib import Path
 import tempfile
 import unittest
+from dataclasses import replace
+from pathlib import Path
 from unittest import mock
 
 from organizer.application.activity_service import list_activity_entries
@@ -22,14 +22,14 @@ from organizer.application.identity_verification_publication import (
 from organizer.application.organization_operation_repository import (
     OrganizationOperationRepository,
 )
-from organizer.application.organization_undo_repository import (
-    OrganizationUndoRepository,
-)
 from organizer.application.organization_undo_models import (
     UNDO_ITEM_RESTORED,
     UNDO_RESTORED_UNVERIFIED,
     UNDO_VERIFICATION_NOT_RUN,
     UndoVerificationResult,
+)
+from organizer.application.organization_undo_repository import (
+    OrganizationUndoRepository,
 )
 from organizer.application.recovery_check_context import (
     RecoveryCheckContextState,
@@ -50,12 +50,12 @@ from organizer.application.runtime_lifecycle import (
 from organizer.application.undo_identity_verification_publication import (
     OrganizationUndoIdentityVerificationPublicationService,
 )
-from tests.test_application_identity_verification_publication import (
-    _operation,
-)
 from tests.test_application_filesystem_operation_admission import (
     _ordinary_operation,
     _ordinary_undo,
+)
+from tests.test_application_identity_verification_publication import (
+    _operation,
 )
 from tests.test_application_recovery_evidence import (
     _duplicate_move_state,
@@ -77,9 +77,7 @@ class RecoveryCheckServiceTests(unittest.TestCase):
             )
             filesystem_before = _user_files(root)
 
-            context = owners.service.create_context(
-                browser_session_id="session"
-            )
+            context = owners.service.create_context(browser_session_id="session")
             after_context = list_activity_entries(
                 operation_repository=owners.operations,
                 undo_repository=owners.undos,
@@ -101,8 +99,13 @@ class RecoveryCheckServiceTests(unittest.TestCase):
 
             self.assertEqual(result.state, RecoveryCheckResultState.CONFIRMED)
             self.assertFalse(result.recovery_attention)
-            self.assertEqual(owners.operations.load(owners.record.operation_id).status, "verified")
-            self.assertEqual([item.id for item in before.activity], [item.id for item in after.activity])
+            self.assertEqual(
+                owners.operations.load(owners.record.operation_id).status, "verified"
+            )
+            self.assertEqual(
+                [item.id for item in before.activity],
+                [item.id for item in after.activity],
+            )
             self.assertEqual(before, after_context)
             self.assertEqual(_user_files(root), filesystem_before)
             publish.assert_called_once_with(owners.record.operation_id)
@@ -114,9 +117,7 @@ class RecoveryCheckServiceTests(unittest.TestCase):
             destination = root / owners.record.expected_moves[0].destination
             destination.unlink()
 
-            context = owners.service.create_context(
-                browser_session_id="session"
-            )
+            context = owners.service.create_context(browser_session_id="session")
             result = owners.service.check_result(
                 browser_session_id="session",
                 case_id=context.case_id,
@@ -143,9 +144,7 @@ class RecoveryCheckServiceTests(unittest.TestCase):
                     verifier=mock.Mock(side_effect=OSError("private")),
                 ),
             )
-            context = owners.service.create_context(
-                browser_session_id="session"
-            )
+            context = owners.service.create_context(browser_session_id="session")
 
             result = owners.service.check_result(
                 browser_session_id="session",
@@ -171,9 +170,7 @@ class RecoveryCheckServiceTests(unittest.TestCase):
                 operation_repository=owners.operations,
                 undo_repository=owners.undos,
             )
-            context = owners.service.create_context(
-                browser_session_id="session"
-            )
+            context = owners.service.create_context(browser_session_id="session")
             destination = root / owners.record.expected_moves[0].destination
             destination.write_bytes(b"changed")
 
@@ -205,9 +202,7 @@ class RecoveryCheckServiceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             owners = _movement_owners(root)
-            context = owners.service.create_context(
-                browser_session_id="session"
-            )
+            context = owners.service.create_context(browser_session_id="session")
             with mock.patch.object(
                 owners.status,
                 "refresh",
@@ -230,9 +225,7 @@ class RecoveryCheckServiceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             owners = _movement_owners(root)
-            context = owners.service.create_context(
-                browser_session_id="session"
-            )
+            context = owners.service.create_context(browser_session_id="session")
             self.assertTrue(owners.coordinator.try_acquire())
             try:
                 with mock.patch.object(
@@ -258,12 +251,8 @@ class RecoveryCheckServiceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             owners = _movement_owners(root)
-            context = owners.service.create_context(
-                browser_session_id="session"
-            )
-            owners.operations.save(
-                replace(owners.record, scan_generation="changed")
-            )
+            context = owners.service.create_context(browser_session_id="session")
+            owners.operations.save(replace(owners.record, scan_generation="changed"))
             with self.assertRaises(RecoveryCheckError) as raised:
                 owners.service.check_result(
                     browser_session_id="session",
@@ -282,9 +271,7 @@ class RecoveryCheckServiceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             owners = _movement_owners(root)
-            context = owners.service.create_context(
-                browser_session_id="session"
-            )
+            context = owners.service.create_context(browser_session_id="session")
             _operation(root, (b"other",))
             with self.assertRaises(RecoveryCheckError) as raised:
                 owners.service.check_result(
@@ -314,9 +301,7 @@ class RecoveryCheckServiceTests(unittest.TestCase):
                 undo_repository=undos,
             )
 
-            context = owners.service.create_context(
-                browser_session_id="session"
-            )
+            context = owners.service.create_context(browser_session_id="session")
             result = owners.service.check_result(
                 browser_session_id="session",
                 case_id=context.case_id,
@@ -346,9 +331,7 @@ class RecoveryCheckServiceTests(unittest.TestCase):
             restored = root / undo.expected_restores[0].restore_target
             restored.write_bytes(b"replaced")
 
-            context = owners.service.create_context(
-                browser_session_id="session"
-            )
+            context = owners.service.create_context(browser_session_id="session")
             result = owners.service.check_result(
                 browser_session_id="session",
                 case_id=context.case_id,
@@ -368,9 +351,7 @@ class RecoveryCheckServiceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             owners = _movement_owners(root)
-            context = owners.service.create_context(
-                browser_session_id="session"
-            )
+            context = owners.service.create_context(browser_session_id="session")
             with mock.patch.object(
                 owners.status,
                 "refresh",
@@ -452,7 +433,9 @@ class RecoveryCheckServiceTests(unittest.TestCase):
             with self.assertRaises(RecoveryCheckError):
                 owners.service.create_context(browser_session_id="session")
 
-    def test_context_creation_holds_lifecycle_and_coordinator_without_verifier(self) -> None:
+    def test_context_creation_holds_lifecycle_and_coordinator_without_verifier(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             owners = _movement_owners(root)
@@ -531,18 +514,14 @@ def _owners(
         operations,
         undos,
     )
-    owners.contexts = RecoveryCheckContextStore(
-        operations.configured_root_identity
-    )
+    owners.contexts = RecoveryCheckContextStore(operations.configured_root_identity)
     owners.movement_publication = (
         movement_publication
         or OrganizationIdentityVerificationPublicationService(operations)
     )
-    owners.undo_publication = (
-        OrganizationUndoIdentityVerificationPublicationService(
-            operations,
-            undos,
-        )
+    owners.undo_publication = OrganizationUndoIdentityVerificationPublicationService(
+        operations,
+        undos,
     )
     owners.service = RecoveryCheckService(
         owners.lifecycle,
@@ -560,8 +539,7 @@ def _user_files(root: Path) -> dict[str, bytes]:
     return {
         path.relative_to(root).as_posix(): path.read_bytes()
         for path in root.rglob("*")
-        if path.is_file()
-        and path.relative_to(root).parts[0] != "AI_Review"
+        if path.is_file() and path.relative_to(root).parts[0] != "AI_Review"
     }
 
 

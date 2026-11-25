@@ -2,13 +2,12 @@ from __future__ import annotations
 
 import base64
 import hashlib
-from pathlib import Path
 import re
 import subprocess
 import sys
 import tomllib
 import unittest
-
+from pathlib import Path
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 WEB_ROOT = REPOSITORY_ROOT / "src" / "organizer" / "web"
@@ -85,9 +84,7 @@ class WebDependencyHygieneTests(unittest.TestCase):
             (REPOSITORY_ROOT / "pyproject.toml").read_text(encoding="utf-8")
         )
         optional = data["project"]["optional-dependencies"]
-        self.assertFalse(
-            any("pyobjc" in item.lower() for item in optional["web"])
-        )
+        self.assertFalse(any("pyobjc" in item.lower() for item in optional["web"]))
 
         native_root = REPOSITORY_ROOT / "src" / "organizer" / "macos_launcher"
         restricted_import = re.compile(
@@ -145,16 +142,13 @@ class WebDependencyHygieneTests(unittest.TestCase):
     def test_vendor_assets_match_published_sha384_values(self) -> None:
         expected = {
             "htmx.min.js": (
-                "H5SrcfygHmAuTDZphMHqBJLc3FhssKjG7w/"
-                "CeCpFReSfwBWDTKpkzPP8c+cLsK+V"
+                "H5SrcfygHmAuTDZphMHqBJLc3FhssKjG7w/CeCpFReSfwBWDTKpkzPP8c+cLsK+V"
             ),
             "bootstrap.min.css": (
-                "sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWL"
-                "zeN8tE5YBujZqJLB"
+                "sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB"
             ),
             "bootstrap.bundle.min.js": (
-                "FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/"
-                "BmnVDxM+D2scQbITxI"
+                "FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI"
             ),
         }
         vendor = WEB_ROOT / "static" / "vendor"
@@ -166,7 +160,9 @@ class WebDependencyHygieneTests(unittest.TestCase):
                 self.assertEqual(actual, digest)
         self.assertFalse(any(WEB_ROOT.rglob("*.map")))
 
-    def test_runtime_pages_have_no_external_asset_or_inline_script_reference(self) -> None:
+    def test_runtime_pages_have_no_external_asset_or_inline_script_reference(
+        self,
+    ) -> None:
         authored_assets = [
             *sorted((WEB_ROOT / "templates").glob("*.html")),
             WEB_ROOT / "static" / "css" / "bootai.css",
@@ -195,8 +191,7 @@ class WebDependencyHygieneTests(unittest.TestCase):
             for path in sorted((WEB_ROOT / "routes").rglob("*.py"))
         ).lower()
         all_web_code = "\n".join(
-            path.read_text(encoding="utf-8")
-            for path in sorted(WEB_ROOT.rglob("*.py"))
+            path.read_text(encoding="utf-8") for path in sorted(WEB_ROOT.rglob("*.py"))
         ).lower()
         for forbidden in (
             "organizer.executor",
@@ -273,7 +268,9 @@ import organizer.web.server
         )
         self.assertEqual(result.returncode, 0, result.stderr)
 
-    def test_read_only_organization_boundary_has_no_web_executor_or_rescan_dependency(self) -> None:
+    def test_read_only_organization_boundary_has_no_web_executor_or_rescan_dependency(
+        self,
+    ) -> None:
         service = (
             REPOSITORY_ROOT
             / "src"
@@ -281,9 +278,9 @@ import organizer.web.server
             / "application"
             / "organization_slice_service.py"
         ).read_text(encoding="utf-8")
-        route = (
-            WEB_ROOT / "routes" / "organization_api.py"
-        ).read_text(encoding="utf-8")
+        route = (WEB_ROOT / "routes" / "organization_api.py").read_text(
+            encoding="utf-8"
+        )
 
         for forbidden in (
             "organizer.web",
@@ -302,20 +299,30 @@ import organizer.web.server
         ):
             self.assertNotIn(forbidden, route)
 
-    def test_organization_decision_boundary_is_executor_and_persistence_free(self) -> None:
+    def test_organization_decision_boundary_is_executor_and_persistence_free(
+        self,
+    ) -> None:
         decision_service = (
-            REPOSITORY_ROOT
-            / "src"
-            / "organizer"
-            / "application"
-            / "organization_decision_service.py"
-        ).read_text(encoding="utf-8").lower()
+            (
+                REPOSITORY_ROOT
+                / "src"
+                / "organizer"
+                / "application"
+                / "organization_decision_service.py"
+            )
+            .read_text(encoding="utf-8")
+            .lower()
+        )
         store = (
-            WEB_ROOT / "organization_decision_store.py"
-        ).read_text(encoding="utf-8").lower()
+            (WEB_ROOT / "organization_decision_store.py")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
         route = (
-            WEB_ROOT / "routes" / "organization_api.py"
-        ).read_text(encoding="utf-8").lower()
+            (WEB_ROOT / "routes" / "organization_api.py")
+            .read_text(encoding="utf-8")
+            .lower()
+        )
         combined = "\n".join((decision_service, store, route))
         for forbidden in (
             "organizer.executor",
@@ -338,9 +345,9 @@ import organizer.web.server
             / "application"
             / "execution_service.py"
         ).read_text(encoding="utf-8")
-        executor = (
-            REPOSITORY_ROOT / "src" / "organizer" / "executor.py"
-        ).read_text(encoding="utf-8")
+        executor = (REPOSITORY_ROOT / "src" / "organizer" / "executor.py").read_text(
+            encoding="utf-8"
+        )
         route_text = "\n".join(
             path.read_text(encoding="utf-8")
             for path in (WEB_ROOT / "routes").glob("*.py")
@@ -351,9 +358,7 @@ import organizer.web.server
         self.assertNotIn("apply_move_plan", route_text)
         self.assertNotIn("undo_operation_log", route_text)
         self.assertIn("shutil." + "move", executor)
-        for path in (
-            REPOSITORY_ROOT / "src" / "organizer"
-        ).rglob("*.py"):
+        for path in (REPOSITORY_ROOT / "src" / "organizer").rglob("*.py"):
             if path.name != "executor.py":
                 self.assertNotIn("shutil." + "move", path.read_text(encoding="utf-8"))
 

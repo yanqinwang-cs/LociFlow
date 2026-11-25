@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import json
-from pathlib import Path
 import tempfile
 import unittest
-from unittest import mock
 import uuid
+from datetime import UTC, datetime
+from pathlib import Path
+from unittest import mock
 
 from organizer.application.standards_repository import (
     StandardsRepository,
@@ -16,8 +16,8 @@ from organizer.organization_rules import (
     ORGANIZATION_RULES_RELATIVE_PATH,
     STANDARD_KEEP_FOLDER_UNCHANGED,
     StandardRecord,
-    StandardScope,
     StandardsCatalog,
+    StandardScope,
     normalize_standard_relative_path,
 )
 
@@ -40,7 +40,10 @@ class StandardsRepositoryTests(unittest.TestCase):
             )
 
     def test_wrong_root_unknown_fields_and_malformed_v2_reject(self) -> None:
-        with tempfile.TemporaryDirectory() as first, tempfile.TemporaryDirectory() as second:
+        with (
+            tempfile.TemporaryDirectory() as first,
+            tempfile.TemporaryDirectory() as second,
+        ):
             source = StandardsRepository(Path(first))
             source.save_catalog(_catalog(source, revision=1), expected_revision=0)
             target_path = Path(second) / ORGANIZATION_RULES_RELATIVE_PATH
@@ -98,15 +101,19 @@ class StandardsRepositoryTests(unittest.TestCase):
 
             self.assertEqual(path.read_bytes(), original)
 
-    def test_scope_normalization_is_nfc_and_rejects_absolute_or_escape_paths(self) -> None:
-        self.assertEqual(normalize_standard_relative_path("Cafe\u0301/Notes"), "Café/Notes")
+    def test_scope_normalization_is_nfc_and_rejects_absolute_or_escape_paths(
+        self,
+    ) -> None:
+        self.assertEqual(
+            normalize_standard_relative_path("Cafe\u0301/Notes"), "Café/Notes"
+        )
         for value in ("/tmp/private", "../private", "."):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 normalize_standard_relative_path(value)
 
 
 def _catalog(repository: StandardsRepository, *, revision: int) -> StandardsCatalog:
-    timestamp = datetime(2026, 1, 1, tzinfo=timezone.utc).isoformat()
+    timestamp = datetime(2026, 1, 1, tzinfo=UTC).isoformat()
     record = StandardRecord(
         id=str(uuid.uuid4()),
         type=STANDARD_KEEP_FOLDER_UNCHANGED,

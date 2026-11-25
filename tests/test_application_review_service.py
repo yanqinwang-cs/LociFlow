@@ -1,7 +1,7 @@
 import io
-from pathlib import Path
 import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from organizer.application.review_service import (
@@ -19,6 +19,7 @@ from organizer.application.review_service import (
     update_review_page_size,
     update_review_sort,
 )
+from organizer.application.view_models import ReviewApplicationSession
 from organizer.models import MovePlanItem, ReviewedPlanItem
 from organizer.review_session import (
     DECISION_APPROVED,
@@ -29,7 +30,6 @@ from organizer.review_session import (
     save_reviewed_plan,
 )
 from organizer.review_state import ReviewState
-from organizer.application.view_models import ReviewApplicationSession
 
 
 class ReviewServiceTests(unittest.TestCase):
@@ -62,8 +62,12 @@ class ReviewServiceTests(unittest.TestCase):
             change = change_review_decisions(original, ["d1", "D1"], DECISION_REJECTED)
 
             self.assertIsNot(change.session, original)
-            self.assertEqual(get_review_item(original, "D1").decision, DECISION_UNDECIDED)
-            self.assertEqual(get_review_item(change.session, "D1").decision, DECISION_REJECTED)
+            self.assertEqual(
+                get_review_item(original, "D1").decision, DECISION_UNDECIDED
+            )
+            self.assertEqual(
+                get_review_item(change.session, "D1").decision, DECISION_REJECTED
+            )
             self.assertEqual(change.changed_ids, ("D1",))
             self.assertEqual(change.idempotent_ids, ())
             self.assertFalse(original.dirty)
@@ -104,7 +108,9 @@ class ReviewServiceTests(unittest.TestCase):
             source = root / "source.txt"
             source.write_text("x", encoding="utf-8")
             items = (
-                _review_item("D1", source, root / "AI_Review" / "duplicates" / "source.txt"),
+                _review_item(
+                    "D1", source, root / "AI_Review" / "duplicates" / "source.txt"
+                ),
                 _review_item("O1", source, root / "Organized" / "source.txt"),
             )
             session = _manual_session(root, items)
@@ -181,11 +187,18 @@ class ReviewServiceTests(unittest.TestCase):
     def test_service_does_not_prompt_print_or_depend_on_executor(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            source = Path(__import__("organizer.application.review_service", fromlist=["x"]).__file__)
-            with mock.patch(
-                "builtins.input",
-                side_effect=AssertionError("review service must not prompt"),
-            ), mock.patch("sys.stdout", new_callable=io.StringIO) as stdout:
+            source = Path(
+                __import__(
+                    "organizer.application.review_service", fromlist=["x"]
+                ).__file__
+            )
+            with (
+                mock.patch(
+                    "builtins.input",
+                    side_effect=AssertionError("review service must not prompt"),
+                ),
+                mock.patch("sys.stdout", new_callable=io.StringIO) as stdout,
+            ):
                 create_review_session(root)
 
             self.assertEqual(stdout.getvalue(), "")

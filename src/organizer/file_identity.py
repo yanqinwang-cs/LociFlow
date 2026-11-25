@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-from contextlib import contextmanager
-from dataclasses import dataclass
 import errno
 import hashlib
 import os
-from pathlib import Path
 import re
 import stat
-from typing import Iterator
+from collections.abc import Iterator
+from contextlib import contextmanager
+from dataclasses import dataclass
+from pathlib import Path
 
 REGULAR_FILE_TYPE = "regular_file"
 SHA256_ALGORITHM = "sha256"
@@ -96,9 +96,10 @@ class StableRegularFileIdentity:
     stat_fingerprint: RegularFileStatFingerprint
 
     def __post_init__(self) -> None:
-        if not isinstance(self.digest, str) or _SHA256_DIGEST.fullmatch(
-            self.digest
-        ) is None:
+        if (
+            not isinstance(self.digest, str)
+            or _SHA256_DIGEST.fullmatch(self.digest) is None
+        ):
             raise ValueError("stable regular file digest is invalid")
         if not isinstance(self.stat_fingerprint, RegularFileStatFingerprint):
             raise ValueError("stable regular file fingerprint is invalid")
@@ -110,9 +111,10 @@ class RequiredRegularFileIdentity:
     stat_fingerprint: RegularFileStatFingerprint
 
     def __post_init__(self) -> None:
-        if not isinstance(self.digest, str) or _SHA256_DIGEST.fullmatch(
-            self.digest
-        ) is None:
+        if (
+            not isinstance(self.digest, str)
+            or _SHA256_DIGEST.fullmatch(self.digest) is None
+        ):
             raise StableFileIdentityError("malformed_identity")
         if not isinstance(self.stat_fingerprint, RegularFileStatFingerprint):
             raise StableFileIdentityError("malformed_identity")

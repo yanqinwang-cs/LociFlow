@@ -1,11 +1,11 @@
 from __future__ import annotations
 
+import sys
+import unittest
 from contextlib import redirect_stderr
 from io import StringIO
 from pathlib import Path
 from types import ModuleType
-import sys
-import unittest
 from unittest import mock
 
 from organizer.macos_launcher import __main__ as native_main
@@ -147,27 +147,13 @@ class _native_modules:
         coordinator_type: object,
         diagnostic_sink: object | None = None,
     ) -> None:
-        self.adapter_module = ModuleType(
-            "organizer.macos_launcher.appkit_adapter"
-        )
+        self.adapter_module = ModuleType("organizer.macos_launcher.appkit_adapter")
         self.adapter_module.AppKitAdapter = adapter_type  # type: ignore[attr-defined]
-        self.coordinator_module = ModuleType(
-            "organizer.macos_launcher.coordinator"
-        )
-        setattr(
-            self.coordinator_module,
-            "NativeLauncherCoordinator",
-            coordinator_type,
-        )
-        setattr(
-            self.coordinator_module,
-            "NativeDiagnostic",
-            NativeDiagnostic,
-        )
-        setattr(
-            self.coordinator_module,
-            "development_diagnostic_sink",
-            diagnostic_sink or mock.Mock(return_value=None),
+        self.coordinator_module = ModuleType("organizer.macos_launcher.coordinator")
+        self.coordinator_module.NativeLauncherCoordinator = coordinator_type
+        self.coordinator_module.NativeDiagnostic = NativeDiagnostic
+        self.coordinator_module.development_diagnostic_sink = (
+            diagnostic_sink or mock.Mock(return_value=None)
         )
         self.patch = mock.patch.dict(
             sys.modules,

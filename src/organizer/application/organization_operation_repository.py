@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from dataclasses import asdict
 import hashlib
 import json
 import os
-from pathlib import Path
 import tempfile
-from typing import Any
 import uuid
+from dataclasses import asdict
+from pathlib import Path
+from typing import Any
 
 from organizer.application.content_identity import RegularFileContentIdentity
 from organizer.application.organization_operation_models import (
@@ -33,7 +33,6 @@ from organizer.application.organization_operation_models import (
     OrganizationOperationVerification,
 )
 from organizer.safety import validate_under_root
-
 
 DEFAULT_OPERATION_DIRECTORY = Path("AI_Review") / "organization_operations"
 
@@ -193,9 +192,7 @@ def _record_to_dict(record: OrganizationOperationRecord) -> dict[str, Any]:
     elif record.schema_version != ORGANIZATION_OPERATION_SCHEMA_VERSION_V2:
         raise ValueError("unsupported organization operation schema version")
     data["verification"] = asdict(record.verification)
-    data["verification"]["mismatch_codes"] = list(
-        record.verification.mismatch_codes
-    )
+    data["verification"]["mismatch_codes"] = list(record.verification.mismatch_codes)
     return data
 
 
@@ -337,7 +334,9 @@ def _move_from_dict_v1(data: object, root: Path) -> OrganizationExpectedMove:
         "recovery_state",
     }
     if set(data) != required:
-        raise ValueError("organization expected move fields are invalid for schema version 1")
+        raise ValueError(
+            "organization expected move fields are invalid for schema version 1"
+        )
     return _move_from_versioned_dict(data, root, content_identity=None)
 
 
@@ -360,13 +359,13 @@ def _move_from_dict_v2(data: object, root: Path) -> OrganizationExpectedMove:
         "content_identity",
     }
     if set(data) != required:
-        raise ValueError("organization expected move fields are invalid for schema version 2")
+        raise ValueError(
+            "organization expected move fields are invalid for schema version 2"
+        )
     return _move_from_versioned_dict(
         data,
         root,
-        content_identity=RegularFileContentIdentity.from_dict(
-            data["content_identity"]
-        ),
+        content_identity=RegularFileContentIdentity.from_dict(data["content_identity"]),
     )
 
 

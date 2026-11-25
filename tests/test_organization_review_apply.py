@@ -1,14 +1,13 @@
 from __future__ import annotations
 
-from copy import deepcopy
 import io
 import json
 import os
-from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from organizer.executor import undo_operation_log
@@ -152,7 +151,9 @@ class OrganizationReviewApplyTests(unittest.TestCase):
             self.assertIsNone(result["undo_log_path"])
             self.assertFalse((root / "AI_Review" / "operation_logs").exists())
 
-    def test_invalid_schema_and_duplicate_review_id_are_rejected_before_movement(self) -> None:
+    def test_invalid_schema_and_duplicate_review_id_are_rejected_before_movement(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             data = review_data([review_row("org-000001", "a.pdf", "approve")])
@@ -180,14 +181,18 @@ class OrganizationReviewApplyTests(unittest.TestCase):
                     CONFIRM_APPLY_ORGANIZATION_REVIEW,
                 )
 
-            self.assertFalse(any((root / "AI_Review" / "reviews").glob("*apply_result*")))
+            self.assertFalse(
+                any((root / "AI_Review" / "reviews").glob("*apply_result*"))
+            )
 
     def test_duplicate_approved_sources_are_normalized_and_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             rows = [
                 review_row("org-000001", "a.pdf", "approve"),
-                review_row("org-000002", "./a.pdf", "approve", destination_name="b.pdf"),
+                review_row(
+                    "org-000002", "./a.pdf", "approve", destination_name="b.pdf"
+                ),
             ]
             review_path = write_review(root, rows)
 
@@ -198,7 +203,9 @@ class OrganizationReviewApplyTests(unittest.TestCase):
                     CONFIRM_APPLY_ORGANIZATION_REVIEW,
                 )
 
-            self.assertFalse(any((root / "AI_Review" / "reviews").glob("*apply_result*")))
+            self.assertFalse(
+                any((root / "AI_Review" / "reviews").glob("*apply_result*"))
+            )
 
     def test_duplicate_approved_destinations_are_normalized_and_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -236,7 +243,10 @@ class OrganizationReviewApplyTests(unittest.TestCase):
                             CONFIRM_APPLY_ORGANIZATION_REVIEW,
                         )
 
-        with tempfile.TemporaryDirectory() as directory, tempfile.TemporaryDirectory() as outside:
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            tempfile.TemporaryDirectory() as outside,
+        ):
             root = Path(directory)
             outside_review = Path(outside) / "review.json"
             outside_review.write_text(
@@ -284,7 +294,9 @@ class OrganizationReviewApplyTests(unittest.TestCase):
 
             self.assertTrue((root / "present.pdf").exists())
             self.assertFalse((root / "Organized").exists())
-            self.assertFalse(any((root / "AI_Review" / "reviews").glob("*apply_result*")))
+            self.assertFalse(
+                any((root / "AI_Review" / "reviews").glob("*apply_result*"))
+            )
 
     def test_existing_destination_preflight_refuses_without_result(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -307,12 +319,17 @@ class OrganizationReviewApplyTests(unittest.TestCase):
 
             self.assertTrue((root / "a.pdf").exists())
             self.assertEqual(destination.read_text(encoding="utf-8"), "existing")
-            self.assertFalse(any((root / "AI_Review" / "reviews").glob("*apply_result*")))
+            self.assertFalse(
+                any((root / "AI_Review" / "reviews").glob("*apply_result*"))
+            )
 
     def test_symlink_source_and_unsafe_destination_parent_are_rejected(self) -> None:
         if not hasattr(os, "symlink"):
             self.skipTest("symlinks are not supported")
-        with tempfile.TemporaryDirectory() as directory, tempfile.TemporaryDirectory() as outside:
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            tempfile.TemporaryDirectory() as outside,
+        ):
             root = Path(directory)
             target = root / "target.pdf"
             target.write_text("target", encoding="utf-8")
@@ -348,7 +365,9 @@ class OrganizationReviewApplyTests(unittest.TestCase):
                 )
             self.assertFalse(any(Path(outside).rglob("*")))
 
-    def test_apply_result_uses_relative_paths_and_supports_collision_siblings(self) -> None:
+    def test_apply_result_uses_relative_paths_and_supports_collision_siblings(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             review_path = write_review(root, [])
@@ -364,8 +383,12 @@ class OrganizationReviewApplyTests(unittest.TestCase):
                 CONFIRM_APPLY_ORGANIZATION_REVIEW,
             )
 
-            self.assertEqual(first.result_path.name, "organization_review_apply_result.json")
-            self.assertEqual(second.result_path.name, "organization_review_apply_result_1.json")
+            self.assertEqual(
+                first.result_path.name, "organization_review_apply_result.json"
+            )
+            self.assertEqual(
+                second.result_path.name, "organization_review_apply_result_1.json"
+            )
             first_result = read_json(first.result_path)
             self.assertEqual(
                 first_result["review_file"],
@@ -373,7 +396,9 @@ class OrganizationReviewApplyTests(unittest.TestCase):
             )
             self.assertIsNone(first_result["undo_log_path"])
 
-    def test_successful_apply_writes_operation_log_and_undo_restores_source(self) -> None:
+    def test_successful_apply_writes_operation_log_and_undo_restores_source(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             source = root / "a.pdf"
@@ -401,7 +426,9 @@ class OrganizationReviewApplyTests(unittest.TestCase):
             self.assertTrue(all(operation.success for operation in undo.operations))
             self.assertTrue(source.exists())
 
-    def test_partial_runtime_failure_writes_clear_counts_and_skips_unattempted(self) -> None:
+    def test_partial_runtime_failure_writes_clear_counts_and_skips_unattempted(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             review_path = write_review(
@@ -462,7 +489,9 @@ class OrganizationReviewApplyTests(unittest.TestCase):
                 CONFIRM_APPLY_ORGANIZATION_REVIEW,
             )
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertIn("No approved organization review rows to apply", result.stdout)
+            self.assertIn(
+                "No approved organization review rows to apply", result.stdout
+            )
 
             fake_log = OperationLog(
                 log_path=root / "AI_Review" / "operation_logs" / "fake.json",
@@ -492,10 +521,14 @@ class OrganizationReviewApplyTests(unittest.TestCase):
                 "--confirm",
                 CONFIRM_APPLY_ORGANIZATION_REVIEW,
             ]
-            with mock.patch("sys.argv", argv), mock.patch(
-                "organizer.cli.apply_approved_organization_review",
-                return_value=fake_outcome,
-            ), mock.patch("sys.stdout", new_callable=io.StringIO) as output:
+            with (
+                mock.patch("sys.argv", argv),
+                mock.patch(
+                    "organizer.cli.apply_approved_organization_review",
+                    return_value=fake_outcome,
+                ),
+                mock.patch("sys.stdout", new_callable=io.StringIO) as output,
+            ):
                 from organizer.cli import main
 
                 exit_code = main()

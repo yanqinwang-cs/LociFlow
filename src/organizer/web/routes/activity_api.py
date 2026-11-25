@@ -5,14 +5,14 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
 from organizer.application.activity_service import list_activity_entries
-from organizer.application.filesystem_operation_admission import (
-    FilesystemOperationBlockedError,
-)
 from organizer.application.duplicate_bin_restore_service import (
     DuplicateBinRestoreError,
     authorization_matches_movement,
     execute_duplicate_bin_restore,
     preview_duplicate_bin_activity_undo,
+)
+from organizer.application.filesystem_operation_admission import (
+    FilesystemOperationBlockedError,
 )
 from organizer.application.runtime_lifecycle import (
     ApplicationStoppingError,
@@ -31,7 +31,6 @@ from organizer.web.security import (
     validate_csrf_token,
     validate_same_origin,
 )
-
 
 _ERRORS = {
     "operation_not_found": (404, "That organization move is unavailable."),
@@ -137,7 +136,9 @@ def create_activity_api_router() -> APIRouter:
                 403,
             )
         except (FormDataError, TypeError, ValueError):
-            return _error_response("invalid_request", "The Undo request is invalid.", 400)
+            return _error_response(
+                "invalid_request", "The Undo request is invalid.", 400
+            )
         return _json_response(preview.to_dict())
 
     @router.post("/api/activity/{operation_id}/undo", include_in_schema=False)
@@ -221,7 +222,9 @@ def create_activity_api_router() -> APIRouter:
                 403,
             )
         except (FormDataError, StopIteration, TypeError, ValueError):
-            return _error_response("invalid_request", "The Undo request is invalid.", 400)
+            return _error_response(
+                "invalid_request", "The Undo request is invalid.", 400
+            )
         return _json_response({"undo": outcome.to_dict(), "activity": entry.to_dict()})
 
     return router

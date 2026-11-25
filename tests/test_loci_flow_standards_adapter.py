@@ -1,15 +1,14 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 import re
 import shutil
 import subprocess
 import textwrap
 import unittest
+from pathlib import Path
 
 from tests.test_loci_flow_stage_b2_adapter import _payload
-
 
 ROOT = Path(__file__).resolve().parents[1]
 LOCI = ROOT / "src" / "organizer" / "web" / "static" / "loci_flow"
@@ -114,7 +113,7 @@ class LociFlowStandardsAdapterTests(unittest.TestCase):
             }catch(value){error={name:value.name,code:value.code,message:value.message,status:value.status};}
             console.log(JSON.stringify({listed,calls,error}));
             """,
-            f'import {{ getStandards,setStandardActive }} from {json.dumps((LOCI / "api.js").as_uri())};',
+            f"import {{ getStandards,setStandardActive }} from {json.dumps((LOCI / 'api.js').as_uri())};",
         )
         self.assertEqual(result["listed"], _standards())
         self.assertEqual(result["calls"][0]["url"], "/api/standards")
@@ -129,12 +128,21 @@ class LociFlowStandardsAdapterTests(unittest.TestCase):
                 "active": "false",
             },
         )
-        self.assertTrue(all(call["credentials"] == "same-origin" for call in result["calls"]))
-        self.assertTrue(all(call["accept"] == "application/json" for call in result["calls"]))
+        self.assertTrue(
+            all(call["credentials"] == "same-origin" for call in result["calls"])
+        )
+        self.assertTrue(
+            all(call["accept"] == "application/json" for call in result["calls"])
+        )
         self.assertEqual(result["error"]["code"], "standard_revision_mismatch")
         self.assertIn("Reload the latest list", result["error"]["message"])
         serialized = json.dumps(result)
-        for forbidden in ("relative_path", "matcher_value", "parameters", "configured_root"):
+        for forbidden in (
+            "relative_path",
+            "matcher_value",
+            "parameters",
+            "configured_root",
+        ):
             self.assertNotIn(forbidden, serialized)
 
     def test_data_source_validates_projection_and_blocks_double_mutation(self) -> None:
@@ -161,7 +169,7 @@ class LociFlowStandardsAdapterTests(unittest.TestCase):
             try{validateStandardsResponse(malformed);}catch{unsafeRejected=true;}
             console.log(JSON.stringify({listed,calls,secondError,result,pending:source.isStandardsMutationPending(),unsafeRejected}));
             """,
-            f'import {{ createBackendDataSource,validateStandardsResponse }} from {json.dumps((LOCI / "data_source.js").as_uri())};',
+            f"import {{ createBackendDataSource,validateStandardsResponse }} from {json.dumps((LOCI / 'data_source.js').as_uri())};",
         )
         self.assertEqual(result["listed"], _standards())
         self.assertEqual(len(result["calls"]), 1)
@@ -178,7 +186,9 @@ class LociFlowStandardsAdapterTests(unittest.TestCase):
         self.assertFalse(result["pending"])
         self.assertTrue(result["unsafeRejected"])
 
-    def test_view_model_and_renderer_cover_loading_ready_error_and_safe_controls(self) -> None:
+    def test_view_model_and_renderer_cover_loading_ready_error_and_safe_controls(
+        self,
+    ) -> None:
         result = self.run_node(
             """
             const backend=validateOrganizationResponse(clone(payload));
@@ -196,9 +206,9 @@ class LociFlowStandardsAdapterTests(unittest.TestCase):
             """,
             "\n".join(
                 [
-                    f'import {{ validateOrganizationResponse }} from {json.dumps((LOCI / "data_source.js").as_uri())};',
-                    f'import {{ buildProductionStageB1Contract,buildStandardsViewModel }} from {json.dumps((LOCI / "view_models.js").as_uri())};',
-                    f'import {{ renderRoute }} from {json.dumps((LOCI / "views.js").as_uri())};',
+                    f"import {{ validateOrganizationResponse }} from {json.dumps((LOCI / 'data_source.js').as_uri())};",
+                    f"import {{ buildProductionStageB1Contract,buildStandardsViewModel }} from {json.dumps((LOCI / 'view_models.js').as_uri())};",
+                    f"import {{ renderRoute }} from {json.dumps((LOCI / 'views.js').as_uri())};",
                 ]
             ),
         )
@@ -209,7 +219,11 @@ class LociFlowStandardsAdapterTests(unittest.TestCase):
         self.assertIn(">On<", result["ready"])
         self.assertIn(">Paused<", result["ready"])
         self.assertEqual(result["ready"].count('data-action="set-standard-active"'), 2)
-        built_in = result["ready"].split("Protect project folders", 1)[1].split("</article>", 1)[0]
+        built_in = (
+            result["ready"]
+            .split("Protect project folders", 1)[1]
+            .split("</article>", 1)[0]
+        )
         self.assertNotIn("Pause", built_in)
         self.assertIn("Check files again", result["pending"])
         self.assertIn('aria-busy="true"', result["pending"])
@@ -239,7 +253,9 @@ class LociFlowStandardsAdapterTests(unittest.TestCase):
         for item in _standards()["items"]:
             self.assertNotIn(item["id"], visible_text)
 
-    def test_app_coalesces_loads_and_mutation_reloads_without_retry_or_scan(self) -> None:
+    def test_app_coalesces_loads_and_mutation_reloads_without_retry_or_scan(
+        self,
+    ) -> None:
         app_source = (LOCI / "app.js").read_text(encoding="utf-8")
         result = self.run_node(
             """
@@ -295,22 +311,32 @@ class LociFlowStandardsAdapterTests(unittest.TestCase):
             f"const appSource={json.dumps(app_source)};",
         )
         self.assertEqual(result["during"], {"loads": 1, "status": "loading"})
-        self.assertEqual(result["afterPause"], {"mutations": 1, "loads": 2, "active": False})
+        self.assertEqual(
+            result["afterPause"], {"mutations": 1, "loads": 2, "active": False}
+        )
         self.assertEqual(result["success"]["mutations"], 2)
         self.assertEqual(result["success"]["loads"], 3)
         self.assertEqual(result["success"]["scans"], 0)
         self.assertTrue(result["success"]["state"]["standards"]["items"][1]["active"])
-        mutation_events = [event for event in result["success"]["events"] if event[0] == "mutation"]
+        mutation_events = [
+            event for event in result["success"]["events"] if event[0] == "mutation"
+        ]
         self.assertEqual([event[2] for event in mutation_events], [False, True])
         self.assertTrue(all(event[3] == 7 for event in mutation_events))
         self.assertFalse(result["success"]["state"]["standards"]["mutationPending"])
         self.assertTrue(result["success"]["state"]["standards"]["freshScanRequired"])
         self.assertEqual(result["success"]["state"]["selectedRowIds"], [])
         self.assertEqual(result["success"]["state"]["destinationDrafts"], {})
-        self.assertEqual(result["success"]["state"]["workflowOverride"]["primaryAction"]["action"], "check-again")
+        self.assertEqual(
+            result["success"]["state"]["workflowOverride"]["primaryAction"]["action"],
+            "check-again",
+        )
         self.assertEqual(result["conflict"]["mutations"], 1)
         self.assertEqual(result["conflict"]["loads"], 1)
-        self.assertIn("Reload the latest list", result["conflict"]["state"]["standards"]["conflictMessage"])
+        self.assertIn(
+            "Reload the latest list",
+            result["conflict"]["state"]["standards"]["conflictMessage"],
+        )
 
     def test_fixture_isolation_and_protected_prototype(self) -> None:
         result = self.run_node(
@@ -321,19 +347,24 @@ class LociFlowStandardsAdapterTests(unittest.TestCase):
             try{await fixture.setStandardActive("x",false,0);}catch(error){mutationError=error.code;}
             console.log(JSON.stringify({kind:fixture.kind,loadError,mutationError}));
             """,
-            f'import {{ createFixtureDataSource }} from {json.dumps((LOCI / "data_source.js").as_uri())};',
+            f"import {{ createFixtureDataSource }} from {json.dumps((LOCI / 'data_source.js').as_uri())};",
         )
-        self.assertEqual(result, {
-            "kind": "fixture",
-            "loadError": "standards_unavailable",
-            "mutationError": "standards_unavailable",
-        })
+        self.assertEqual(
+            result,
+            {
+                "kind": "fixture",
+                "loadError": "standards_unavailable",
+                "mutationError": "standards_unavailable",
+            },
+        )
         production = "\n".join(
             (LOCI / name).read_text(encoding="utf-8")
             for name in ("app.js", "views.js", "view_models.js")
         )
         self.assertNotIn("create Standard", production)
-        self.assertNotIn("confirm-suggested-standards", (LOCI / "app.js").read_text(encoding="utf-8"))
+        self.assertNotIn(
+            "confirm-suggested-standards", (LOCI / "app.js").read_text(encoding="utf-8")
+        )
 
 
 if __name__ == "__main__":

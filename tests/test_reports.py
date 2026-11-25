@@ -1,10 +1,10 @@
-from pathlib import Path
 import json
 import os
 import subprocess
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from organizer.reports import build_scan_report, write_report
@@ -100,9 +100,13 @@ class ReportGenerationTests(unittest.TestCase):
             self.assertEqual(report["summary"]["duplicate_group_count"], 1)
             self.assertEqual(report["summary"]["duplicate_candidate_count"], 1)
             self.assertGreaterEqual(report["summary"]["review_candidate_count"], 1)
-            self.assertIn("empty", report["summary"]["review_candidate_counts_by_category"])
+            self.assertIn(
+                "empty", report["summary"]["review_candidate_counts_by_category"]
+            )
             self.assertGreaterEqual(report["summary"]["project_group_count"], 1)
-            self.assertGreaterEqual(report["summary"]["organization_suggestion_count"], 1)
+            self.assertGreaterEqual(
+                report["summary"]["organization_suggestion_count"], 1
+            )
             self.assertEqual(report["summary"]["refinement_status"], "not_requested")
             self.assertEqual(report["organization_rules"]["status"], "missing")
             self.assertEqual(report["organization_rules"]["path"], None)
@@ -112,11 +116,17 @@ class ReportGenerationTests(unittest.TestCase):
             self.assertIn("suggested_groups", report["anchor_decisions"])
             self.assertIn("patterns", report["organization_pattern_inference"])
             self.assertIn("rule_candidates", report["organization_pattern_inference"])
-            self.assertEqual(report["duplicates"][0]["files"], ["a.txt", "subdir/b.txt"])
+            self.assertEqual(
+                report["duplicates"][0]["files"], ["a.txt", "subdir/b.txt"]
+            )
             self.assertIn("source", report["duplicate_review_plan"][0])
-            self.assertIn("destination", report["organization_suggestions"][0]["plan_items"][0])
+            self.assertIn(
+                "destination", report["organization_suggestions"][0]["plan_items"][0]
+            )
 
-    def test_report_includes_pattern_inference_and_needs_decision_evidence(self) -> None:
+    def test_report_includes_pattern_inference_and_needs_decision_evidence(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             course = root / "CS1010X"
@@ -129,7 +139,9 @@ class ReportGenerationTests(unittest.TestCase):
             report = build_scan_report(root)
 
             self.assertEqual(report["summary"]["organization_pattern_count"], 1)
-            self.assertGreaterEqual(report["summary"]["inferred_rule_candidate_count"], 1)
+            self.assertGreaterEqual(
+                report["summary"]["inferred_rule_candidate_count"], 1
+            )
             patterns = report["organization_pattern_inference"]["patterns"]
             candidates = report["organization_pattern_inference"]["rule_candidates"]
             needs_decision = report["anchor_decisions"]["needs_decision"]
@@ -138,7 +150,9 @@ class ReportGenerationTests(unittest.TestCase):
             self.assertTrue(
                 any(candidate["value"] == "course_code" for candidate in candidates)
             )
-            cs1010x = next(item for item in needs_decision if item["anchor"] == "CS1010X")
+            cs1010x = next(
+                item for item in needs_decision if item["anchor"] == "CS1010X"
+            )
             self.assertEqual(cs1010x["pattern_evidence"]["priority"], "high")
             cs2020 = next(item for item in needs_decision if item["anchor"] == "CS2020")
             self.assertNotIn("pattern_evidence", cs2020)
@@ -160,17 +174,26 @@ class ReportGenerationTests(unittest.TestCase):
     def test_excessive_organization_suggestion_warning_is_added(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            for name in ["CS1010X finals 2025.pdf", "CS1010X finals 2026.pdf", "other.pdf"]:
+            for name in [
+                "CS1010X finals 2025.pdf",
+                "CS1010X finals 2026.pdf",
+                "other.pdf",
+            ]:
                 (root / name).write_text("document", encoding="utf-8")
 
             report = build_scan_report(root)
 
             self.assertGreater(report["summary"]["organization_suggestion_count"], 0)
             self.assertTrue(
-                any("Organization suggestions are unusually broad" in warning for warning in report["warnings"])
+                any(
+                    "Organization suggestions are unusually broad" in warning
+                    for warning in report["warnings"]
+                )
             )
 
-    def test_report_keeps_protected_duplicate_facts_but_filters_actionable_sections(self) -> None:
+    def test_report_keeps_protected_duplicate_facts_but_filters_actionable_sections(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "user_a.pdf").write_text("same-user", encoding="utf-8")
@@ -188,9 +211,7 @@ class ReportGenerationTests(unittest.TestCase):
             report = build_scan_report(root)
 
             duplicate_fact_files = {
-                file
-                for group in report["duplicates"]
-                for file in group["files"]
+                file for group in report["duplicates"] for file in group["files"]
             }
             duplicate_plan_sources = {
                 item["source"] for item in report["duplicate_review_plan"]
@@ -213,7 +234,9 @@ class ReportGenerationTests(unittest.TestCase):
                 any("protected, generated" in warning for warning in report["warnings"])
             )
 
-    def test_report_filters_generated_assets_and_keeps_strong_course_group(self) -> None:
+    def test_report_filters_generated_assets_and_keeps_strong_course_group(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             generated = root / "Instagram_files"
@@ -229,13 +252,12 @@ class ReportGenerationTests(unittest.TestCase):
             report = build_scan_report(root)
 
             duplicate_fact_files = {
-                file
-                for group in report["duplicates"]
-                for file in group["files"]
+                file for group in report["duplicates"] for file in group["files"]
             }
             actionable_sources = {
                 item["source"]
-                for item in report["duplicate_review_plan"] + report["review_candidate_plan"]
+                for item in report["duplicate_review_plan"]
+                + report["review_candidate_plan"]
             }
             organization_groups = {
                 suggestion["group_name"]
@@ -284,13 +306,15 @@ class ReportGenerationTests(unittest.TestCase):
             self.assertEqual(report["summary"]["suggested_anchor_count"], 1)
             self.assertGreaterEqual(report["summary"]["ignored_anchor_count"], 1)
             suggested_anchors = {
-                item["anchor"] for item in report["anchor_decisions"]["suggested_groups"]
+                item["anchor"]
+                for item in report["anchor_decisions"]["suggested_groups"]
             }
             ignored_anchors = {
                 item["anchor"] for item in report["anchor_decisions"]["ignored_terms"]
             }
             organization_groups = {
-                suggestion["group_name"] for suggestion in report["organization_suggestions"]
+                suggestion["group_name"]
+                for suggestion in report["organization_suggestions"]
             }
             self.assertIn("Misc", suggested_anchors)
             self.assertIn("EvoSim", ignored_anchors)
@@ -306,7 +330,9 @@ class ReportOutputSafetyTests(unittest.TestCase):
 
             report_path = write_report(build_scan_report(root), root)
 
-            self.assertEqual(report_path.parent, root.resolve() / "AI_Review" / "reports")
+            self.assertEqual(
+                report_path.parent, root.resolve() / "AI_Review" / "reports"
+            )
             self.assertTrue(report_path.name.endswith("_report.json"))
 
     def test_custom_report_output_under_root_works(self) -> None:
@@ -331,7 +357,9 @@ class ReportOutputSafetyTests(unittest.TestCase):
                 Path("AI_Review/reports/relative.json"),
             )
 
-            self.assertEqual(report_path, root.resolve() / "AI_Review" / "reports" / "relative.json")
+            self.assertEqual(
+                report_path, root.resolve() / "AI_Review" / "reports" / "relative.json"
+            )
             self.assertTrue(report_path.exists())
 
     def test_custom_report_output_outside_root_is_rejected(self) -> None:
@@ -385,7 +413,9 @@ class ReportOutputSafetyTests(unittest.TestCase):
 
 
 class ReportNoMovementTests(unittest.TestCase):
-    def test_report_mode_does_not_move_duplicate_or_organization_candidates(self) -> None:
+    def test_report_mode_does_not_move_duplicate_or_organization_candidates(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             create_report_fixture(root)
@@ -458,7 +488,9 @@ class ReportCliTests(unittest.TestCase):
             create_report_fixture(root)
 
             apply_result = run_cli(root, "--report", "--apply-organization-plan")
-            confirm_result = run_cli(root, "--report", "--confirm", "APPLY_ORGANIZATION_PLAN")
+            confirm_result = run_cli(
+                root, "--report", "--confirm", "APPLY_ORGANIZATION_PLAN"
+            )
 
             self.assertNotEqual(apply_result.returncode, 0)
             self.assertNotEqual(confirm_result.returncode, 0)
@@ -605,7 +637,12 @@ def collect_report_paths(value) -> list[str]:
     paths: list[str] = []
     if isinstance(value, dict):
         for key, child in value.items():
-            if key in {"path", "source", "destination", "suggested_root"} and isinstance(child, str):
+            if key in {
+                "path",
+                "source",
+                "destination",
+                "suggested_root",
+            } and isinstance(child, str):
                 paths.append(child)
             elif key == "files" and isinstance(child, list):
                 paths.extend(item for item in child if isinstance(item, str))

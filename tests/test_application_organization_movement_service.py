@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import replace
-from pathlib import Path
 import tempfile
-from threading import Event, Thread
 import unittest
 import uuid
+from dataclasses import replace
+from pathlib import Path
+from threading import Event, Thread
 from unittest import mock
 
 import organizer.application.organization_movement_service as movement_service
@@ -19,16 +19,15 @@ from organizer.application.filesystem_operation_admission import (
     FilesystemOperationBlockedError,
     RecoveryAdmissionState,
 )
+from organizer.application.organization_identity_execution import (
+    OrganizationIdentityExecutionService,
+)
 from organizer.application.organization_movement_service import (
     OrganizationMovementError,
     execute_organization_movement,
     preview_organization_movement,
     project_organization_execution,
 )
-from organizer.application.organization_identity_execution import (
-    OrganizationIdentityExecutionService,
-)
-from organizer.executor_identity import StrictExecutorError
 from organizer.application.organization_operation_repository import (
     OrganizationOperationRepository,
 )
@@ -36,6 +35,7 @@ from organizer.application.organization_undo_repository import (
     OrganizationUndoRepository,
 )
 from organizer.application.runtime_lifecycle import ApplicationStoppingError
+from organizer.executor_identity import StrictExecutorError
 from tests.test_application_execution_service import _approved_plan
 
 
@@ -99,9 +99,7 @@ class OrganizationMovementServiceTests(unittest.TestCase):
                 return real_issue(*args, **kwargs)
 
             worker = Thread(
-                target=lambda: outcomes.append(
-                    _preview(plan, coordinator, repository)
-                )
+                target=lambda: outcomes.append(_preview(plan, coordinator, repository))
             )
             with mock.patch.object(
                 movement_service,
@@ -217,9 +215,12 @@ class OrganizationMovementServiceTests(unittest.TestCase):
                 ),
             )
             for candidate, generation, revision, code in cases:
-                with self.subTest(code=code), self.assertRaisesRegex(
-                    OrganizationMovementError,
-                    code,
+                with (
+                    self.subTest(code=code),
+                    self.assertRaisesRegex(
+                        OrganizationMovementError,
+                        code,
+                    ),
                 ):
                     preview_organization_movement(
                         approved_plan=candidate,
@@ -231,7 +232,9 @@ class OrganizationMovementServiceTests(unittest.TestCase):
                     )
             self.assertEqual(repository.list_records(), ())
 
-    def test_authorization_rejects_wrong_session_root_and_changed_plan_identity(self) -> None:
+    def test_authorization_rejects_wrong_session_root_and_changed_plan_identity(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             plan = _approved_plan(root, ("a.txt", "b.txt"))
@@ -256,9 +259,12 @@ class OrganizationMovementServiceTests(unittest.TestCase):
                 (plan, "browser-two", repository),
                 (changed, "browser-one", repository),
             ):
-                with self.subTest(session=browser_session_id), self.assertRaisesRegex(
-                    OrganizationMovementError,
-                    "invalid_confirmation_token",
+                with (
+                    self.subTest(session=browser_session_id),
+                    self.assertRaisesRegex(
+                        OrganizationMovementError,
+                        "invalid_confirmation_token",
+                    ),
                 ):
                     _execute(
                         candidate,
@@ -291,12 +297,19 @@ class OrganizationMovementServiceTests(unittest.TestCase):
             token = _preview(plan, coordinator, repository).confirmation_token
             cases = (
                 ("scan-two", plan.decision_revision, "scan_generation_mismatch"),
-                (plan.scan_generation, plan.decision_revision + 1, "decision_revision_mismatch"),
+                (
+                    plan.scan_generation,
+                    plan.decision_revision + 1,
+                    "decision_revision_mismatch",
+                ),
             )
             for generation, revision, code in cases:
-                with self.subTest(code=code), self.assertRaisesRegex(
-                    OrganizationMovementError,
-                    code,
+                with (
+                    self.subTest(code=code),
+                    self.assertRaisesRegex(
+                        OrganizationMovementError,
+                        code,
+                    ),
                 ):
                     execute_organization_movement(
                         approved_plan=plan,
@@ -325,9 +338,12 @@ class OrganizationMovementServiceTests(unittest.TestCase):
                 "MOVE APPROVED FILES ",
                 "MOVE APPROVED FILES\n",
             ):
-                with self.subTest(confirmation=confirmation), self.assertRaisesRegex(
-                    OrganizationMovementError,
-                    "invalid_confirmation",
+                with (
+                    self.subTest(confirmation=confirmation),
+                    self.assertRaisesRegex(
+                        OrganizationMovementError,
+                        "invalid_confirmation",
+                    ),
                 ):
                     _execute(
                         plan,
@@ -342,7 +358,9 @@ class OrganizationMovementServiceTests(unittest.TestCase):
                 "available",
             )
 
-    def test_verified_execution_lost_response_replay_and_activity_are_durable(self) -> None:
+    def test_verified_execution_lost_response_replay_and_activity_are_durable(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             plan = _approved_plan(root, ("a.txt", "b.txt"), duplicate=True)
@@ -500,9 +518,12 @@ class OrganizationMovementServiceTests(unittest.TestCase):
             coordinator = OrganizationExecutionCoordinator()
             repository = OrganizationOperationRepository(root)
             for token in ("not-a-uuid", str(uuid.uuid4())):
-                with self.subTest(token=token), self.assertRaisesRegex(
-                    OrganizationMovementError,
-                    "invalid_confirmation_token",
+                with (
+                    self.subTest(token=token),
+                    self.assertRaisesRegex(
+                        OrganizationMovementError,
+                        "invalid_confirmation_token",
+                    ),
                 ):
                     _execute(plan, coordinator, repository, token)
             self.assertEqual(repository.list_records(), ())

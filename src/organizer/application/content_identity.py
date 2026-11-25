@@ -1,9 +1,8 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from enum import Enum
-import re
-
 
 REGULAR_FILE_IDENTITY_KIND = "regular_file"
 SHA256_IDENTITY_ALGORITHM = "sha256"
@@ -27,9 +26,10 @@ class RegularFileContentIdentity:
             raise ValueError("content identity kind is unsupported")
         if self.algorithm != SHA256_IDENTITY_ALGORITHM:
             raise ValueError("content identity algorithm is unsupported")
-        if not isinstance(self.digest, str) or _SHA256_DIGEST.fullmatch(
-            self.digest
-        ) is None:
+        if (
+            not isinstance(self.digest, str)
+            or _SHA256_DIGEST.fullmatch(self.digest) is None
+        ):
             raise ValueError("content identity digest is invalid")
 
     def to_dict(self) -> dict[str, str]:

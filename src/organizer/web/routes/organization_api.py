@@ -7,12 +7,12 @@ from fastapi import APIRouter
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
+from organizer.application.filesystem_operation_admission import (
+    FilesystemOperationBlockedError,
+)
 from organizer.application.organization_decision_service import (
     OrganizationDecisionError,
     organization_review_to_dict,
-)
-from organizer.application.filesystem_operation_admission import (
-    FilesystemOperationBlockedError,
 )
 from organizer.application.organization_movement_service import (
     OrganizationMovementError,
@@ -39,7 +39,6 @@ from organizer.web.security import (
     validate_csrf_token,
     validate_same_origin,
 )
-
 
 _DECISION_FIELDS = {
     "csrf_token",
@@ -414,9 +413,7 @@ def create_organization_api_router() -> APIRouter:
                 identity_execution_service=(
                     request.app.state.organization_identity_execution
                 ),
-                recovery_status=(
-                    request.app.state.current_recovery_admission_status
-                ),
+                recovery_status=(request.app.state.current_recovery_admission_status),
             )
         except FilesystemOperationBlockedError as error:
             return _error_response(error.code, str(error), 409)

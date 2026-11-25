@@ -1,4 +1,3 @@
-from pathlib import Path
 import io
 import json
 import os
@@ -6,23 +5,25 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from organizer.executor import apply_move_plan
 from organizer.models import MovePlanItem, MoveResult, OperationLog, ReviewedPlanItem
+from organizer.organization_rules import load_organization_rules
 from organizer.review_session import (
     approve_items,
-    approved_plan_items,
-    build_review_session_items as build_review_session_items_from_rules_snapshot,
     find_approved_move_conflicts,
     get_item,
     load_reviewed_plan_move_items,
     reject_items,
-    save_reviewed_plan,
     reviewed_plan_data_to_move_items,
+    save_reviewed_plan,
     summarize_review_items,
 )
-from organizer.organization_rules import load_organization_rules
+from organizer.review_session import (
+    build_review_session_items as build_review_session_items_from_rules_snapshot,
+)
 from organizer.review_state import load_review_state, review_state_path
 from organizer.scanner import scan_directory
 
@@ -41,7 +42,9 @@ def approve_all(items):
 
 
 class ReviewSessionConstructionTests(unittest.TestCase):
-    def test_duplicate_and_organization_rows_are_built_from_existing_plans(self) -> None:
+    def test_duplicate_and_organization_rows_are_built_from_existing_plans(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             create_review_session_fixture(root)
@@ -62,12 +65,16 @@ class ReviewSessionConstructionTests(unittest.TestCase):
 
             items = build_review_session_items(scan_directory(root), root)
             duplicate_ids = [item.id for item in items if item.category == "duplicate"]
-            organization_ids = [item.id for item in items if item.category == "organization"]
+            organization_ids = [
+                item.id for item in items if item.category == "organization"
+            ]
 
             self.assertEqual(duplicate_ids, sorted(duplicate_ids))
             self.assertEqual(organization_ids, sorted(organization_ids))
             self.assertTrue(all(item_id.startswith("D") for item_id in duplicate_ids))
-            self.assertTrue(all(item_id.startswith("O") for item_id in organization_ids))
+            self.assertTrue(
+                all(item_id.startswith("O") for item_id in organization_ids)
+            )
             self.assertEqual(len({item.id for item in items}), len(items))
 
     def test_ai_review_files_are_not_included_in_organization_rows(self) -> None:
@@ -107,9 +114,7 @@ class ReviewSessionConstructionTests(unittest.TestCase):
 
             items = build_review_session_items(scan_directory(root), root)
             review_items = [
-                item
-                for item in items
-                if item.category == "review_candidate"
+                item for item in items if item.category == "review_candidate"
             ]
 
             self.assertEqual([item.id for item in review_items], ["R1", "R2"])
@@ -274,7 +279,9 @@ class ReviewSessionDecisionTests(unittest.TestCase):
             self.assertEqual(summary["organization_rejected_move_count"], 1)
             self.assertEqual(summary["review_candidate_rejected_move_count"], 1)
 
-    def test_unknown_review_candidate_id_is_rejected_without_partial_change(self) -> None:
+    def test_unknown_review_candidate_id_is_rejected_without_partial_change(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             create_full_review_session_fixture(root)
@@ -291,8 +298,20 @@ class ReviewSessionConflictTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             items = [
-                make_reviewed_item(root, "D1", "duplicate", "shared.txt", "AI_Review/duplicates/shared.txt"),
-                make_reviewed_item(root, "O1", "organization", "shared.txt", "Organized/Shared/notes/shared.txt"),
+                make_reviewed_item(
+                    root,
+                    "D1",
+                    "duplicate",
+                    "shared.txt",
+                    "AI_Review/duplicates/shared.txt",
+                ),
+                make_reviewed_item(
+                    root,
+                    "O1",
+                    "organization",
+                    "shared.txt",
+                    "Organized/Shared/notes/shared.txt",
+                ),
             ]
 
             conflicts = find_approved_move_conflicts(items, root)
@@ -306,7 +325,9 @@ class ReviewSessionConflictTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             items = [
-                make_reviewed_item(root, "D1", "duplicate", "file.tmp", "AI_Review/duplicates/file.tmp"),
+                make_reviewed_item(
+                    root, "D1", "duplicate", "file.tmp", "AI_Review/duplicates/file.tmp"
+                ),
                 make_reviewed_item(
                     root,
                     "R1",
@@ -323,11 +344,19 @@ class ReviewSessionConflictTests(unittest.TestCase):
             self.assertEqual(conflicts[0].conflict_type, "source")
             self.assertEqual([item.id for item in conflicts[0].items], ["D1", "R1"])
 
-    def test_organization_and_review_candidate_source_conflict_is_detected(self) -> None:
+    def test_organization_and_review_candidate_source_conflict_is_detected(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             items = [
-                make_reviewed_item(root, "O1", "organization", "file.tmp", "Organized/File/other/file.tmp"),
+                make_reviewed_item(
+                    root,
+                    "O1",
+                    "organization",
+                    "file.tmp",
+                    "Organized/File/other/file.tmp",
+                ),
                 make_reviewed_item(
                     root,
                     "R1",
@@ -348,8 +377,16 @@ class ReviewSessionConflictTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             items = [
-                make_reviewed_item(root, "D1", "duplicate", "file.tmp", "AI_Review/duplicates/file.tmp"),
-                make_reviewed_item(root, "O1", "organization", "file.tmp", "Organized/File/other/file.tmp"),
+                make_reviewed_item(
+                    root, "D1", "duplicate", "file.tmp", "AI_Review/duplicates/file.tmp"
+                ),
+                make_reviewed_item(
+                    root,
+                    "O1",
+                    "organization",
+                    "file.tmp",
+                    "Organized/File/other/file.tmp",
+                ),
                 make_reviewed_item(
                     root,
                     "R1",
@@ -363,14 +400,24 @@ class ReviewSessionConflictTests(unittest.TestCase):
             conflicts = find_approved_move_conflicts(items, root)
 
             self.assertEqual(len(conflicts), 1)
-            self.assertEqual([item.id for item in conflicts[0].items], ["D1", "O1", "R1"])
+            self.assertEqual(
+                [item.id for item in conflicts[0].items], ["D1", "O1", "R1"]
+            )
 
     def test_rejected_rows_resolve_source_conflicts(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             items = [
-                make_reviewed_item(root, "D1", "duplicate", "file.tmp", "AI_Review/duplicates/file.tmp"),
-                make_reviewed_item(root, "O1", "organization", "file.tmp", "Organized/File/other/file.tmp"),
+                make_reviewed_item(
+                    root, "D1", "duplicate", "file.tmp", "AI_Review/duplicates/file.tmp"
+                ),
+                make_reviewed_item(
+                    root,
+                    "O1",
+                    "organization",
+                    "file.tmp",
+                    "Organized/File/other/file.tmp",
+                ),
                 make_reviewed_item(
                     root,
                     "R1",
@@ -390,22 +437,38 @@ class ReviewSessionConflictTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             items = [
-                make_reviewed_item(root, "O1", "organization", "a.txt", "Organized/Shared/notes/file.txt"),
-                make_reviewed_item(root, "O2", "organization", "b.txt", "Organized/Shared/notes/file.txt"),
+                make_reviewed_item(
+                    root,
+                    "O1",
+                    "organization",
+                    "a.txt",
+                    "Organized/Shared/notes/file.txt",
+                ),
+                make_reviewed_item(
+                    root,
+                    "O2",
+                    "organization",
+                    "b.txt",
+                    "Organized/Shared/notes/file.txt",
+                ),
             ]
 
             conflicts = find_approved_move_conflicts(items, root)
 
             self.assertEqual(len(conflicts), 1)
             self.assertEqual(conflicts[0].conflict_type, "destination")
-            self.assertEqual(conflicts[0].relative_path, "Organized/Shared/notes/file.txt")
+            self.assertEqual(
+                conflicts[0].relative_path, "Organized/Shared/notes/file.txt"
+            )
             self.assertEqual([item.id for item in conflicts[0].items], ["O1", "O2"])
 
     def test_summary_includes_conflict_counts(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             items = [
-                make_reviewed_item(root, "D1", "duplicate", "file.tmp", "AI_Review/duplicates/file.tmp"),
+                make_reviewed_item(
+                    root, "D1", "duplicate", "file.tmp", "AI_Review/duplicates/file.tmp"
+                ),
                 make_reviewed_item(
                     root,
                     "R1",
@@ -414,8 +477,20 @@ class ReviewSessionConflictTests(unittest.TestCase):
                     "AI_Review/temporary/file.tmp",
                     review_category="temporary",
                 ),
-                make_reviewed_item(root, "O1", "organization", "a.txt", "Organized/Shared/notes/file.txt"),
-                make_reviewed_item(root, "O2", "organization", "b.txt", "Organized/Shared/notes/file.txt"),
+                make_reviewed_item(
+                    root,
+                    "O1",
+                    "organization",
+                    "a.txt",
+                    "Organized/Shared/notes/file.txt",
+                ),
+                make_reviewed_item(
+                    root,
+                    "O2",
+                    "organization",
+                    "b.txt",
+                    "Organized/Shared/notes/file.txt",
+                ),
             ]
 
             summary = summarize_review_items(items, root)
@@ -430,8 +505,20 @@ class ReviewSessionConflictTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             items = [
-                make_reviewed_item(root, "O1", "organization", "a.txt", "Organized/Shared/notes/file.txt"),
-                make_reviewed_item(root, "O2", "organization", "b.txt", "Organized/Shared/notes/file.txt"),
+                make_reviewed_item(
+                    root,
+                    "O1",
+                    "organization",
+                    "a.txt",
+                    "Organized/Shared/notes/file.txt",
+                ),
+                make_reviewed_item(
+                    root,
+                    "O2",
+                    "organization",
+                    "b.txt",
+                    "Organized/Shared/notes/file.txt",
+                ),
             ]
             stdout = io.StringIO()
 
@@ -439,7 +526,9 @@ class ReviewSessionConflictTests(unittest.TestCase):
                 cli_module._print_review_session_conflicts(items, root)
 
             output = stdout.getvalue()
-            self.assertIn("Destination conflict: Organized/Shared/notes/file.txt", output)
+            self.assertIn(
+                "Destination conflict: Organized/Shared/notes/file.txt", output
+            )
             self.assertIn(
                 "Reject all but one approved move targeting the same destination.",
                 output,
@@ -459,7 +548,9 @@ class ReviewSessionSaveTests(unittest.TestCase):
             path = save_reviewed_plan(items, root)
             data = json.loads(path.read_text(encoding="utf-8"))
 
-            self.assertEqual(path.parent, root.resolve() / "AI_Review" / "review_sessions")
+            self.assertEqual(
+                path.parent, root.resolve() / "AI_Review" / "review_sessions"
+            )
             self.assertEqual(data["schema_version"], 1)
             self.assertEqual(data["scan_root"], ".")
             self.assertEqual(data["plan_type"], "batch_review")
@@ -477,7 +568,9 @@ class ReviewSessionSaveTests(unittest.TestCase):
             items = build_review_session_items(scan_directory(root), root)
             first = save_reviewed_plan(items, root)
 
-            with mock.patch("organizer.review_session._next_reviewed_plan_path", return_value=first):
+            with mock.patch(
+                "organizer.review_session._next_reviewed_plan_path", return_value=first
+            ):
                 with self.assertRaises(ValueError):
                     save_reviewed_plan(items, root)
 
@@ -505,9 +598,7 @@ class ReviewSessionSaveTests(unittest.TestCase):
             path = save_reviewed_plan(items, root)
             data = json.loads(path.read_text(encoding="utf-8"))
             review_items = [
-                item
-                for item in data["items"]
-                if item["category"] == "review_candidate"
+                item for item in data["items"] if item["category"] == "review_candidate"
             ]
 
             self.assertEqual(data["summary"]["review_candidate_rejected_move_count"], 1)
@@ -520,14 +611,14 @@ class ReviewSessionSaveTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             create_review_candidate_fixture(root)
-            items = approve_all(
-                build_review_session_items(scan_directory(root), root)
-            )
+            items = approve_all(build_review_session_items(scan_directory(root), root))
 
             path = save_reviewed_plan(items, root)
             data = json.loads(path.read_text(encoding="utf-8"))
 
-            self.assertGreaterEqual(data["summary"]["approved_source_conflict_count"], 1)
+            self.assertGreaterEqual(
+                data["summary"]["approved_source_conflict_count"], 1
+            )
             self.assertGreaterEqual(data["summary"]["approved_move_conflict_count"], 1)
             self.assertTrue((root / "empty.txt").exists())
             self.assertFalse((root / "AI_Review" / "empty").exists())
@@ -540,7 +631,9 @@ class ReviewSessionCliTests(unittest.TestCase):
             create_review_session_fixture(root)
 
             report_result = run_cli(root, "--review-plans", "--report")
-            undo_result = run_cli(root, "--review-plans", "--undo-log", str(root / "log.json"))
+            undo_result = run_cli(
+                root, "--review-plans", "--undo-log", str(root / "log.json")
+            )
 
             self.assertNotEqual(report_result.returncode, 0)
             self.assertNotEqual(undo_result.returncode, 0)
@@ -562,7 +655,9 @@ class ReviewSessionCliTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("Review summary", result.stdout)
             self.assertIn("Reviewed plan saved:", result.stdout)
-            self.assertTrue(list((root / "AI_Review" / "review_sessions").glob("*.json")))
+            self.assertTrue(
+                list((root / "AI_Review" / "review_sessions").glob("*.json"))
+            )
             self.assertTrue((root / "evosim_notes.txt").exists())
 
     def test_review_plans_applies_remembered_decisions_by_default(self) -> None:
@@ -614,9 +709,13 @@ class ReviewSessionCliTests(unittest.TestCase):
             result = run_cli(root, "--ignore-review-state")
 
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn("--ignore-review-state requires --review-plans", result.stderr)
+            self.assertIn(
+                "--ignore-review-state requires --review-plans", result.stderr
+            )
 
-    def test_save_writes_review_state_and_does_not_move_or_write_operation_log(self) -> None:
+    def test_save_writes_review_state_and_does_not_move_or_write_operation_log(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             create_review_session_fixture(root)
@@ -629,7 +728,9 @@ class ReviewSessionCliTests(unittest.TestCase):
 
             self.assertEqual(result.returncode, 0, result.stderr)
             state = load_review_state(root)
-            persisted = {(record.category, record.decision) for record in state.decisions}
+            persisted = {
+                (record.category, record.decision) for record in state.decisions
+            }
             self.assertIn(("duplicate", "rejected"), persisted)
             self.assertIn(("organization", "approved"), persisted)
             self.assertTrue((root / "subdir" / "b.txt").exists())
@@ -666,7 +767,9 @@ class ReviewSessionCliTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("Approved move conflicts", result.stdout)
             self.assertIn("Source conflict: empty.txt", result.stdout)
-            self.assertIn("Reject all but one approved move for the same source.", result.stdout)
+            self.assertIn(
+                "Reject all but one approved move for the same source.", result.stdout
+            )
 
     def test_summary_reports_conflicts_and_apply_blocking(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -681,7 +784,9 @@ class ReviewSessionCliTests(unittest.TestCase):
 
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("approved source conflicts:", result.stdout)
-            self.assertIn("final apply is blocked until conflicts are resolved", result.stdout)
+            self.assertIn(
+                "final apply is blocked until conflicts are resolved", result.stdout
+            )
 
     def test_review_plans_can_reject_review_candidate_and_save(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -696,13 +801,13 @@ class ReviewSessionCliTests(unittest.TestCase):
 
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("Rejected 1 reviewed plan item", result.stdout)
-            reviewed_plans = list((root / "AI_Review" / "review_sessions").glob("*.json"))
+            reviewed_plans = list(
+                (root / "AI_Review" / "review_sessions").glob("*.json")
+            )
             self.assertEqual(len(reviewed_plans), 1)
             data = json.loads(reviewed_plans[0].read_text(encoding="utf-8"))
             review_items = [
-                item
-                for item in data["items"]
-                if item["category"] == "review_candidate"
+                item for item in data["items"] if item["category"] == "review_candidate"
             ]
             self.assertEqual(review_items[0]["decision"], "rejected")
             self.assertTrue((root / "empty.txt").exists())
@@ -771,12 +876,18 @@ class ReviewSessionCliTests(unittest.TestCase):
             self.assertEqual(exit_code, 0)
             self.assertIn("Applying approved moves from reviewed plan.", output)
             self.assertEqual(len(captured_plan_items), 1)
-            self.assertIn("AI_Review/duplicates", captured_plan_items[0].destination.as_posix())
+            self.assertIn(
+                "AI_Review/duplicates", captured_plan_items[0].destination.as_posix()
+            )
             state = load_review_state(root)
-            self.assertTrue(any(record.category == "organization" for record in state.decisions))
+            self.assertTrue(
+                any(record.category == "organization" for record in state.decisions)
+            )
             self.assertFalse((root / "AI_Review" / "operation_logs").exists())
 
-    def test_apply_failure_does_not_record_filesystem_success_in_review_state(self) -> None:
+    def test_apply_failure_does_not_record_filesystem_success_in_review_state(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             create_review_session_fixture(root)
@@ -842,7 +953,9 @@ class ReviewSessionCliTests(unittest.TestCase):
             self.assertTrue((root / "evosim_notes.txt").exists())
             self.assertTrue((root / "file.tmp").exists())
 
-    def test_confirmed_apply_includes_only_approved_review_candidate_items(self) -> None:
+    def test_confirmed_apply_includes_only_approved_review_candidate_items(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             create_review_candidate_fixture(root)
@@ -872,8 +985,12 @@ class ReviewSessionCliTests(unittest.TestCase):
             self.assertEqual(exit_code, 0)
             self.assertIn("Applying approved moves from reviewed plan.", output)
             self.assertEqual(len(captured_plan_items), 1)
-            self.assertEqual(captured_plan_items[0].source, root.resolve() / "empty.txt")
-            self.assertIn("AI_Review/empty", captured_plan_items[0].destination.as_posix())
+            self.assertEqual(
+                captured_plan_items[0].source, root.resolve() / "empty.txt"
+            )
+            self.assertIn(
+                "AI_Review/empty", captured_plan_items[0].destination.as_posix()
+            )
 
     def test_empty_plan_does_not_call_executor(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -888,7 +1005,10 @@ class ReviewSessionCliTests(unittest.TestCase):
             )
 
             self.assertEqual(exit_code, 0)
-            self.assertIn("No duplicate, organization, or review-candidate move candidates", output)
+            self.assertIn(
+                "No duplicate, organization, or review-candidate move candidates",
+                output,
+            )
 
     def test_remembered_rejections_reduce_conflict_count(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -923,7 +1043,10 @@ class SavedReviewedPlanValidationTests(unittest.TestCase):
 
             self.assertEqual(len(plan_items), 1)
             self.assertEqual(plan_items[0].source, root.resolve() / "a.txt")
-            self.assertEqual(plan_items[0].destination, root.resolve() / "AI_Review" / "duplicates" / "a.txt")
+            self.assertEqual(
+                plan_items[0].destination,
+                root.resolve() / "AI_Review" / "duplicates" / "a.txt",
+            )
 
     def test_invalid_json_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -1032,7 +1155,9 @@ class SavedReviewedPlanValidationTests(unittest.TestCase):
 
         self.assertEqual(plan_items, [])
 
-    def test_saved_review_candidate_items_are_accepted_and_rejected_items_ignored(self) -> None:
+    def test_saved_review_candidate_items_are_accepted_and_rejected_items_ignored(
+        self,
+    ) -> None:
         root = Path("/tmp/root")
         data = valid_saved_plan_data()
         data["items"] = [
@@ -1062,7 +1187,9 @@ class SavedReviewedPlanValidationTests(unittest.TestCase):
 
         self.assertEqual(len(plan_items), 1)
         self.assertEqual(plan_items[0].source, root / "file.tmp")
-        self.assertEqual(plan_items[0].destination, root / "AI_Review" / "temporary" / "file.tmp")
+        self.assertEqual(
+            plan_items[0].destination, root / "AI_Review" / "temporary" / "file.tmp"
+        )
 
     def test_saved_orphan_code_review_candidate_is_accepted(self) -> None:
         root = Path("/tmp/root")
@@ -1085,7 +1212,10 @@ class SavedReviewedPlanValidationTests(unittest.TestCase):
         plan_items = reviewed_plan_data_to_move_items(data, root)
 
         self.assertEqual(len(plan_items), 1)
-        self.assertEqual(plan_items[0].destination, root / "AI_Review" / "orphan_code" / "practice.py")
+        self.assertEqual(
+            plan_items[0].destination,
+            root / "AI_Review" / "orphan_code" / "practice.py",
+        )
 
     def test_approved_saved_plan_item_with_protected_source_is_rejected(self) -> None:
         protected_sources = [
@@ -1123,7 +1253,9 @@ class SavedReviewedPlanValidationTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 reviewed_plan_data_to_move_items(data, root)
 
-    def test_approved_saved_plan_item_with_unowned_protected_destination_is_rejected(self) -> None:
+    def test_approved_saved_plan_item_with_unowned_protected_destination_is_rejected(
+        self,
+    ) -> None:
         data = valid_saved_plan_data()
         data["items"][0]["destination"] = "node_modules/pkg/file.txt"
 
@@ -1137,14 +1269,18 @@ class SavedReviewedPlanValidationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             reviewed_plan_data_to_move_items(data, Path("/tmp/root"))
 
-    def test_approved_saved_plan_item_with_generated_destination_is_rejected(self) -> None:
+    def test_approved_saved_plan_item_with_generated_destination_is_rejected(
+        self,
+    ) -> None:
         data = valid_saved_plan_data()
         data["items"][0]["destination"] = "SomePage_files/base.js"
 
         with self.assertRaises(ValueError):
             reviewed_plan_data_to_move_items(data, Path("/tmp/root"))
 
-    def test_approved_saved_plan_item_with_project_output_source_is_rejected(self) -> None:
+    def test_approved_saved_plan_item_with_project_output_source_is_rejected(
+        self,
+    ) -> None:
         data = valid_saved_plan_data()
         data["items"][0]["source"] = "project/src/main.py"
 
@@ -1160,7 +1296,9 @@ class SavedReviewedPlanValidationTests(unittest.TestCase):
 
         self.assertEqual(plan_items, [])
 
-    def test_saved_plan_source_conflict_is_rejected_before_move_items_return(self) -> None:
+    def test_saved_plan_source_conflict_is_rejected_before_move_items_return(
+        self,
+    ) -> None:
         data = valid_saved_plan_data()
         data["items"].append(
             {
@@ -1176,7 +1314,9 @@ class SavedReviewedPlanValidationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             reviewed_plan_data_to_move_items(data, Path("/tmp/root"))
 
-    def test_saved_plan_destination_conflict_is_rejected_before_move_items_return(self) -> None:
+    def test_saved_plan_destination_conflict_is_rejected_before_move_items_return(
+        self,
+    ) -> None:
         data = valid_saved_plan_data()
         data["items"].append(
             {
@@ -1199,7 +1339,9 @@ class SavedReviewedPlanValidationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             reviewed_plan_data_to_move_items(data, Path("/tmp/root"))
 
-    def test_saved_plan_without_review_candidate_summary_fields_still_loads(self) -> None:
+    def test_saved_plan_without_review_candidate_summary_fields_still_loads(
+        self,
+    ) -> None:
         data = valid_saved_plan_data()
         data["summary"].pop("review_candidate_approved_move_count", None)
         data["summary"].pop("review_candidate_rejected_move_count", None)
@@ -1441,8 +1583,12 @@ class SavedReviewedPlanCliTests(unittest.TestCase):
             create_duplicate_only_fixture(root)
             plan_path = write_reviewed_plan(root, valid_saved_plan_data())
 
-            report_result = run_cli(root, "--apply-reviewed-plan", str(plan_path), "--report")
-            review_result = run_cli(root, "--apply-reviewed-plan", str(plan_path), "--review-plans")
+            report_result = run_cli(
+                root, "--apply-reviewed-plan", str(plan_path), "--report"
+            )
+            review_result = run_cli(
+                root, "--apply-reviewed-plan", str(plan_path), "--review-plans"
+            )
             undo_result = run_cli(
                 root,
                 "--apply-reviewed-plan",
@@ -1454,7 +1600,9 @@ class SavedReviewedPlanCliTests(unittest.TestCase):
             self.assertNotEqual(report_result.returncode, 0)
             self.assertNotEqual(review_result.returncode, 0)
             self.assertNotEqual(undo_result.returncode, 0)
-            self.assertIn("--apply-reviewed-plan cannot be combined", undo_result.stderr)
+            self.assertIn(
+                "--apply-reviewed-plan cannot be combined", undo_result.stderr
+            )
 
 
 def create_review_session_fixture(root: Path) -> None:
@@ -1581,7 +1729,9 @@ def run_cli_main(
     stdout = io.StringIO()
     stdin = io.StringIO(input_text)
     argv = ["organizer.cli", str(root), *args]
-    apply_mock = mock.patch("organizer.cli.apply_move_plan", side_effect=apply_side_effect)
+    apply_mock = mock.patch(
+        "organizer.cli.apply_move_plan", side_effect=apply_side_effect
+    )
     if apply_side_effect is None:
         apply_mock = mock.patch("organizer.cli.apply_move_plan", wraps=apply_move_plan)
 

@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime, timezone
 import json
 import os
-from pathlib import Path
 import re
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 from organizer.json_values import is_json_version
@@ -17,9 +17,7 @@ APPLY_RESULT_SOURCE = "bootAI Stage 10.9 organization review apply result"
 VERIFICATION_SCHEMA_VERSION = 1
 VERIFICATION_SOURCE = "bootAI Stage 10.10 organization apply verification"
 DEFAULT_VERIFICATION_PATH = (
-    Path("AI_Review")
-    / "reviews"
-    / "organization_review_apply_verification.json"
+    Path("AI_Review") / "reviews" / "organization_review_apply_verification.json"
 )
 
 
@@ -85,7 +83,10 @@ def verify_organization_undo(
     restored = tuple(item for item in items if item.result_state == "restored")
     mismatches: list[str] = []
     verified_count = 0
-    if tuple((item.restore_target, item.moved_from) for item in items) != expected_pairs:
+    if (
+        tuple((item.restore_target, item.moved_from) for item in items)
+        != expected_pairs
+    ):
         mismatches.append("authorized_restore_pairs_changed")
 
     for item in restored:
@@ -119,7 +120,9 @@ def verify_organization_undo(
                 else:
                     stat = resolved_target.stat()
                     if stat.st_size != item.baseline_size_bytes:
-                        mismatches.append(f"restored_source_size_changed:{item.change_id}")
+                        mismatches.append(
+                            f"restored_source_size_changed:{item.change_id}"
+                        )
                         item_passed = False
                     if stat.st_mtime != item.baseline_modified_time:
                         mismatches.append(
@@ -134,7 +137,9 @@ def verify_organization_undo(
 
     unique = tuple(sorted(set(mismatches)))
     return OrganizationUndoVerificationOutcome(
-        status="passed" if not unique and verified_count == len(restored) else "mismatches",
+        status="passed"
+        if not unique and verified_count == len(restored)
+        else "mismatches",
         passed=not unique and verified_count == len(restored),
         verified_count=verified_count,
         mismatch_codes=unique,
@@ -211,7 +216,9 @@ def verify_organization_operation(
                         mismatches.append(f"destination_size_changed:{item.change_id}")
                         item_passed = False
                     if stat.st_mtime != item.source_modified_time:
-                        mismatches.append(f"destination_modified_time_changed:{item.change_id}")
+                        mismatches.append(
+                            f"destination_modified_time_changed:{item.change_id}"
+                        )
                         item_passed = False
         if item_passed:
             verified_count += 1
@@ -285,17 +292,23 @@ def _validate_apply_result(data: dict[str, Any], root: Path) -> dict[str, Any]:
         "warnings",
     }
     if set(data) != required:
-        raise VerificationInputError("apply result fields do not match schema version 1")
+        raise VerificationInputError(
+            "apply result fields do not match schema version 1"
+        )
     if not is_json_version(data["schema_version"], APPLY_RESULT_SCHEMA_VERSION):
         raise VerificationInputError("unsupported apply result schema version")
     if data["source"] != APPLY_RESULT_SOURCE:
         raise VerificationInputError("unexpected apply result source")
     if not isinstance(data["generated_at"], str) or not data["generated_at"]:
-        raise VerificationInputError("apply result generated_at must be a non-empty string")
+        raise VerificationInputError(
+            "apply result generated_at must be a non-empty string"
+        )
     try:
         datetime.fromisoformat(data["generated_at"].replace("Z", "+00:00"))
     except ValueError as error:
-        raise VerificationInputError("apply result generated_at must be an ISO timestamp") from error
+        raise VerificationInputError(
+            "apply result generated_at must be an ISO timestamp"
+        ) from error
     if data["confirmation"] != "APPLY ORGANIZATION REVIEW":
         raise VerificationInputError("unexpected apply result confirmation")
     _relative_path_value(data["review_file"], root, "review_file")
@@ -303,7 +316,9 @@ def _validate_apply_result(data: dict[str, Any], root: Path) -> dict[str, Any]:
     for field in ("approved_count", "applied_count", "skipped_count", "failed_count"):
         value = data[field]
         if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-            raise VerificationInputError(f"apply result {field} must be a non-negative integer")
+            raise VerificationInputError(
+                f"apply result {field} must be a non-negative integer"
+            )
     for field in ("applied", "skipped", "failed", "warnings"):
         if not isinstance(data[field], list):
             raise VerificationInputError(f"apply result {field} must be a list")
@@ -316,7 +331,9 @@ def _validate_apply_result(data: dict[str, Any], root: Path) -> dict[str, Any]:
     if data["failed_count"] != len(data["failed"]):
         raise VerificationInputError("failed_count does not match failed entries")
 
-    applied = [_validate_result_item(item, root, failed=False) for item in data["applied"]]
+    applied = [
+        _validate_result_item(item, root, failed=False) for item in data["applied"]
+    ]
     for item in data["failed"]:
         _validate_result_item(item, root, failed=True)
     for item in data["skipped"]:
@@ -334,7 +351,9 @@ def _validate_apply_result(data: dict[str, Any], root: Path) -> dict[str, Any]:
 
     undo_log_path = data["undo_log_path"]
     if applied and not isinstance(undo_log_path, str):
-        raise VerificationInputError("undo_log_path is required when applied rows exist")
+        raise VerificationInputError(
+            "undo_log_path is required when applied rows exist"
+        )
     if undo_log_path is not None and not isinstance(undo_log_path, str):
         raise VerificationInputError("undo_log_path must be a relative string or null")
 
@@ -356,7 +375,9 @@ def _validate_result_item(
         raise VerificationInputError("apply result item fields do not match schema")
     for field in ("review_id", "anchor", "risk_level"):
         if not isinstance(item[field], str) or not item[field]:
-            raise VerificationInputError(f"apply result item {field} must be a non-empty string")
+            raise VerificationInputError(
+                f"apply result item {field} must be a non-empty string"
+            )
     if re.fullmatch(r"org-[0-9]{6}", item["review_id"]) is None:
         raise VerificationInputError("apply result review_id has an invalid format")
     if item["risk_level"] not in {"low", "medium", "high"}:
@@ -450,7 +471,10 @@ def _verify_validated_result(
         checks.append(
             _check(
                 "operation_log_matches",
-                not only_result and not only_log and count_matches and not log_mismatches,
+                not only_result
+                and not only_log
+                and count_matches
+                and not log_mismatches,
                 f"matched {len(successful_pairs)} successful operation(s)",
             )
         )
@@ -470,15 +494,22 @@ def _validate_operation_log(
     root: Path,
 ) -> tuple[set[tuple[str, str]], list[str], list[str]]:
     if set(data) != {"operations"} or not isinstance(data["operations"], list):
-        raise VerificationInputError("operation log must contain only an operations list")
+        raise VerificationInputError(
+            "operation log must contain only an operations list"
+        )
     pairs: list[tuple[str, str]] = []
     warnings: list[str] = []
     mismatches: list[str] = []
     for operation in data["operations"]:
         if not isinstance(operation, dict) or set(operation) != {
-            "source", "destination", "success", "message"
+            "source",
+            "destination",
+            "success",
+            "message",
         }:
-            raise VerificationInputError("operation log entry fields do not match schema")
+            raise VerificationInputError(
+                "operation log entry fields do not match schema"
+            )
         if not isinstance(operation["success"], bool):
             raise VerificationInputError("operation success must be a boolean")
         if not isinstance(operation["message"], str):
@@ -490,7 +521,9 @@ def _validate_operation_log(
         if operation["success"]:
             pairs.append((source, destination))
         else:
-            warnings.append(f"operation log contains failed move: {source} -> {destination}")
+            warnings.append(
+                f"operation log contains failed move: {source} -> {destination}"
+            )
 
     for index, label in ((0, "source"), (1, "destination")):
         grouped: dict[str, int] = {}
@@ -524,7 +557,7 @@ def _base_report(apply_result_path: Path, root: Path) -> dict[str, Any]:
     return {
         "schema_version": VERIFICATION_SCHEMA_VERSION,
         "source": VERIFICATION_SOURCE,
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": datetime.now(UTC).isoformat(),
         "verification_root": ".",
         "apply_result_file": apply_result_path.relative_to(root).as_posix(),
         "operation_log_file": None,
@@ -572,7 +605,9 @@ def _resolve_referenced_file(path_text: str, root: Path) -> Path:
     try:
         resolved = candidate.resolve(strict=True)
     except FileNotFoundError as error:
-        raise VerificationInputError("referenced operation log does not exist") from error
+        raise VerificationInputError(
+            "referenced operation log does not exist"
+        ) from error
     validate_under_root(resolved, root)
     if not resolved.is_file():
         raise VerificationInputError("referenced operation log is not a regular file")

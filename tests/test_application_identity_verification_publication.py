@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from dataclasses import replace
-from datetime import datetime, timezone
 import hashlib
-from pathlib import Path
 import tempfile
 import unittest
 import uuid
+from dataclasses import replace
+from datetime import UTC, datetime
+from pathlib import Path
 from unittest import mock
 
 from organizer.application.activity_service import list_activity_entries
@@ -39,8 +39,7 @@ from organizer.application.organization_undo_repository import (
     OrganizationUndoRepository,
 )
 
-
-_COMPLETED = datetime(2026, 7, 22, 3, 4, 5, tzinfo=timezone.utc)
+_COMPLETED = datetime(2026, 7, 22, 3, 4, 5, tzinfo=UTC)
 
 
 class IdentityVerificationPublicationTests(unittest.TestCase):
@@ -79,7 +78,9 @@ class IdentityVerificationPublicationTests(unittest.TestCase):
                 original,
             )
 
-    def test_mismatch_publishes_bounded_failure_and_preserves_verified_count(self) -> None:
+    def test_mismatch_publishes_bounded_failure_and_preserves_verified_count(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             repository, original = _operation(root, (b"first", b"second"))
@@ -144,16 +145,15 @@ class IdentityVerificationPublicationTests(unittest.TestCase):
             RuntimeError("private/path/item.txt"),
         )
         for outcome in outcomes:
-            with self.subTest(outcome=type(outcome).__name__), tempfile.TemporaryDirectory() as directory:
+            with (
+                self.subTest(outcome=type(outcome).__name__),
+                tempfile.TemporaryDirectory() as directory,
+            ):
                 root = Path(directory).resolve()
                 repository, original = _operation(root, (b"content",))
                 verifier = mock.Mock(
-                    side_effect=outcome
-                    if isinstance(outcome, Exception)
-                    else None,
-                    return_value=None
-                    if isinstance(outcome, Exception)
-                    else outcome,
+                    side_effect=outcome if isinstance(outcome, Exception) else None,
+                    return_value=None if isinstance(outcome, Exception) else outcome,
                 )
                 with mock.patch.object(repository, "save") as save:
                     result = _service(repository, verifier=verifier).publish(
@@ -169,7 +169,10 @@ class IdentityVerificationPublicationTests(unittest.TestCase):
 
     def test_process_control_propagates_and_leaves_record_unchanged(self) -> None:
         for interruption in (KeyboardInterrupt(), SystemExit()):
-            with self.subTest(kind=type(interruption).__name__), tempfile.TemporaryDirectory() as directory:
+            with (
+                self.subTest(kind=type(interruption).__name__),
+                tempfile.TemporaryDirectory() as directory,
+            ):
                 root = Path(directory).resolve()
                 repository, original = _operation(root, (b"content",))
                 with self.assertRaises(type(interruption)):
@@ -179,7 +182,9 @@ class IdentityVerificationPublicationTests(unittest.TestCase):
                     ).publish(original.operation_id)
                 self.assertEqual(repository.load(original.operation_id), original)
 
-    def test_record_changed_during_verification_is_stale_without_second_save(self) -> None:
+    def test_record_changed_during_verification_is_stale_without_second_save(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             repository, original = _operation(root, (b"content",))
@@ -209,7 +214,9 @@ class IdentityVerificationPublicationTests(unittest.TestCase):
             self.assertEqual(save.call_count, 1)
             self.assertEqual(repository.load(original.operation_id), changed)
 
-    def test_root_identity_item_and_terminal_changes_before_save_are_stale(self) -> None:
+    def test_root_identity_item_and_terminal_changes_before_save_are_stale(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             _repository, original = _operation(root, (b"content",))
@@ -331,25 +338,25 @@ class IdentityVerificationPublicationTests(unittest.TestCase):
             )
             self.assertEqual(repository.load(original.operation_id), original)
 
-    def test_publisher_is_disconnected_from_live_execution_routes_and_activity(self) -> None:
+    def test_publisher_is_disconnected_from_live_execution_routes_and_activity(
+        self,
+    ) -> None:
         source_root = Path(__file__).parents[1] / "src" / "organizer"
-        execution = (
-            source_root / "application" / "execution_service.py"
-        ).read_text(encoding="utf-8")
+        execution = (source_root / "application" / "execution_service.py").read_text(
+            encoding="utf-8"
+        )
         publisher = (
-            source_root
-            / "application"
-            / "identity_verification_publication.py"
+            source_root / "application" / "identity_verification_publication.py"
         ).read_text(encoding="utf-8")
         route_references = [
             path
             for path in (source_root / "web" / "routes").glob("*.py")
-            if "identity_verification_publication" in path.read_text(
-                encoding="utf-8"
-            )
+            if "identity_verification_publication" in path.read_text(encoding="utf-8")
         ]
         self.assertNotIn("identity_verification_publication", execution)
-        self.assertNotIn("OrganizationIdentityVerificationPublicationService", execution)
+        self.assertNotIn(
+            "OrganizationIdentityVerificationPublicationService", execution
+        )
         self.assertEqual(route_references, [])
         for forbidden in (
             "activity_service",
@@ -411,9 +418,7 @@ def _operation(
         completed_at=None,
         configured_root_identity=repository.configured_root_identity,
         expected_moves=tuple(moves),
-        verification=OrganizationOperationVerification(
-            status=VERIFICATION_NOT_RUN
-        ),
+        verification=OrganizationOperationVerification(status=VERIFICATION_NOT_RUN),
         legacy_operation_log=None,
         failure_code=None,
         duplicate_actions_deferred=0,

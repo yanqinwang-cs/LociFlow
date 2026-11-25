@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import hashlib
 import os
-from pathlib import Path
 import tempfile
 import unittest
+from datetime import UTC, datetime
+from pathlib import Path
 from unittest import mock
 
 from organizer.application.execution_coordinator import approved_plan_identity
@@ -63,8 +63,7 @@ from organizer.executor_identity import (
 )
 from organizer.models import MovePlanItem, MoveResult, OperationLog, ReviewedPlanItem
 
-
-_NOW = datetime(2026, 7, 27, 3, 4, 5, tzinfo=timezone.utc)
+_NOW = datetime(2026, 7, 27, 3, 4, 5, tzinfo=UTC)
 _OPERATION_ID = "11111111-1111-4111-8111-111111111111"
 _AUTHORIZATION_ID = "22222222-2222-4222-8222-222222222222"
 
@@ -97,7 +96,10 @@ class OrganizationIdentityExecutionTests(unittest.TestCase):
                     ORGANIZATION_OPERATION_SCHEMA_VERSION_V2,
                 )
                 self.assertTrue(
-                    all(item.content_identity is not None for item in durable.expected_moves)
+                    all(
+                        item.content_identity is not None
+                        for item in durable.expected_moves
+                    )
                 )
                 consumed = True
                 return True
@@ -158,7 +160,10 @@ class OrganizationIdentityExecutionTests(unittest.TestCase):
             self.assertEqual(captures, ["alpha.txt", "beta.txt"])
             self.assertEqual(result.state, IdentityOrganizationExecutionState.VERIFIED)
             self.assertEqual(durable.status, STATUS_VERIFIED)
-            self.assertEqual([item.result_state for item in durable.expected_moves], [MOVE_MOVED, MOVE_MOVED])
+            self.assertEqual(
+                [item.result_state for item in durable.expected_moves],
+                [MOVE_MOVED, MOVE_MOVED],
+            )
             self.assertEqual(result.files_moved, 2)
             self.assertTrue((root / "Documents/alpha.txt").is_file())
             self.assertTrue((root / "Documents/beta.txt").is_file())
@@ -313,7 +318,9 @@ class OrganizationIdentityExecutionTests(unittest.TestCase):
                 executor=executor,
             ).execute(approved_plan=plan, authorization=authorization)
             durable = repository.load(_OPERATION_ID)
-            self.assertEqual(result.state, IdentityOrganizationExecutionState.INTERRUPTED)
+            self.assertEqual(
+                result.state, IdentityOrganizationExecutionState.INTERRUPTED
+            )
             self.assertEqual(durable.status, STATUS_INTERRUPTED)
             self.assertEqual(durable.expected_moves[0].result_state, MOVE_PENDING)
             self.assertEqual(durable.failure_code, "movement_recovery_required")
@@ -336,7 +343,9 @@ class OrganizationIdentityExecutionTests(unittest.TestCase):
                     consume=mock.Mock(return_value=False),
                 ).execute(approved_plan=plan, authorization=authorization)
 
-            self.assertEqual(result.state, IdentityOrganizationExecutionState.INTERRUPTED)
+            self.assertEqual(
+                result.state, IdentityOrganizationExecutionState.INTERRUPTED
+            )
             durable = repository.load(_OPERATION_ID)
             self.assertEqual(durable.status, STATUS_PREPARED)
             self.assertEqual(durable.expected_moves[0].result_state, MOVE_PENDING)
@@ -577,9 +586,7 @@ class OrganizationIdentityExecutionTests(unittest.TestCase):
             )
 
         owner = (
-            source_root
-            / "application"
-            / "organization_identity_execution.py"
+            source_root / "application" / "organization_identity_execution.py"
         ).read_text(encoding="utf-8")
         self.assertIn("apply_same_volume_identity_move_plan", owner)
         for forbidden in (
@@ -625,7 +632,7 @@ def _inputs(
     for index, name in enumerate(names, start=1):
         source = root / "Inbox" / name
         source.parent.mkdir(parents=True, exist_ok=True)
-        source.write_bytes(f"{name}-content".encode("utf-8"))
+        source.write_bytes(f"{name}-content".encode())
         stat = source.stat()
         reviewed.append(
             ReviewedPlanItem(

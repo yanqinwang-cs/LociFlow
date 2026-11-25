@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
-from datetime import datetime, timezone
 import json
+from dataclasses import dataclass, replace
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -51,7 +51,12 @@ class ReviewState:
 
 
 def review_state_path(root: Path, review_folder_name: str = "AI_Review") -> Path:
-    return root.resolve() / review_folder_name / REVIEW_STATE_FOLDER_NAME / REVIEW_STATE_FILE_NAME
+    return (
+        root.resolve()
+        / review_folder_name
+        / REVIEW_STATE_FOLDER_NAME
+        / REVIEW_STATE_FILE_NAME
+    )
 
 
 def load_review_state(root: Path, review_folder_name: str = "AI_Review") -> ReviewState:
@@ -95,9 +100,7 @@ def review_state_from_json_data(data: object) -> ReviewState:
         for index, record in enumerate(decisions, start=1)
     ]
     if schema_version == LEGACY_REVIEW_STATE_SCHEMA_VERSION:
-        records = [
-            record for record in records if record.decision == DECISION_REJECTED
-        ]
+        records = [record for record in records if record.decision == DECISION_REJECTED]
     return ReviewState(decisions=records)
 
 
@@ -108,7 +111,9 @@ def save_review_state(
 ) -> Path:
     destination = review_state_path(root, review_folder_name)
     resolved_root = root.resolve()
-    resolved_destination = validate_under_root(destination.resolve(strict=False), resolved_root)
+    resolved_destination = validate_under_root(
+        destination.resolve(strict=False), resolved_root
+    )
     existing_parent = _nearest_existing_parent(destination.parent)
     validate_under_root(existing_parent.resolve(), resolved_root)
     if not existing_parent.is_dir():
@@ -145,22 +150,23 @@ def apply_review_state_to_items(
     state: ReviewState,
     root: Path,
 ) -> list[ReviewedPlanItem]:
-    records_by_key = {
-        _record_key(record): record
-        for record in state.decisions
-    }
+    records_by_key = {_record_key(record): record for record in state.decisions}
 
     remembered_items: list[ReviewedPlanItem] = []
     for item in items:
         current_key = _item_key(item, root)
         record = records_by_key.get(current_key)
         if record is None:
-            remembered_items.append(replace(item, memory_status=MEMORY_NEW, remembered_decision=None))
+            remembered_items.append(
+                replace(item, memory_status=MEMORY_NEW, remembered_decision=None)
+            )
             continue
 
         current_fingerprint = _fingerprint_for_path(item.plan_item.source)
         if current_fingerprint is None:
-            remembered_items.append(replace(item, memory_status=MEMORY_NEW, remembered_decision=None))
+            remembered_items.append(
+                replace(item, memory_status=MEMORY_NEW, remembered_decision=None)
+            )
             continue
 
         if current_fingerprint == record.fingerprint:
@@ -192,10 +198,7 @@ def update_review_state_from_items(
     items: list[ReviewedPlanItem],
     root: Path,
 ) -> ReviewState:
-    existing_records = {
-        _record_key(record): record
-        for record in state.decisions
-    }
+    existing_records = {_record_key(record): record for record in state.decisions}
     updated_records = dict(existing_records)
     timestamp = _utc_timestamp()
     next_counter = len(existing_records) + 1
@@ -258,17 +261,25 @@ def _record_from_json(data: object, index: int) -> ReviewDecisionRecord:
     category = _required_string(data.get("category"), "category", index)
     review_category = data.get("review_category")
     source = _validated_relative_path(data.get("source"), "source", index)
-    destination = _validated_relative_path(data.get("destination"), "destination", index)
+    destination = _validated_relative_path(
+        data.get("destination"), "destination", index
+    )
     reason = _required_string(data.get("reason"), "reason", index)
     fingerprint = _validated_fingerprint(data.get("fingerprint"), index)
 
     if decision not in {DECISION_APPROVED, DECISION_REJECTED}:
         raise ValueError(f"review state decision {index} decision is invalid")
-    if category not in {CATEGORY_DUPLICATE, CATEGORY_ORGANIZATION, CATEGORY_REVIEW_CANDIDATE}:
+    if category not in {
+        CATEGORY_DUPLICATE,
+        CATEGORY_ORGANIZATION,
+        CATEGORY_REVIEW_CANDIDATE,
+    }:
         raise ValueError(f"review state decision {index} category is invalid")
     if category == CATEGORY_REVIEW_CANDIDATE:
         if review_category not in REVIEW_CANDIDATE_CATEGORIES:
-            raise ValueError(f"review state decision {index} review_category is invalid")
+            raise ValueError(
+                f"review state decision {index} review_category is invalid"
+            )
     elif review_category is not None:
         raise ValueError(f"review state decision {index} review_category must be null")
 
@@ -303,18 +314,24 @@ def _record_to_json(record: ReviewDecisionRecord) -> dict[str, Any]:
 
 def _required_string(value: object, field_name: str, index: int) -> str:
     if not isinstance(value, str) or not value.strip():
-        raise ValueError(f"review state decision {index} {field_name} must be a non-empty string")
+        raise ValueError(
+            f"review state decision {index} {field_name} must be a non-empty string"
+        )
     return value.strip()
 
 
 def _validated_relative_path(value: object, field_name: str, index: int) -> Path:
     if not isinstance(value, str) or not value.strip():
-        raise ValueError(f"review state decision {index} {field_name} must be a relative path string")
+        raise ValueError(
+            f"review state decision {index} {field_name} must be a relative path string"
+        )
     path = Path(value)
     if path.is_absolute():
         raise ValueError(f"review state decision {index} {field_name} must be relative")
     if any(part == ".." for part in path.parts):
-        raise ValueError(f"review state decision {index} {field_name} must not contain path traversal")
+        raise ValueError(
+            f"review state decision {index} {field_name} must not contain path traversal"
+        )
     return path
 
 
@@ -324,9 +341,13 @@ def _validated_fingerprint(value: object, index: int) -> dict[str, int]:
     size_bytes = value.get("size_bytes")
     modified_ns = value.get("modified_ns")
     if not is_json_integer(size_bytes) or size_bytes < 0:
-        raise ValueError(f"review state decision {index} fingerprint size_bytes is invalid")
+        raise ValueError(
+            f"review state decision {index} fingerprint size_bytes is invalid"
+        )
     if not is_json_integer(modified_ns) or modified_ns < 0:
-        raise ValueError(f"review state decision {index} fingerprint modified_ns is invalid")
+        raise ValueError(
+            f"review state decision {index} fingerprint modified_ns is invalid"
+        )
     return {"size_bytes": size_bytes, "modified_ns": modified_ns}
 
 
@@ -391,4 +412,4 @@ def _nearest_existing_parent(path: Path) -> Path:
 
 
 def _utc_timestamp() -> str:
-    return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    return datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")

@@ -8,8 +8,8 @@ from urllib.parse import urlencode
 from organizer.application.review_service import (
     get_review_item_metadata,
     get_review_source_key,
-    review_module_items,
     review_module_is_dirty,
+    review_module_items,
     review_module_saved_path,
     summarize_review_module,
     summarize_review_session,
@@ -22,7 +22,6 @@ from organizer.web.formatting import (
     readable_folder,
 )
 from organizer.web.review_explorer import ModuleQueueSnapshot
-
 
 _PAGE_SIZE = 25
 _CATEGORY_PRIORITY = {
@@ -364,7 +363,9 @@ def is_current_guided_item(
     queue: ModuleQueueSnapshot,
 ) -> bool:
     page = build_guided_module_page(session, surface, queue)
-    return page.current_card is not None and page.current_card.item_id == item_id.upper()
+    return (
+        page.current_card is not None and page.current_card.item_id == item_id.upper()
+    )
 
 
 def build_consumer_page(
@@ -388,11 +389,7 @@ def build_consumer_page(
         page=page,
         total_pages=total_pages,
         previous_url=surface_url(surface, page=page - 1) if page > 1 else None,
-        next_url=(
-            surface_url(surface, page=page + 1)
-            if page < total_pages
-            else None
-        ),
+        next_url=(surface_url(surface, page=page + 1) if page < total_pages else None),
     )
 
 
@@ -442,9 +439,9 @@ def build_plan_summary(
     saved_relative = None
     if session.saved_plan_path is not None:
         try:
-            saved_relative = session.saved_plan_path.resolve().relative_to(
-                session.root
-            ).as_posix()
+            saved_relative = (
+                session.saved_plan_path.resolve().relative_to(session.root).as_posix()
+            )
         except ValueError:
             saved_relative = None
     return ConsumerPlanSummary(
@@ -559,7 +556,9 @@ def _build_module_tray(
             counts[label] = counts.get(label, 0) + 1
         breakdowns = tuple(
             TrayBreakdown(label, count)
-            for label, count in sorted(counts.items(), key=lambda pair: pair[0].casefold())
+            for label, count in sorted(
+                counts.items(), key=lambda pair: pair[0].casefold()
+            )
         )
     else:
         counts = {}
@@ -571,7 +570,9 @@ def _build_module_tray(
             counts[label] = counts.get(label, 0) + 1
         breakdowns = tuple(
             TrayBreakdown(label, count)
-            for label, count in sorted(counts.items(), key=lambda pair: pair[0].casefold())
+            for label, count in sorted(
+                counts.items(), key=lambda pair: pair[0].casefold()
+            )
         )
 
     saved_path = review_module_saved_path(session, module)
@@ -719,7 +720,11 @@ def _module_choice(item: ReviewedPlanItem) -> str:
     if item.category == "duplicate":
         return "Added to duplicate plan" if item.decision == "approved" else "Keep both"
     if item.category == "organization":
-        return "Added to organization plan" if item.decision == "approved" else "Leave here"
+        return (
+            "Added to organization plan"
+            if item.decision == "approved"
+            else "Leave here"
+        )
     return "Set aside for review" if item.decision == "approved" else "Leave here"
 
 

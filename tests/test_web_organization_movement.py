@@ -1,21 +1,20 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import json
-from pathlib import Path
 import re
-import shutil
 import tempfile
 import unittest
 import uuid
+from datetime import UTC, datetime
+from pathlib import Path
 from unittest import mock
 
 import httpx
 
 from organizer.application.filesystem_operation_admission import (
+    SAFE_RECOVERY_MESSAGE,
     FilesystemOperationBlockedError,
     RecoveryAdmissionState,
-    SAFE_RECOVERY_MESSAGE,
 )
 from organizer.application.scan_service import scan_root
 from organizer.application.volume_admission import (
@@ -27,8 +26,7 @@ from organizer.web.config import WebAppConfig
 from organizer.web.scan_jobs import ScanJobSnapshot
 from organizer.web.security import LaunchTokenGate
 
-
-COMPLETED_AT = datetime(2026, 7, 15, 12, tzinfo=timezone.utc)
+COMPLETED_AT = datetime(2026, 7, 15, 12, tzinfo=UTC)
 
 
 class WebOrganizationMovementTests(unittest.IsolatedAsyncioTestCase):
@@ -60,13 +58,17 @@ class WebOrganizationMovementTests(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self) -> None:
         self.directory.cleanup()
 
-    async def test_preview_recovery_block_creates_no_capability_after_security(self) -> None:
+    async def test_preview_recovery_block_creates_no_capability_after_security(
+        self,
+    ) -> None:
         async with _client(self.app) as client:
             csrf = await _authenticate(client, self.token)
             await _approve(client, csrf)
-            self.app.state.filesystem_operation_admission.inspect_and_require_clear = mock.Mock(
-                side_effect=FilesystemOperationBlockedError(
-                    RecoveryAdmissionState.BLOCKED_UNFINISHED_OPERATION
+            self.app.state.filesystem_operation_admission.inspect_and_require_clear = (
+                mock.Mock(
+                    side_effect=FilesystemOperationBlockedError(
+                        RecoveryAdmissionState.BLOCKED_UNFINISHED_OPERATION
+                    )
                 )
             )
             wrong_origin = await client.post(
@@ -154,9 +156,7 @@ class WebOrganizationMovementTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 409)
         self.assertEqual(response.headers["cache-control"], "no-store")
         self.assertEqual(response.json()["error"]["code"], "cross_volume_plan")
-        self.assertEqual(
-            response.json()["error"]["message"], SAFE_CROSS_VOLUME_MESSAGE
-        )
+        self.assertEqual(response.json()["error"]["message"], SAFE_CROSS_VOLUME_MESSAGE)
         self.assertNotIn(str(self.root), response.text)
         self.assertEqual(
             self.app.state.organization_execution.authorization_snapshot(token).status,
@@ -165,7 +165,9 @@ class WebOrganizationMovementTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.app.state.organization_operations.list_records(), ())
         self.assertTrue((self.root / "EvoSim_project_slides.pptx").is_file())
 
-    async def test_recovery_block_returns_safe_conflict_after_security_and_token_validation(self) -> None:
+    async def test_recovery_block_returns_safe_conflict_after_security_and_token_validation(
+        self,
+    ) -> None:
         async with _client(self.app) as client:
             csrf = await _authenticate(client, self.token)
             await _approve(client, csrf)
@@ -175,35 +177,64 @@ class WebOrganizationMovementTests(unittest.IsolatedAsyncioTestCase):
                 headers=_origin(),
             )
             token = preview.json()["confirmation_token"]
-            self.app.state.filesystem_operation_admission.inspect_and_require_clear = mock.Mock(
-                side_effect=FilesystemOperationBlockedError(
-                    RecoveryAdmissionState.BLOCKED_UNFINISHED_OPERATION
+            self.app.state.filesystem_operation_admission.inspect_and_require_clear = (
+                mock.Mock(
+                    side_effect=FilesystemOperationBlockedError(
+                        RecoveryAdmissionState.BLOCKED_UNFINISHED_OPERATION
+                    )
                 )
             )
             wrong_origin = await client.post(
                 "/api/organization/move",
-                data={"csrf_token": csrf, "confirmation_token": token, "confirmation": "MOVE APPROVED FILES"},
+                data={
+                    "csrf_token": csrf,
+                    "confirmation_token": token,
+                    "confirmation": "MOVE APPROVED FILES",
+                },
             )
             invalid_token = await client.post(
                 "/api/organization/move",
-                data={"csrf_token": csrf, "confirmation_token": str(uuid.uuid4()), "confirmation": "MOVE APPROVED FILES"},
+                data={
+                    "csrf_token": csrf,
+                    "confirmation_token": str(uuid.uuid4()),
+                    "confirmation": "MOVE APPROVED FILES",
+                },
                 headers=_origin(),
             )
             blocked = await client.post(
                 "/api/organization/move",
-                data={"csrf_token": csrf, "confirmation_token": token, "confirmation": "MOVE APPROVED FILES"},
+                data={
+                    "csrf_token": csrf,
+                    "confirmation_token": token,
+                    "confirmation": "MOVE APPROVED FILES",
+                },
                 headers=_origin(),
             )
 
         self.assertEqual(wrong_origin.status_code, 403)
-        self.assertEqual(invalid_token.json()["error"]["code"], "invalid_confirmation_token")
+        self.assertEqual(
+            invalid_token.json()["error"]["code"], "invalid_confirmation_token"
+        )
         self.assertEqual(blocked.status_code, 409)
         self.assertEqual(blocked.headers["cache-control"], "no-store")
-        self.assertEqual(blocked.json(), {"error": {"code": "filesystem_operation_blocked", "message": SAFE_RECOVERY_MESSAGE}})
-        self.assertEqual(self.app.state.organization_execution.authorization_snapshot(token).status, "available")
+        self.assertEqual(
+            blocked.json(),
+            {
+                "error": {
+                    "code": "filesystem_operation_blocked",
+                    "message": SAFE_RECOVERY_MESSAGE,
+                }
+            },
+        )
+        self.assertEqual(
+            self.app.state.organization_execution.authorization_snapshot(token).status,
+            "available",
+        )
         self.assertEqual(self.app.state.organization_operations.list_records(), ())
 
-    async def test_preview_execute_lost_response_replay_activity_and_undo_are_durable(self) -> None:
+    async def test_preview_execute_lost_response_replay_activity_and_undo_are_durable(
+        self,
+    ) -> None:
         strict_owner = self.app.state.organization_identity_execution
         real_move = strict_owner._executor
         async with _client(self.app) as client:
@@ -313,7 +344,9 @@ class WebOrganizationMovementTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn(str(self.root), response.text)
         self.assertNotIn("operation_log", moved.text)
 
-    async def test_stopping_execution_returns_safe_conflict_without_movement(self) -> None:
+    async def test_stopping_execution_returns_safe_conflict_without_movement(
+        self,
+    ) -> None:
         async with _client(self.app) as client:
             csrf = await _authenticate(client, self.token)
             await _approve(client, csrf)
@@ -322,9 +355,7 @@ class WebOrganizationMovementTests(unittest.IsolatedAsyncioTestCase):
                 data={"csrf_token": csrf},
                 headers=_origin(),
             )
-            authorizations = dict(
-                self.app.state.organization_execution._authorizations
-            )
+            authorizations = dict(self.app.state.organization_execution._authorizations)
             self.app.state.runtime_lifecycle.begin_shutdown()
             rejected_preview = await client.post(
                 "/api/organization/move/preview",
@@ -355,7 +386,9 @@ class WebOrganizationMovementTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(self.app.state.organization_operations.list_records(), ())
 
-    async def test_routes_enforce_auth_origin_csrf_post_forms_and_server_ids_only(self) -> None:
+    async def test_routes_enforce_auth_origin_csrf_post_forms_and_server_ids_only(
+        self,
+    ) -> None:
         async with _client(self.app) as client:
             unauthenticated = await client.post("/api/organization/move/preview")
             csrf = await _authenticate(client, self.token)
@@ -428,7 +461,9 @@ class WebOrganizationMovementTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.app.state.organization_operations.list_records(), ())
         self.assertTrue((self.root / "EvoSim_project_slides.pptx").is_file())
 
-    async def test_execute_rejects_fields_malformed_unknown_and_nonexact_confirmation(self) -> None:
+    async def test_execute_rejects_fields_malformed_unknown_and_nonexact_confirmation(
+        self,
+    ) -> None:
         async with _client(self.app) as client:
             csrf = await _authenticate(client, self.token)
             await _approve(client, csrf)
@@ -504,7 +539,9 @@ class WebOrganizationMovementTests(unittest.IsolatedAsyncioTestCase):
             "available",
         )
 
-    async def test_authorization_is_invalid_after_scan_change_and_in_another_session(self) -> None:
+    async def test_authorization_is_invalid_after_scan_change_and_in_another_session(
+        self,
+    ) -> None:
         async with _client(self.app) as first_client:
             csrf = await _authenticate(first_client, self.token)
             await _approve(first_client, csrf)
@@ -557,7 +594,9 @@ class WebOrganizationMovementTests(unittest.IsolatedAsyncioTestCase):
             {"approved_plan_not_found", "scan_generation_mismatch"},
         )
         self.assertEqual(other_session.status_code, 409)
-        self.assertEqual(other_session.json()["error"]["code"], "approved_plan_not_found")
+        self.assertEqual(
+            other_session.json()["error"]["code"], "approved_plan_not_found"
+        )
         self.assertEqual(self.app.state.organization_operations.list_records(), ())
         self.assertTrue((self.root / "EvoSim_project_slides.pptx").is_file())
 

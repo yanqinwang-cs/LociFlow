@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import os
-from pathlib import Path
 import stat
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Final
-
 
 APPLICATION_DIRECTORY_NAME: Final = "Loci Flow"
 
@@ -52,17 +51,9 @@ class MacOSApplicationPaths:
             locks=locks,
             root_locks=locks / "roots",
             caches=(
-                normalized_home
-                / "Library"
-                / "Caches"
-                / APPLICATION_DIRECTORY_NAME
+                normalized_home / "Library" / "Caches" / APPLICATION_DIRECTORY_NAME
             ),
-            logs=(
-                normalized_home
-                / "Library"
-                / "Logs"
-                / APPLICATION_DIRECTORY_NAME
-            ),
+            logs=(normalized_home / "Library" / "Logs" / APPLICATION_DIRECTORY_NAME),
         )
 
     @property

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
-from pathlib import Path
 import tempfile
 import unittest
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from unittest.mock import patch
 
 from organizer.application.runtime_lifecycle import (
@@ -124,7 +124,9 @@ class StandardsCreationApplicationServiceTests(unittest.TestCase):
         )
         self.assertEqual(self.lifecycle.snapshot().active_count, 0)
 
-    def test_browser_commit_failure_rolls_back_only_new_application_preview(self) -> None:
+    def test_browser_commit_failure_rolls_back_only_new_application_preview(
+        self,
+    ) -> None:
         context = self._context()
         root_choice = context.scope_choices[0]
         first = self.service.preview_standard(
@@ -180,11 +182,14 @@ class StandardsCreationApplicationServiceTests(unittest.TestCase):
             original_commit(preview, owner_key=owner_key)
             raise RuntimeError("application commit failed")
 
-        with patch.object(
-            self.standards,
-            "commit_preview_admitted",
-            side_effect=partial_commit,
-        ), self.assertRaisesRegex(RuntimeError, "application commit failed"):
+        with (
+            patch.object(
+                self.standards,
+                "commit_preview_admitted",
+                side_effect=partial_commit,
+            ),
+            self.assertRaisesRegex(RuntimeError, "application commit failed"),
+        ):
             self.service.preview_standard(
                 session_id="session-one",
                 scan_generation="scan-one",
@@ -216,11 +221,14 @@ class StandardsCreationApplicationServiceTests(unittest.TestCase):
             preset_type=STANDARD_KEEP_FOLDER_UNCHANGED,
         )
 
-        with patch(
-            "organizer.application.standards_creation_application_service."
-            "StandardsCreationPreviewResult",
-            side_effect=RuntimeError("projection failed"),
-        ), self.assertRaisesRegex(RuntimeError, "projection failed"):
+        with (
+            patch(
+                "organizer.application.standards_creation_application_service."
+                "StandardsCreationPreviewResult",
+                side_effect=RuntimeError("projection failed"),
+            ),
+            self.assertRaisesRegex(RuntimeError, "projection failed"),
+        ):
             self.service.preview_standard(
                 session_id="session-one",
                 scan_generation="scan-one",
@@ -240,8 +248,10 @@ class StandardsCreationApplicationServiceTests(unittest.TestCase):
         )
         self.assertEqual(self.lifecycle.snapshot().active_count, 0)
 
-    def test_context_is_session_root_scan_revision_generation_and_expiry_bound(self) -> None:
-        now = [datetime(2026, 7, 19, 10, 0, tzinfo=timezone.utc)]
+    def test_context_is_session_root_scan_revision_generation_and_expiry_bound(
+        self,
+    ) -> None:
+        now = [datetime(2026, 7, 19, 10, 0, tzinfo=UTC)]
         store = StandardsCreationStore(self.root, now=lambda: now[0])
         first = store.issue_creation_context(
             session_id="session-one",
@@ -259,8 +269,9 @@ class StandardsCreationApplicationServiceTests(unittest.TestCase):
             ("session-one", "root-two", "scan-one", 3),
             ("session-one", "root-one", "scan-two", 3),
         ):
-            with self.subTest(session=session, root=root, scan=scan), self.assertRaisesRegex(
-                ValueError, "folder_scope_stale"
+            with (
+                self.subTest(session=session, root=root, scan=scan),
+                self.assertRaisesRegex(ValueError, "folder_scope_stale"),
             ):
                 store.validate_scope_reference(
                     scope_id=first_id,

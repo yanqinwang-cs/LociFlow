@@ -1,31 +1,30 @@
 from __future__ import annotations
 
-from copy import deepcopy
-from dataclasses import replace
-from datetime import datetime, timezone
 import json
 import os
-from pathlib import Path
 import tempfile
 import unittest
+from copy import deepcopy
+from dataclasses import replace
+from datetime import UTC, datetime
+from pathlib import Path
 from unittest import mock
 
 from organizer.application.file_kinds import consumer_file_kind
 from organizer.application.organization_slice_service import (
     build_read_only_organization_slice,
 )
-from organizer.application.standards_read_models import OrganizationUnavailableError
 from organizer.application.scan_service import scan_root
+from organizer.application.standards_read_models import OrganizationUnavailableError
 from organizer.application.standards_repository import StandardsRepository
 from organizer.application.standards_service import StandardsService
-from organizer.organization_rules import ORGANIZATION_RULES_RELATIVE_PATH
 from organizer.organization_rules import (
+    ORGANIZATION_RULES_RELATIVE_PATH,
     STANDARD_KEEP_FOLDER_UNCHANGED,
     STANDARD_KEEP_MATCHING_FILES_TOGETHER,
 )
 
-
-COMPLETED_AT = datetime(2026, 7, 14, 10, 20, 30, tzinfo=timezone.utc)
+COMPLETED_AT = datetime(2026, 7, 14, 10, 20, 30, tzinfo=UTC)
 
 
 class FileKindTests(unittest.TestCase):
@@ -93,7 +92,7 @@ class OrganizationSliceServiceTests(unittest.TestCase):
             self.assertEqual(item.size_bytes, len(b"scanned"))
             self.assertEqual(
                 item.modified_at,
-                datetime.fromtimestamp(scanned_mtime, timezone.utc).isoformat(),
+                datetime.fromtimestamp(scanned_mtime, UTC).isoformat(),
             )
             self.assertEqual(item.extension, ".pdf")
             self.assertEqual(item.relative_path, "Submissions/record.PDF")
@@ -175,12 +174,16 @@ class OrganizationSliceServiceTests(unittest.TestCase):
             self.assertFalse(projection.choices_needed)
             self.assertFalse(projection.summary.movement_tree)
             kept = [
-                item for item in projection.kept_by_standards
+                item
+                for item in projection.kept_by_standards
                 if item.reason_code == "saved_standard_kept"
             ]
             self.assertEqual(len(kept), 2)
             self.assertTrue(
-                all(item.standard.name == "Do not organize by EvoSim project slides" for item in kept)
+                all(
+                    item.standard.name == "Do not organize by EvoSim project slides"
+                    for item in kept
+                )
             )
 
     def test_saved_locked_course_anchor_shapes_grouping_before_projection(self) -> None:
@@ -203,7 +206,9 @@ class OrganizationSliceServiceTests(unittest.TestCase):
                 completed_at=COMPLETED_AT,
             )
 
-            self.assertEqual(result.report["project_groups"][0]["group_name"], "CS1010X")
+            self.assertEqual(
+                result.report["project_groups"][0]["group_name"], "CS1010X"
+            )
             self.assertEqual(len(projection.recommended_changes), 3)
             self.assertTrue(
                 all(
@@ -212,7 +217,9 @@ class OrganizationSliceServiceTests(unittest.TestCase):
                 )
             )
 
-    def test_v2_keep_folder_filters_before_projection_and_is_kept_evidence(self) -> None:
+    def test_v2_keep_folder_filters_before_projection_and_is_kept_evidence(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             documents = root / "Documents"
@@ -234,7 +241,9 @@ class OrganizationSliceServiceTests(unittest.TestCase):
             service = StandardsService(StandardsRepository(root))
             preview = service.preview(
                 preset_type=STANDARD_KEEP_FOLDER_UNCHANGED,
-                scope=service.resolve_folder_scope(folder, scan_generation="scan-before"),
+                scope=service.resolve_folder_scope(
+                    folder, scan_generation="scan-before"
+                ),
                 expected_revision=0,
             )
             service.save_preview(preview.preview_id, expected_revision=0)
@@ -275,7 +284,9 @@ class OrganizationSliceServiceTests(unittest.TestCase):
             service = StandardsService(StandardsRepository(root))
             preview = service.preview(
                 preset_type=STANDARD_KEEP_MATCHING_FILES_TOGETHER,
-                scope=service.resolve_folder_scope(folder, scan_generation="scan-before"),
+                scope=service.resolve_folder_scope(
+                    folder, scan_generation="scan-before"
+                ),
                 matcher_kind="course_code",
                 matcher_value="CS1010X",
                 expected_revision=0,
@@ -319,7 +330,8 @@ class OrganizationSliceServiceTests(unittest.TestCase):
             self.assertEqual(
                 len(
                     [
-                        item for item in result.standards.items
+                        item
+                        for item in result.standards.items
                         if item.preset_type == "legacy_alias"
                     ]
                 ),
@@ -382,7 +394,9 @@ class OrganizationSliceServiceTests(unittest.TestCase):
             destination = root / "Organized" / "EvoSim_project_slides" / "slides"
             destination.mkdir(parents=True)
             (root / "EvoSim_project_slides.pptx").write_text("a", encoding="utf-8")
-            (root / "EvoSim_project_slides_final.pptx").write_text("b", encoding="utf-8")
+            (root / "EvoSim_project_slides_final.pptx").write_text(
+                "b", encoding="utf-8"
+            )
             result = scan_root(root)
 
             projection = build_read_only_organization_slice(
@@ -393,7 +407,9 @@ class OrganizationSliceServiceTests(unittest.TestCase):
 
             self.assertEqual(len(projection.recommended_changes), 2)
             self.assertTrue(
-                all(change.action == "move" for change in projection.recommended_changes)
+                all(
+                    change.action == "move" for change in projection.recommended_changes
+                )
             )
             self.assertTrue(
                 all(
@@ -413,10 +429,14 @@ class OrganizationSliceServiceTests(unittest.TestCase):
             destination = root / "Organized" / "EvoSim_project_slides" / "slides"
             destination.mkdir(parents=True)
             (root / "EvoSim_project_slides.pptx").write_text("a", encoding="utf-8")
-            (root / "EvoSim_project_slides_final.pptx").write_text("b", encoding="utf-8")
+            (root / "EvoSim_project_slides_final.pptx").write_text(
+                "b", encoding="utf-8"
+            )
             result = scan_root(root)
             report = deepcopy(result.report)
-            report["anchor_decisions"]["suggested_groups"][0]["evidence"] = "deterministic_group"
+            report["anchor_decisions"]["suggested_groups"][0]["evidence"] = (
+                "deterministic_group"
+            )
             result = replace(result, report=report)
 
             projection = build_read_only_organization_slice(
@@ -442,10 +462,14 @@ class OrganizationSliceServiceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "EvoSim_project_slides.pptx").write_text("a", encoding="utf-8")
-            (root / "EvoSim_project_slides_final.pptx").write_text("b", encoding="utf-8")
+            (root / "EvoSim_project_slides_final.pptx").write_text(
+                "b", encoding="utf-8"
+            )
             result = scan_root(root)
             report = deepcopy(result.report)
-            report["organization_suggestions"][0]["plan_items"][0]["overwrite_risk"] = True
+            report["organization_suggestions"][0]["plan_items"][0]["overwrite_risk"] = (
+                True
+            )
             result = replace(result, report=report)
 
             projection = build_read_only_organization_slice(
@@ -472,7 +496,9 @@ class OrganizationSliceServiceTests(unittest.TestCase):
             first.mkdir(parents=True)
             second.mkdir(parents=True)
             (root / "EvoSim_project_slides.pptx").write_text("a", encoding="utf-8")
-            (root / "EvoSim_project_slides_final.pptx").write_text("b", encoding="utf-8")
+            (root / "EvoSim_project_slides_final.pptx").write_text(
+                "b", encoding="utf-8"
+            )
             result = scan_root(root)
             report = deepcopy(result.report)
             plan_items = report["organization_suggestions"][0]["plan_items"]
@@ -501,7 +527,9 @@ class OrganizationSliceServiceTests(unittest.TestCase):
                 ["move", "move", "keep"],
             )
 
-    def test_duplicate_choice_is_neutral_hash_free_and_summary_counts_excess(self) -> None:
+    def test_duplicate_choice_is_neutral_hash_free_and_summary_counts_excess(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "Inbox").mkdir()

@@ -10,7 +10,9 @@ class WebReviewBulkDecisionTests(
     WebReviewFixture,
     unittest.IsolatedAsyncioTestCase,
 ):
-    async def test_stopping_rejects_preview_and_does_not_consume_existing_token(self) -> None:
+    async def test_stopping_rejects_preview_and_does_not_consume_existing_token(
+        self,
+    ) -> None:
         client = await self.authenticated_client()
         try:
             csrf = await self.csrf(client)
@@ -60,9 +62,13 @@ class WebReviewBulkDecisionTests(
         )
         self.assertIn(token, before)
 
-    async def test_preview_respects_filter_sort_page_and_exposes_no_paths_in_token(self) -> None:
+    async def test_preview_respects_filter_sort_page_and_exposes_no_paths_in_token(
+        self,
+    ) -> None:
         client = await self.authenticated_client()
-        query = "category=review_candidate&sort=source&direction=desc&page=2&page_size=2"
+        query = (
+            "category=review_candidate&sort=source&direction=desc&page=2&page_size=2"
+        )
         try:
             csrf = await self.csrf(client, f"/review/advanced?{query}")
             response = await client.post(
@@ -85,7 +91,9 @@ class WebReviewBulkDecisionTests(
         self.assertNotIn('name="source"', response.text)
         self.assertNotIn('name="destination"', response.text)
 
-    async def test_exact_confirmations_apply_frozen_targets_and_replay_fails(self) -> None:
+    async def test_exact_confirmations_apply_frozen_targets_and_replay_fails(
+        self,
+    ) -> None:
         actions = (
             ("rejected", "REJECT CURRENT PAGE", "Keep here"),
             ("undecided", "UNDECIDE CURRENT PAGE", "Review later"),

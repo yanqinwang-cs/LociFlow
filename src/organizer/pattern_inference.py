@@ -10,7 +10,7 @@ from organizer.grouping import (
     normalize_token,
 )
 from organizer.models import FileMetadata
-from organizer.scope import is_allowed_organization_file, is_actionable_source_path
+from organizer.scope import is_actionable_source_path, is_allowed_organization_file
 
 PATTERN_COURSE_CODE_FOLDERING = "course_code_foldering"
 PATTERN_PROJECT_FOLDERING = "project_foldering"
@@ -18,8 +18,6 @@ PATTERN_PERSON_OR_STUDENT_FOLDERING = "person_or_student_foldering"
 PATTERN_ROLE_FOLDERING = "role_foldering"
 PATTERN_YEAR_FOLDERING = "year_foldering"
 PATTERN_FORMAT_FOLDERING = "format_foldering"
-PATTERN_MIXED_OR_UNCLEAR_FOLDERING = "mixed_or_unclear_foldering"
-
 RULE_LOCK_ANCHOR_CANDIDATE = "lock_anchor_candidate"
 RULE_IGNORE_TERM_CANDIDATE = "ignore_term_candidate"
 RULE_ALIAS_CANDIDATE = "alias_candidate"
@@ -56,20 +54,31 @@ FORMAT_FOLDER_EXTENSIONS = {
     "docs": ".docx",
     "notes": ".txt",
 }
-ASSIGNMENT_TOKENS = {"assignment", "assignments", "submission", "submissions", "homework", "pset"}
-PROJECT_NAME_STOPWORDS = ROLE_FOLDER_NAMES | set(FORMAT_FOLDER_EXTENSIONS) | {
-    "downloads",
-    "documents",
-    "draft",
-    "drafts",
-    "files",
-    "image",
-    "images",
-    "misc",
-    "other",
-    "resources",
-    "renamed",
+ASSIGNMENT_TOKENS = {
+    "assignment",
+    "assignments",
+    "submission",
+    "submissions",
+    "homework",
+    "pset",
 }
+PROJECT_NAME_STOPWORDS = (
+    ROLE_FOLDER_NAMES
+    | set(FORMAT_FOLDER_EXTENSIONS)
+    | {
+        "downloads",
+        "documents",
+        "draft",
+        "drafts",
+        "files",
+        "image",
+        "images",
+        "misc",
+        "other",
+        "resources",
+        "renamed",
+    }
+)
 NOISY_ANCHOR_TOKENS = {
     "builtins",
     "combined",
@@ -261,7 +270,11 @@ def infer_organization_patterns(
     )
     rule_candidates = sorted(
         _dedupe_rule_candidates(rule_candidates),
-        key=lambda candidate: (-candidate.confidence, candidate.rule_type, candidate.value),
+        key=lambda candidate: (
+            -candidate.confidence,
+            candidate.rule_type,
+            candidate.value,
+        ),
     )
     return PatternInferenceResult(
         patterns=patterns,
@@ -377,7 +390,9 @@ def _project_foldering_pattern(
         if len(folder_files) < min_folder_files:
             continue
         for folder_anchor in folder_anchor_candidates:
-            if _anchor_explains_folder_name(folder_anchor, folder.name, needs_decision_anchors):
+            if _anchor_explains_folder_name(
+                folder_anchor, folder.name, needs_decision_anchors
+            ):
                 matching_files = folder_files
             else:
                 matching_files = [
@@ -426,7 +441,9 @@ def _person_or_student_foldering_pattern(
             continue
         for folder, folder_files in sibling_folders:
             normalized = normalize_token(folder.name)
-            folder_names[normalized] = needs_decision_anchors.get(normalized, folder.name)
+            folder_names[normalized] = needs_decision_anchors.get(
+                normalized, folder.name
+            )
             examples.extend(_example_paths(folder_files))
 
     affected = sorted(folder_names.values())
@@ -535,31 +552,7 @@ def _affected_course_anchors(
     ]
 
 
-def _matching_needs_decision_anchors(
-    needs_decision_anchors: dict[str, str],
-    observed_anchors: dict[str, str],
-) -> list[str]:
-    return [
-        display
-        for normalized, display in needs_decision_anchors.items()
-        if normalized in observed_anchors
-    ]
-
-
 def _project_style_anchors(
-    needs_decision_anchors: dict[str, str],
-    observed_anchors: dict[str, str],
-) -> list[str]:
-    if not observed_anchors:
-        return []
-    return [
-        display
-        for normalized, display in needs_decision_anchors.items()
-        if normalized in observed_anchors
-    ]
-
-
-def _person_style_anchors(
     needs_decision_anchors: dict[str, str],
     observed_anchors: dict[str, str],
 ) -> list[str]:
@@ -691,7 +684,9 @@ def _is_noisy_anchor(anchor: str) -> bool:
         return True
     if re.fullmatch(r"[a-z]\d{12,}", normalized):
         return True
-    if re.fullmatch(r"(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\d{2,4}", normalized):
+    if re.fullmatch(
+        r"(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\d{2,4}", normalized
+    ):
         return True
     return False
 
@@ -815,30 +810,43 @@ def _anchor_explains_folder_name(
 ) -> bool:
     normalized_anchor = normalize_token(anchor)
     folder_tokens = [normalize_token(token) for token in _folder_tokens(folder_name)]
-    if normalized_anchor in folder_tokens and normalized_anchor in needs_decision_anchors:
+    if (
+        normalized_anchor in folder_tokens
+        and normalized_anchor in needs_decision_anchors
+    ):
         return True
     if "_" in normalized_anchor:
         joined = "_".join(folder_tokens[: len(normalized_anchor.split("_"))])
-        return joined == normalized_anchor and normalized_anchor in needs_decision_anchors
+        return (
+            joined == normalized_anchor and normalized_anchor in needs_decision_anchors
+        )
     return False
 
 
 def _is_project_anchor_token(token: str) -> bool:
-    return len(token) > 1 and token not in PROJECT_NAME_STOPWORDS and not token.isdigit()
+    return (
+        len(token) > 1 and token not in PROJECT_NAME_STOPWORDS and not token.isdigit()
+    )
 
 
-def _looks_person_or_student_folder(folder_name: str, folder_files: list[FileMetadata]) -> bool:
+def _looks_person_or_student_folder(
+    folder_name: str, folder_files: list[FileMetadata]
+) -> bool:
     if not _looks_name_like(folder_name):
         return False
-    token_sets = [_path_tokens(metadata.relative_path.stem) for metadata in folder_files]
-    return any(tokens & ASSIGNMENT_TOKENS for tokens in token_sets) or len(folder_files) >= 2
+    token_sets = [
+        _path_tokens(metadata.relative_path.stem) for metadata in folder_files
+    ]
+    return (
+        any(tokens & ASSIGNMENT_TOKENS for tokens in token_sets)
+        or len(folder_files) >= 2
+    )
 
 
 def _looks_name_like(value: str) -> bool:
     parts = value.replace("_", " ").replace("-", " ").split()
     return 1 <= len(parts) <= 2 and all(
-        len(part) >= 2 and part[0].isupper() and part[1:].islower()
-        for part in parts
+        len(part) >= 2 and part[0].isupper() and part[1:].islower() for part in parts
     )
 
 
@@ -867,28 +875,18 @@ def _role_folder_name(folder_name: str) -> str | None:
 
 
 def _folder_tokens(folder_name: str) -> list[str]:
-    return [
-        token
-        for token in re.split(r"[^A-Za-z0-9]+", folder_name)
-        if token
-    ]
+    return [token for token in re.split(r"[^A-Za-z0-9]+", folder_name) if token]
 
 
 def _path_tokens(value: str) -> set[str]:
     return {
-        normalize_token(token)
-        for token in re.split(r"[^A-Za-z0-9]+", value)
-        if token
+        normalize_token(token) for token in re.split(r"[^A-Za-z0-9]+", value) if token
     }
 
 
 def _anchor_tokens(value: str) -> set[str]:
     tokens = _path_tokens(value)
-    raw_tokens = [
-        token
-        for token in re.split(r"[^A-Za-z0-9]+", value)
-        if token
-    ]
+    raw_tokens = [token for token in re.split(r"[^A-Za-z0-9]+", value) if token]
     if len(raw_tokens) >= 2:
         tokens.add("_".join(normalize_token(token) for token in raw_tokens[:2]))
     return tokens

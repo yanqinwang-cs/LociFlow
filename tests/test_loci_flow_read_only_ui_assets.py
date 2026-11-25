@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 import hashlib
-from pathlib import Path
 import subprocess
 import textwrap
 import unittest
-
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 WEB = ROOT / "src" / "organizer" / "web"
@@ -37,9 +36,7 @@ class LociFlowReadOnlyUiAssetTests(unittest.TestCase):
         self.assertEqual(actual, PROTOTYPE_SHA256)
 
     def test_integrated_shell_has_exact_navigation_and_local_assets(self) -> None:
-        template = (WEB / "templates" / "loci_flow.html").read_text(
-            encoding="utf-8"
-        )
+        template = (WEB / "templates" / "loci_flow.html").read_text(encoding="utf-8")
         for route in (
             "home",
             "organize",
@@ -57,8 +54,7 @@ class LociFlowReadOnlyUiAssetTests(unittest.TestCase):
 
     def test_frontend_uses_backend_with_explicit_test_fixture_boundary(self) -> None:
         javascript = "\n".join(
-            path.read_text(encoding="utf-8")
-            for path in sorted(LOCI.glob("*.js"))
+            path.read_text(encoding="utf-8") for path in sorted(LOCI.glob("*.js"))
         )
         lower = javascript.lower()
         for forbidden in (
@@ -77,7 +73,9 @@ class LociFlowReadOnlyUiAssetTests(unittest.TestCase):
         self.assertIn("buildHomeViewModel", javascript)
         self.assertIn("buildOrganizeViewModel", javascript)
         self.assertTrue((LOCI / "api.js").exists())
-        self.assertNotIn("createFixtureDataSource", (LOCI / "app.js").read_text(encoding="utf-8"))
+        self.assertNotIn(
+            "createFixtureDataSource", (LOCI / "app.js").read_text(encoding="utf-8")
+        )
 
     def test_all_six_prototype_pages_are_live(self) -> None:
         views = (LOCI / "views.js").read_text(encoding="utf-8")
@@ -104,7 +102,7 @@ class LociFlowReadOnlyUiAssetTests(unittest.TestCase):
         script = textwrap.dedent(
             f"""
             import assert from 'node:assert/strict';
-            const module = await import({(LOCI / 'data_source.js').as_uri()!r});
+            const module = await import({(LOCI / "data_source.js").as_uri()!r});
             const source = module.createFixtureDataSource();
             const first = await source.load();
             first.meta.currentFolder = 'Changed';

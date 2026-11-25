@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 import shutil
 import subprocess
 import textwrap
 import unittest
+from pathlib import Path
 
 from tests.test_loci_flow_stage_b2_adapter import _payload
-
 
 ROOT = Path(__file__).resolve().parents[1]
 LOCI = ROOT / "src" / "organizer" / "web" / "static" / "loci_flow"
@@ -67,18 +66,18 @@ class LociFlowStageB4BMovementAdapterTests(unittest.TestCase):
         script = textwrap.dedent(
             f"""
             import assert from "node:assert/strict";
-            import * as api from {json.dumps((LOCI / 'api.js').as_uri())};
+            import * as api from {json.dumps((LOCI / "api.js").as_uri())};
             import {{
               createBackendDataSource, createFixtureDataSource,
               isUncertainMovementError, movementErrorMessage,
               validateMovementPreview, validateMovementResponse,
               validateOrganizationResponse,
-            }} from {json.dumps((LOCI / 'data_source.js').as_uri())};
+            }} from {json.dumps((LOCI / "data_source.js").as_uri())};
             import {{
               buildMovementConfirmationViewModel, buildProductionStageB1Contract,
               buildRouteViewModel,
-            }} from {json.dumps((LOCI / 'view_models.js').as_uri())};
-            import {{ renderRoute }} from {json.dumps((LOCI / 'views.js').as_uri())};
+            }} from {json.dumps((LOCI / "view_models.js").as_uri())};
+            import {{ renderRoute }} from {json.dumps((LOCI / "views.js").as_uri())};
 
             const ready={json.dumps(_ready_payload())};
             const token={json.dumps(TOKEN)};
@@ -114,7 +113,9 @@ class LociFlowStageB4BMovementAdapterTests(unittest.TestCase):
         self.assertEqual(completed.returncode, 0, completed.stderr)
         return json.loads(completed.stdout)
 
-    def test_api_uses_fixed_csrf_only_preview_and_token_only_execution_forms(self) -> None:
+    def test_api_uses_fixed_csrf_only_preview_and_token_only_execution_forms(
+        self,
+    ) -> None:
         result = self.run_node(
             """
             const requests=[];
@@ -164,13 +165,22 @@ class LociFlowStageB4BMovementAdapterTests(unittest.TestCase):
             self.assertEqual(request["credentials"], "same-origin")
             fields = dict(request["fields"])
             for forbidden in (
-                "path", "root", "source", "destination", "movement_tree",
-                "plan_digest", "scan_generation", "decision_revision",
-                "operation", "approval",
+                "path",
+                "root",
+                "source",
+                "destination",
+                "movement_tree",
+                "plan_digest",
+                "scan_generation",
+                "decision_revision",
+                "operation",
+                "approval",
             ):
                 self.assertNotIn(forbidden, fields)
 
-    def test_api_and_data_source_normalize_errors_validate_contracts_and_serialize(self) -> None:
+    def test_api_and_data_source_normalize_errors_validate_contracts_and_serialize(
+        self,
+    ) -> None:
         result = self.run_node(
             """
             const calls=[];
@@ -227,10 +237,13 @@ class LociFlowStageB4BMovementAdapterTests(unittest.TestCase):
             """
         )
         self.assertEqual([call[0] for call in result["calls"]], ["preview", "move"])
-        self.assertEqual(result["calls"][1][1], {
-            "confirmationToken": TOKEN,
-            "confirmation": "MOVE APPROVED FILES",
-        })
+        self.assertEqual(
+            result["calls"][1][1],
+            {
+                "confirmationToken": TOKEN,
+                "confirmation": "MOVE APPROVED FILES",
+            },
+        )
         self.assertTrue(result["duplicateBlocked"])
         self.assertTrue(result["fixtureBlocked"])
         self.assertTrue(result["fixtureExecutionBlocked"])
@@ -239,7 +252,9 @@ class LociFlowStageB4BMovementAdapterTests(unittest.TestCase):
         self.assertEqual(result["uncertain"], [True, True, False])
         self.assertEqual(result["moved"]["operation"]["status"], "verified")
 
-    def test_view_models_cover_ready_confirmation_progress_results_and_stale_state(self) -> None:
+    def test_view_models_cover_ready_confirmation_progress_results_and_stale_state(
+        self,
+    ) -> None:
         result = self.run_node(
             """
             const valid=validateOrganizationResponse(ready);
@@ -289,56 +304,106 @@ class LociFlowStageB4BMovementAdapterTests(unittest.TestCase):
             """
         )
         self.assertEqual(result["readyState"]["organize"]["stage"], "ready_to_move")
-        self.assertEqual(result["readyState"]["organize"]["primaryAction"], {
-            "label": "Move files", "action": "preview-move", "enabled": True,
-        })
-        self.assertEqual(result["readyState"]["home"]["primaryAction"]["label"], "Open Organize")
+        self.assertEqual(
+            result["readyState"]["organize"]["primaryAction"],
+            {
+                "label": "Move files",
+                "action": "preview-move",
+                "enabled": True,
+            },
+        )
+        self.assertEqual(
+            result["readyState"]["home"]["primaryAction"]["label"], "Open Organize"
+        )
         self.assertIn('data-action="preview-move"', result["readyState"]["html"])
         self.assertNotIn("not connected", result["readyState"]["html"].lower())
-        self.assertEqual(result["loading"]["organize"]["primaryAction"]["label"], "Preparing move…")
+        self.assertEqual(
+            result["loading"]["organize"]["primaryAction"]["label"], "Preparing move…"
+        )
         self.assertEqual(result["pending"]["organize"]["stage"], "move_in_progress")
         self.assertEqual(result["verified"]["organize"]["stage"], "ready_for_check")
-        self.assertEqual(result["verified"]["organize"]["primaryAction"], {
-            "label": "Check again", "action": "check-again", "enabled": True,
-        })
+        self.assertEqual(
+            result["verified"]["organize"]["primaryAction"],
+            {
+                "label": "Check again",
+                "action": "check-again",
+                "enabled": True,
+            },
+        )
         self.assertIn("2 files moved.", result["verified"]["homeHtml"])
         self.assertNotIn("No files have moved yet.", result["verified"]["homeHtml"])
         self.assertEqual(result["failed"]["organize"]["status"], "Files did not move")
         self.assertEqual(result["recovered"]["organize"]["status"], "Move in progress")
         self.assertEqual(result["stale"]["organize"]["status"], "Organization changed")
-        self.assertEqual(result["previewFailure"]["organize"]["status"], "Move could not be prepared")
-        self.assertEqual(result["previewFailure"]["organize"]["primaryAction"]["action"], "preview-move")
+        self.assertEqual(
+            result["previewFailure"]["organize"]["status"], "Move could not be prepared"
+        )
+        self.assertEqual(
+            result["previewFailure"]["organize"]["primaryAction"]["action"],
+            "preview-move",
+        )
         self.assertFalse(result["dialogEmpty"]["canConfirm"])
         self.assertTrue(result["dialogExact"]["canConfirm"])
         self.assertEqual(result["dialogExact"]["stage"], "confirmation_ready")
-        self.assertIn("separate Duplicate Bin step", result["dialogExact"]["duplicateMessage"])
+        self.assertIn(
+            "separate Duplicate Bin step", result["dialogExact"]["duplicateMessage"]
+        )
         serialized = json.dumps(result)
         for forbidden in (
-            "authorization token", "plan digest", "decision revision",
-            "scan generation", "durable operation", "executor", "replay",
+            "authorization token",
+            "plan digest",
+            "decision revision",
+            "scan generation",
+            "durable operation",
+            "executor",
+            "replay",
         ):
             self.assertNotIn(forbidden, serialized.lower())
 
-    def test_app_orchestration_orders_preview_confirmation_reload_and_activity(self) -> None:
+    def test_app_orchestration_orders_preview_confirmation_reload_and_activity(
+        self,
+    ) -> None:
         app = (LOCI / "app.js").read_text(encoding="utf-8")
         views = (LOCI / "views.js").read_text(encoding="utf-8")
         combined = app + views
-        preview_move = app[app.index("async function previewMove"):app.index("async function confirmMove")]
-        confirm_move = app[app.index("async function confirmMove"):app.index("async function checkFiles")]
-        close_dialog = app[app.index("function closeDialog"):app.index("function resetMovementConfirmation")]
-        reset_confirmation = app[
-            app.index("function resetMovementConfirmation"):app.index("function discardMovementConfirmation")
+        preview_move = app[
+            app.index("async function previewMove") : app.index(
+                "async function confirmMove"
+            )
         ]
-        snapshot_refresh = app[app.index("function applySnapshot"):app.index("function syncShell")]
+        confirm_move = app[
+            app.index("async function confirmMove") : app.index(
+                "async function checkFiles"
+            )
+        ]
+        close_dialog = app[
+            app.index("function closeDialog") : app.index(
+                "function resetMovementConfirmation"
+            )
+        ]
+        reset_confirmation = app[
+            app.index("function resetMovementConfirmation") : app.index(
+                "function discardMovementConfirmation"
+            )
+        ]
+        snapshot_refresh = app[
+            app.index("function applySnapshot") : app.index("function syncShell")
+        ]
         self.assertIn('state.movement.previewStatus === "loading"', preview_move)
         self.assertIn("state.movement.executionPending", preview_move)
         self.assertIn("await dataSource.previewMovement()", preview_move)
         self.assertIn("!preview", confirm_move)
-        self.assertIn("state.movement.confirmationText !== preview.confirmation", confirm_move)
+        self.assertIn(
+            "state.movement.confirmationText !== preview.confirmation", confirm_move
+        )
         self.assertIn("state.movement.executionPending", confirm_move)
         self.assertIn("await dataSource.confirmMovement(", confirm_move)
-        self.assertIn("applySnapshot(await dataSource.loadCurrentState())", confirm_move)
-        self.assertIn("await loadActivity({ force: true, refresh: true })", confirm_move)
+        self.assertIn(
+            "applySnapshot(await dataSource.loadCurrentState())", confirm_move
+        )
+        self.assertIn(
+            "await loadActivity({ force: true, refresh: true })", confirm_move
+        )
         self.assertIn("isUncertainMovementError", app)
         self.assertIn('state.activeDialog === "movement-confirmation"', app)
         self.assertIn("resetMovementConfirmation()", close_dialog)
@@ -347,7 +412,14 @@ class LociFlowStageB4BMovementAdapterTests(unittest.TestCase):
         self.assertIn("previousPlanKey !== nextPlanKey", snapshot_refresh)
         self.assertIn("discardMovementConfirmation()", snapshot_refresh)
         self.assertEqual(app.count("dataSource.confirmMovement("), 1)
-        self.assertNotIn("undo-move", views[views.index("function contractReadyToMove"):views.index("export function renderOrganize")])
+        self.assertNotIn(
+            "undo-move",
+            views[
+                views.index("function contractReadyToMove") : views.index(
+                    "export function renderOrganize"
+                )
+            ],
+        )
         self.assertNotIn("localStorage", combined)
         self.assertNotIn("sessionStorage", combined)
         self.assertNotIn("Trash", combined)

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, replace
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
-from typing import Callable
 
 from organizer.application.organization_operation_repository import (
     OrganizationOperationRepository,
@@ -86,7 +86,7 @@ class OrganizationUndoIdentityVerificationPublicationService:
         self._operation_repository = operation_repository
         self._undo_repository = undo_repository
         self._verifier = verifier
-        self._now = now or (lambda: datetime.now(timezone.utc))
+        self._now = now or (lambda: datetime.now(UTC))
 
     def publish(
         self,
@@ -100,8 +100,7 @@ class OrganizationUndoIdentityVerificationPublicationService:
         except (AttributeError, TypeError, ValueError):
             return _result(IdentityUndoVerificationPublicationState.STALE)
         if (
-            original_undo.schema_version
-            != ORGANIZATION_UNDO_SCHEMA_VERSION_V2
+            original_undo.schema_version != ORGANIZATION_UNDO_SCHEMA_VERSION_V2
             or original_undo.status != UNDO_RESTORED_UNVERIFIED
         ):
             return _result(IdentityUndoVerificationPublicationState.STALE)
@@ -192,18 +191,14 @@ class OrganizationUndoIdentityVerificationPublicationService:
                 )
             except Exception:
                 return None
-            if (
-                not categories
-                or len(categories) != len(result.mismatch_categories)
-            ):
+            if not categories or len(categories) != len(result.mismatch_categories):
                 return None
             status = UNDO_VERIFICATION_FAILED
             verification = UndoVerificationResult(
                 status=UNDO_VERIFICATION_FAILED_STATE,
                 verified_count=result.verified_count,
                 mismatch_codes=tuple(
-                    _DURABLE_MISMATCH_CODES[category]
-                    for category in categories
+                    _DURABLE_MISMATCH_CODES[category] for category in categories
                 ),
             )
             failure_code = UNDO_VERIFICATION_FAILED
@@ -211,7 +206,7 @@ class OrganizationUndoIdentityVerificationPublicationService:
             return None
 
         try:
-            completed_at = self._now().astimezone(timezone.utc).isoformat()
+            completed_at = self._now().astimezone(UTC).isoformat()
         except Exception:
             return None
         return replace(

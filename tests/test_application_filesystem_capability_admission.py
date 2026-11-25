@@ -1,19 +1,19 @@
 from __future__ import annotations
 
+import tempfile
+import unittest
 from dataclasses import replace
 from pathlib import Path
-import tempfile
 from threading import Event, Thread
-import unittest
 from unittest import mock
 
 from organizer.application.duplicate_bin_movement_service import (
     preview_duplicate_bin_movement,
 )
+from organizer.application.duplicate_bin_repository import DuplicateBinRepository
 from organizer.application.duplicate_bin_restore_repository import (
     DuplicateBinRestoreRepository,
 )
-from organizer.application.duplicate_bin_repository import DuplicateBinRepository
 from organizer.application.duplicate_bin_restore_service import (
     preview_duplicate_bin_activity_undo,
     preview_duplicate_bin_restore,
@@ -27,18 +27,18 @@ from organizer.application.filesystem_operation_admission import (
     RecoveryAdmissionSnapshot,
     RecoveryAdmissionState,
 )
-from organizer.application.organization_operation_models import (
-    STATUS_PARTIAL_MOVEMENT,
-)
-from organizer.application.organization_undo_models import UNDO_PARTIAL
 from organizer.application.organization_movement_service import (
     OrganizationMovementError,
     execute_organization_movement,
     preview_organization_movement,
 )
+from organizer.application.organization_operation_models import (
+    STATUS_PARTIAL_MOVEMENT,
+)
 from organizer.application.organization_operation_repository import (
     OrganizationOperationRepository,
 )
+from organizer.application.organization_undo_models import UNDO_PARTIAL
 from organizer.application.undo_service import preview_organization_undo
 from organizer.web.organization_decision_store import OrganizationDecisionStore
 from tests.test_application_duplicate_bin_approval_service import (
@@ -57,7 +57,6 @@ from tests.test_application_filesystem_operation_admission import (
     _ordinary_undo,
 )
 from tests.test_application_undo_service import _verified_operation
-
 
 _BLOCKERS = (
     ("ordinary_movement", RecoveryAdmissionState.BLOCKED_UNFINISHED_OPERATION),
@@ -103,13 +102,14 @@ class _PausingAdmission(_Admission):
 class FilesystemCapabilityAdmissionTests(unittest.TestCase):
     def test_partial_movement_and_undo_block_capability_issuance(self):
         for family in ("movement", "undo"):
-            with self.subTest(family=family), tempfile.TemporaryDirectory() as directory:
+            with (
+                self.subTest(family=family),
+                tempfile.TemporaryDirectory() as directory,
+            ):
                 root = Path(directory).resolve()
                 operations, operation = _ordinary_operation(root)
                 if family == "movement":
-                    operations.save(
-                        replace(operation, status=STATUS_PARTIAL_MOVEMENT)
-                    )
+                    operations.save(replace(operation, status=STATUS_PARTIAL_MOVEMENT))
                 else:
                     undos, undo = _ordinary_undo(root, operation)
                     undos.save(replace(undo, status=UNDO_PARTIAL))
@@ -124,9 +124,7 @@ class FilesystemCapabilityAdmissionTests(unittest.TestCase):
                         plan,
                         coordinator,
                         filesystem_operation_admission=admission,
-                        configured_root_identity=(
-                            operations.configured_root_identity
-                        ),
+                        configured_root_identity=(operations.configured_root_identity),
                     )
 
                 self.assertEqual(coordinator._authorizations, {})
@@ -286,7 +284,10 @@ class FilesystemCapabilityAdmissionTests(unittest.TestCase):
 
     def test_every_blocker_rejects_approval_before_batch_or_snapshot_publication(self):
         for label, state in _BLOCKERS:
-            with self.subTest(blocker=label), tempfile.TemporaryDirectory() as directory:
+            with (
+                self.subTest(blocker=label),
+                tempfile.TemporaryDirectory() as directory,
+            ):
                 root = Path(directory).resolve()
                 repository = DuplicateBinRepository(root)
                 coordinator = OrganizationExecutionCoordinator()
@@ -360,7 +361,10 @@ class FilesystemCapabilityAdmissionTests(unittest.TestCase):
 
     def test_every_blocker_rejects_ordinary_movement_preview_and_public_issue(self):
         for label, state in _BLOCKERS:
-            with self.subTest(blocker=label), tempfile.TemporaryDirectory() as directory:
+            with (
+                self.subTest(blocker=label),
+                tempfile.TemporaryDirectory() as directory,
+            ):
                 root = Path(directory).resolve()
                 plan = _approved_plan(root, ("a.txt",))
                 repository = OrganizationOperationRepository(root)
@@ -391,7 +395,10 @@ class FilesystemCapabilityAdmissionTests(unittest.TestCase):
 
     def test_every_blocker_rejects_ordinary_undo_preview(self):
         for label, state in _BLOCKERS:
-            with self.subTest(blocker=label), tempfile.TemporaryDirectory() as directory:
+            with (
+                self.subTest(blocker=label),
+                tempfile.TemporaryDirectory() as directory,
+            ):
                 root = Path(directory).resolve()
                 operations, undos, coordinator, record = _verified_operation(root, 1)
                 admission = _Admission(root, coordinator, state)
@@ -410,9 +417,14 @@ class FilesystemCapabilityAdmissionTests(unittest.TestCase):
                 self.assertEqual(undos.list_records(), ())
                 self._released(coordinator)
 
-    def test_every_blocker_rejects_duplicate_movement_preview_without_catalog_write(self):
+    def test_every_blocker_rejects_duplicate_movement_preview_without_catalog_write(
+        self,
+    ):
         for label, state in _BLOCKERS:
-            with self.subTest(blocker=label), tempfile.TemporaryDirectory() as directory:
+            with (
+                self.subTest(blocker=label),
+                tempfile.TemporaryDirectory() as directory,
+            ):
                 owners = _owners(Path(directory).resolve(), selected=1)
                 admission = _Admission(owners.root, owners.coordinator, state)
                 before = _bytes(owners.authorizations.path)
@@ -436,7 +448,10 @@ class FilesystemCapabilityAdmissionTests(unittest.TestCase):
     def test_every_blocker_rejects_restore_and_activity_undo_preview(self):
         for label, state in _BLOCKERS:
             for activity in (False, True):
-                with self.subTest(blocker=label, activity=activity), tempfile.TemporaryDirectory() as directory:
+                with (
+                    self.subTest(blocker=label, activity=activity),
+                    tempfile.TemporaryDirectory() as directory,
+                ):
                     owners = _moved(Path(directory).resolve(), selected=1)
                     restores = DuplicateBinRestoreRepository(owners.root)
                     admission = _Admission(owners.root, owners.coordinator, state)

@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-from dataclasses import replace
 import copy
 import json
 import os
-from pathlib import Path
 import tempfile
 import unittest
-from unittest import mock
 import uuid
+from dataclasses import replace
+from pathlib import Path
+from unittest import mock
 
 from organizer.application.content_identity import (
     OrdinaryFileIdentityCompatibility,
@@ -23,11 +23,15 @@ from organizer.application.organization_undo_models import (
     OrganizationUndoRecord,
     UndoVerificationResult,
 )
-from organizer.application.organization_undo_repository import OrganizationUndoRepository
+from organizer.application.organization_undo_repository import (
+    OrganizationUndoRepository,
+)
 
 
 class OrganizationUndoRepositoryTests(unittest.TestCase):
-    def test_round_trip_is_versioned_root_relative_linked_and_restart_safe(self) -> None:
+    def test_round_trip_is_versioned_root_relative_linked_and_restart_safe(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             repository = OrganizationUndoRepository(root)
@@ -38,11 +42,19 @@ class OrganizationUndoRepositoryTests(unittest.TestCase):
             loaded = reconstructed.load(record.undo_id)
 
             self.assertEqual(loaded, record)
-            self.assertEqual(reconstructed.linked_records(record.operation_id), (record,))
-            payload = json.loads((repository.directory / f"{record.undo_id}.json").read_text())
-            self.assertEqual(payload["schema_version"], ORGANIZATION_UNDO_SCHEMA_VERSION)
+            self.assertEqual(
+                reconstructed.linked_records(record.operation_id), (record,)
+            )
+            payload = json.loads(
+                (repository.directory / f"{record.undo_id}.json").read_text()
+            )
+            self.assertEqual(
+                payload["schema_version"], ORGANIZATION_UNDO_SCHEMA_VERSION
+            )
             self.assertEqual(payload["record_type"], ORGANIZATION_UNDO_RECORD_TYPE)
-            self.assertFalse(Path(payload["expected_restores"][0]["restore_target"]).is_absolute())
+            self.assertFalse(
+                Path(payload["expected_restores"][0]["restore_target"]).is_absolute()
+            )
             self.assertNotIn("content_identity", payload["expected_restores"][0])
             self.assertEqual(
                 loaded.identity_compatibility,
@@ -81,7 +93,10 @@ class OrganizationUndoRepositoryTests(unittest.TestCase):
             payload = json.loads(first)
             self.assertEqual(payload["schema_version"], 2)
             self.assertEqual(
-                [item["content_identity"]["digest"] for item in payload["expected_restores"]],
+                [
+                    item["content_identity"]["digest"]
+                    for item in payload["expected_restores"]
+                ],
                 ["a" * 64, "b" * 64],
             )
 
@@ -175,13 +190,17 @@ class OrganizationUndoRepositoryTests(unittest.TestCase):
                     )
                 )
 
-    def test_save_replaces_atomically_and_cleans_temporary_file_on_failure(self) -> None:
+    def test_save_replaces_atomically_and_cleans_temporary_file_on_failure(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             repository = OrganizationUndoRepository(root)
             record = _record(repository)
             repository.create(record)
-            updated = replace(record, status="interrupted", completed_at="2026-07-15T08:01:00+00:00")
+            updated = replace(
+                record, status="interrupted", completed_at="2026-07-15T08:01:00+00:00"
+            )
             repository.save(updated)
             self.assertEqual(repository.load(record.undo_id), updated)
 
@@ -194,7 +213,10 @@ class OrganizationUndoRepositoryTests(unittest.TestCase):
             self.assertFalse(any(repository.directory.glob("*.tmp")))
 
     def test_rejects_wrong_root_malformed_schema_and_symlink_record(self) -> None:
-        with tempfile.TemporaryDirectory() as directory, tempfile.TemporaryDirectory() as other:
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            tempfile.TemporaryDirectory() as other,
+        ):
             root = Path(directory).resolve()
             repository = OrganizationUndoRepository(root)
             record = _record(repository)
@@ -247,18 +269,14 @@ def _v2_record(repository: OrganizationUndoRepository) -> OrganizationUndoRecord
     first = _record(repository)
     first_item = replace(
         first.expected_restores[0],
-        content_identity=RegularFileContentIdentity(
-            "regular_file", "sha256", "a" * 64
-        ),
+        content_identity=RegularFileContentIdentity("regular_file", "sha256", "a" * 64),
     )
     second_item = replace(
         first_item,
         change_id="O2",
         restore_target="Inbox/b.pdf",
         moved_from="Documents/b.pdf",
-        content_identity=RegularFileContentIdentity(
-            "regular_file", "sha256", "b" * 64
-        ),
+        content_identity=RegularFileContentIdentity("regular_file", "sha256", "b" * 64),
     )
     return replace(
         first,

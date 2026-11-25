@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from datetime import datetime
 import json
 import os
+from datetime import datetime
 from pathlib import Path
 
 from organizer.application.activity_models import (
@@ -13,13 +13,29 @@ from organizer.application.activity_models import (
 )
 from organizer.application.duplicate_bin_movement_models import (
     MOVE_ATTENTION as DUPLICATE_MOVE_ATTENTION,
+)
+from organizer.application.duplicate_bin_movement_models import (
     MOVE_FAILED as DUPLICATE_MOVE_FAILED,
+)
+from organizer.application.duplicate_bin_movement_models import (
     MOVE_MOVED as DUPLICATE_MOVE_MOVED,
+)
+from organizer.application.duplicate_bin_movement_models import (
     MOVE_PENDING as DUPLICATE_MOVE_PENDING,
+)
+from organizer.application.duplicate_bin_movement_models import (
     MOVE_UNATTEMPTED as DUPLICATE_MOVE_UNATTEMPTED,
+)
+from organizer.application.duplicate_bin_movement_models import (
     MOVE_VERIFIED as DUPLICATE_MOVE_VERIFIED,
+)
+from organizer.application.duplicate_bin_movement_models import (
     OP_MOVED as DUPLICATE_OP_MOVED,
+)
+from organizer.application.duplicate_bin_movement_models import (
     OP_PARTIAL as DUPLICATE_OP_PARTIAL,
+)
+from organizer.application.duplicate_bin_movement_models import (
     DuplicateBinOperationRecord,
 )
 from organizer.application.duplicate_bin_operation_repository import (
@@ -28,13 +44,29 @@ from organizer.application.duplicate_bin_operation_repository import (
 from organizer.application.duplicate_bin_repository import DuplicateBinRepository
 from organizer.application.duplicate_bin_restore_models import (
     ITEM_ATTENTION as DUPLICATE_RESTORE_ATTENTION,
+)
+from organizer.application.duplicate_bin_restore_models import (
     ITEM_FAILED as DUPLICATE_RESTORE_FAILED,
+)
+from organizer.application.duplicate_bin_restore_models import (
     ITEM_PENDING as DUPLICATE_RESTORE_PENDING,
+)
+from organizer.application.duplicate_bin_restore_models import (
     ITEM_RESTORED as DUPLICATE_RESTORE_RESTORED,
+)
+from organizer.application.duplicate_bin_restore_models import (
     ITEM_UNATTEMPTED as DUPLICATE_RESTORE_UNATTEMPTED,
+)
+from organizer.application.duplicate_bin_restore_models import (
     ITEM_VERIFIED as DUPLICATE_RESTORE_VERIFIED,
+)
+from organizer.application.duplicate_bin_restore_models import (
     RESTORE_PARTIAL as DUPLICATE_RESTORE_PARTIAL,
+)
+from organizer.application.duplicate_bin_restore_models import (
     RESTORE_RESTORED as DUPLICATE_RESTORE_COMPLETE,
+)
+from organizer.application.duplicate_bin_restore_models import (
     DuplicateBinRestoreOperation,
 )
 from organizer.application.duplicate_bin_restore_repository import (
@@ -62,13 +94,13 @@ from organizer.application.organization_operation_models import (
     VERIFICATION_PASSED,
     OrganizationOperationRecord,
 )
+from organizer.application.organization_operation_repository import (
+    OrganizationOperationRepository,
+)
 from organizer.application.organization_undo_identity_eligibility import (
     IdentityUndoEligibilityReason,
     IdentityUndoEligibilityState,
     OrganizationUndoIdentityEligibilityInspector,
-)
-from organizer.application.organization_operation_repository import (
-    OrganizationOperationRepository,
 )
 from organizer.application.organization_undo_models import (
     UNDO_FAILED,
@@ -157,7 +189,10 @@ def calculate_undo_eligibility(
     if not meaningful:
         return _ineligible(requested_operation_id or "", "operation_not_undoable")
     candidate = meaningful[-1]
-    if requested_operation_id is not None and requested_operation_id != candidate.operation_id:
+    if (
+        requested_operation_id is not None
+        and requested_operation_id != candidate.operation_id
+    ):
         return _ineligible(requested_operation_id, "operation_superseded")
     if candidate.schema_version == ORGANIZATION_OPERATION_SCHEMA_VERSION_V2:
         identity = OrganizationUndoIdentityEligibilityInspector(
@@ -212,9 +247,7 @@ def _identity_undo_error(
         try:
             completed = any(
                 record.status == UNDO_RESTORED
-                for record in undo_repository.linked_records(
-                    candidate.operation_id
-                )
+                for record in undo_repository.linked_records(candidate.operation_id)
             )
         except ValueError:
             completed = False
@@ -261,11 +294,16 @@ def validate_legacy_operation_log(
     if not isinstance(data, dict) or set(data) != {"operations"}:
         raise ActivityEligibilityError("unsafe_undo_path")
     operations = data["operations"]
-    if not isinstance(operations, list) or len(operations) != len(record.expected_moves):
+    if not isinstance(operations, list) or len(operations) != len(
+        record.expected_moves
+    ):
         raise ActivityEligibilityError("operation_not_undoable")
     for operation, expected in zip(operations, record.expected_moves):
         if not isinstance(operation, dict) or set(operation) != {
-            "source", "destination", "success", "message"
+            "source",
+            "destination",
+            "success",
+            "message",
         }:
             raise ActivityEligibilityError("unsafe_undo_path")
         source = operation["source"]
@@ -288,10 +326,10 @@ def validate_legacy_operation_log(
             validate_under_root(resolved_destination, root)
         except (OSError, ValueError) as error:
             raise ActivityEligibilityError("unsafe_undo_path") from error
-        if (
-            resolved_source != (root / expected.source).resolve(strict=False)
-            or resolved_destination
-            != (root / expected.destination).resolve(strict=False)
+        if resolved_source != (root / expected.source).resolve(
+            strict=False
+        ) or resolved_destination != (root / expected.destination).resolve(
+            strict=False
         ):
             raise ActivityEligibilityError("operation_not_undoable")
     return resolved
@@ -336,18 +374,17 @@ def _is_meaningful(record: OrganizationOperationRecord) -> bool:
             move.result_state not in {MOVE_FAILED, MOVE_UNATTEMPTED}
             for move in record.expected_moves
         )
-    return (
-        record.status
-        in {
-            STATUS_PREPARED,
-            STATUS_MOVING,
-            STATUS_MOVED_UNVERIFIED,
-            STATUS_VERIFIED,
-            STATUS_PARTIAL_MOVEMENT,
-            STATUS_VERIFICATION_FAILED,
-            STATUS_INTERRUPTED,
-        }
-        or any(move.result_state in {MOVE_MOVED, MOVE_ATTEMPTING} for move in record.expected_moves)
+    return record.status in {
+        STATUS_PREPARED,
+        STATUS_MOVING,
+        STATUS_MOVED_UNVERIFIED,
+        STATUS_VERIFIED,
+        STATUS_PARTIAL_MOVEMENT,
+        STATUS_VERIFICATION_FAILED,
+        STATUS_INTERRUPTED,
+    } or any(
+        move.result_state in {MOVE_MOVED, MOVE_ATTEMPTING}
+        for move in record.expected_moves
     )
 
 
@@ -363,7 +400,9 @@ def _is_complete_verified(record: OrganizationOperationRecord) -> bool:
     )
 
 
-def _movement_entry(record: OrganizationOperationRecord, *, undoable: bool) -> ActivityEntry:
+def _movement_entry(
+    record: OrganizationOperationRecord, *, undoable: bool
+) -> ActivityEntry:
     moved = sum(move.result_state == MOVE_MOVED for move in record.expected_moves)
     failed = sum(move.result_state == MOVE_FAILED for move in record.expected_moves)
     unattempted = sum(
@@ -400,8 +439,12 @@ def _movement_entry(record: OrganizationOperationRecord, *, undoable: bool) -> A
 
 
 def _restore_entry(record: OrganizationUndoRecord) -> ActivityEntry:
-    restored = sum(item.result_state == UNDO_ITEM_RESTORED for item in record.expected_restores)
-    failed = sum(item.result_state == UNDO_ITEM_FAILED for item in record.expected_restores)
+    restored = sum(
+        item.result_state == UNDO_ITEM_RESTORED for item in record.expected_restores
+    )
+    failed = sum(
+        item.result_state == UNDO_ITEM_FAILED for item in record.expected_restores
+    )
     unattempted = sum(
         item.result_state in {UNDO_ITEM_PENDING, UNDO_ITEM_UNATTEMPTED}
         for item in record.expected_restores
@@ -609,5 +652,8 @@ def _validate_repositories(
 ) -> None:
     if operation_repository.root != undo_repository.root:
         raise ValueError("Activity repositories belong to different roots")
-    if operation_repository.configured_root_identity != undo_repository.configured_root_identity:
+    if (
+        operation_repository.configured_root_identity
+        != undo_repository.configured_root_identity
+    ):
         raise ValueError("Activity repository root identities do not match")

@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-from copy import deepcopy
-from dataclasses import FrozenInstanceError, replace
-from datetime import datetime, timezone
 import json
 import os
-from pathlib import Path
 import tempfile
-from types import MappingProxyType
 import unittest
+from copy import deepcopy
+from dataclasses import FrozenInstanceError, replace
+from datetime import UTC, datetime
+from pathlib import Path
+from types import MappingProxyType
 
 from organizer.application.organization_decision_service import (
     OrganizationDecisionError,
@@ -27,12 +27,13 @@ from organizer.models import ReviewedPlanItem
 from organizer.web.organization_decision_store import OrganizationDecisionStore
 from organizer.web.scan_jobs import ScanJobSnapshot
 
-
-COMPLETED_AT = datetime(2026, 7, 15, 12, tzinfo=timezone.utc)
+COMPLETED_AT = datetime(2026, 7, 15, 12, tzinfo=UTC)
 
 
 class OrganizationDecisionServiceTests(unittest.TestCase):
-    def test_internal_projection_retains_authoritative_candidates_without_public_leaks(self) -> None:
+    def test_internal_projection_retains_authoritative_candidates_without_public_leaks(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             result = _recommendation_result(root)
@@ -49,7 +50,9 @@ class OrganizationDecisionServiceTests(unittest.TestCase):
             self.assertNotIn(str(root).lower(), public)
             self.assertNotIn("sha256", public)
 
-    def test_destination_and_duplicate_mappings_retain_exact_server_options(self) -> None:
+    def test_destination_and_duplicate_mappings_retain_exact_server_options(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             destination_result = _destination_choice_result(root)
@@ -70,7 +73,9 @@ class OrganizationDecisionServiceTests(unittest.TestCase):
             self.assertEqual(len(duplicate.copy_ids), 2)
             self.assertEqual(duplicate.option_ids, ("keep-all", "choose-for-bin"))
 
-    def test_recommendations_update_immutably_and_bulk_accept_one_revision(self) -> None:
+    def test_recommendations_update_immutably_and_bulk_accept_one_revision(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             projection = _projection(_recommendation_result(Path(directory)))
             session = create_organization_decision_session(
@@ -108,7 +113,9 @@ class OrganizationDecisionServiceTests(unittest.TestCase):
                 accept_recommended_changes(first, projection, ())
             self.assertEqual(first.decision_revision, 1)
 
-    def test_destination_and_duplicate_decisions_validate_only_offered_ids(self) -> None:
+    def test_destination_and_duplicate_decisions_validate_only_offered_ids(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             projection = _projection(_destination_choice_result(Path(directory)))
             session = create_organization_decision_session(projection)
@@ -176,7 +183,9 @@ class OrganizationDecisionServiceTests(unittest.TestCase):
                 option_id="choose-for-bin",
                 copy_ids=(offered[0],),
             )
-            self.assertEqual(selected.duplicate_decisions[0].selected_copy_ids, (offered[0],))
+            self.assertEqual(
+                selected.duplicate_decisions[0].selected_copy_ids, (offered[0],)
+            )
             kept = update_organization_decision(
                 session,
                 projection,
@@ -187,9 +196,12 @@ class OrganizationDecisionServiceTests(unittest.TestCase):
             self.assertEqual(kept.duplicate_decisions[0].selected_copy_ids, ())
             invalid_sets = ((), offered, (offered[0], offered[0]), ("other:file",))
             for copy_ids in invalid_sets:
-                with self.subTest(copy_ids=copy_ids), self.assertRaisesRegex(
-                    OrganizationDecisionError,
-                    "invalid_option",
+                with (
+                    self.subTest(copy_ids=copy_ids),
+                    self.assertRaisesRegex(
+                        OrganizationDecisionError,
+                        "invalid_option",
+                    ),
                 ):
                     update_organization_decision(
                         session,
@@ -236,14 +248,18 @@ class OrganizationDecisionServiceTests(unittest.TestCase):
             self.assertNotIn("sha256", safe)
             with self.assertRaises(FrozenInstanceError):
                 approved.status = "changed"  # type: ignore[misc]
-            self.assertFalse((Path(directory) / "AI_Review" / "operation_logs").exists())
+            self.assertFalse(
+                (Path(directory) / "AI_Review" / "operation_logs").exists()
+            )
 
     def test_approval_rejects_incomplete_changed_source_and_overwrite(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             projection = _projection(_recommendation_result(root))
             session = create_organization_decision_session(projection)
-            with self.assertRaisesRegex(OrganizationDecisionError, "incomplete_decisions"):
+            with self.assertRaisesRegex(
+                OrganizationDecisionError, "incomplete_decisions"
+            ):
                 approve_organization_plan(session, projection)
 
             completed = accept_recommended_changes(
@@ -267,12 +283,19 @@ class OrganizationDecisionServiceTests(unittest.TestCase):
             )
             destination = projection.recommendations_by_id["O1"].move_item.destination
             destination.write_text("collision", encoding="utf-8")
-            with self.assertRaisesRegex(OrganizationDecisionError, "overwrite_detected"):
+            with self.assertRaisesRegex(
+                OrganizationDecisionError, "overwrite_detected"
+            ):
                 approve_organization_plan(completed, projection)
 
-    def test_approval_rejects_missing_mtime_changed_symlink_and_outside_sources(self) -> None:
+    def test_approval_rejects_missing_mtime_changed_symlink_and_outside_sources(
+        self,
+    ) -> None:
         for mutation in ("missing", "mtime", "symlink"):
-            with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as directory:
+            with (
+                self.subTest(mutation=mutation),
+                tempfile.TemporaryDirectory() as directory,
+            ):
                 root = Path(directory)
                 projection = _projection(_recommendation_result(root))
                 session = create_organization_decision_session(projection)
@@ -292,10 +315,15 @@ class OrganizationDecisionServiceTests(unittest.TestCase):
                     replacement = root / "replacement.pptx"
                     replacement.write_text("a", encoding="utf-8")
                     source.symlink_to(replacement)
-                with self.assertRaisesRegex(OrganizationDecisionError, "source_changed"):
+                with self.assertRaisesRegex(
+                    OrganizationDecisionError, "source_changed"
+                ):
                     approve_organization_plan(completed, projection)
 
-        with tempfile.TemporaryDirectory() as directory, tempfile.TemporaryDirectory() as outside:
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            tempfile.TemporaryDirectory() as outside,
+        ):
             root = Path(directory)
             projection = _projection(_recommendation_result(root))
             session = create_organization_decision_session(projection)
@@ -317,8 +345,13 @@ class OrganizationDecisionServiceTests(unittest.TestCase):
             with self.assertRaisesRegex(OrganizationDecisionError, "source_changed"):
                 approve_organization_plan(completed, forged)
 
-    def test_approval_rejects_unsafe_destinations_protection_and_conflicts(self) -> None:
-        with tempfile.TemporaryDirectory() as directory, tempfile.TemporaryDirectory() as outside:
+    def test_approval_rejects_unsafe_destinations_protection_and_conflicts(
+        self,
+    ) -> None:
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            tempfile.TemporaryDirectory() as outside,
+        ):
             root = Path(directory)
             projection = _projection(_recommendation_result(root))
             completed = accept_recommended_changes(
@@ -339,10 +372,15 @@ class OrganizationDecisionServiceTests(unittest.TestCase):
                 projection,
                 recommendations_by_id=MappingProxyType(candidates),
             )
-            with self.assertRaisesRegex(OrganizationDecisionError, "unsafe_destination"):
+            with self.assertRaisesRegex(
+                OrganizationDecisionError, "unsafe_destination"
+            ):
                 approve_organization_plan(completed, forged)
 
-        with tempfile.TemporaryDirectory() as directory, tempfile.TemporaryDirectory() as outside:
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            tempfile.TemporaryDirectory() as outside,
+        ):
             root = Path(directory)
             projection = _projection(_recommendation_result(root))
             completed = accept_recommended_changes(
@@ -355,7 +393,9 @@ class OrganizationDecisionServiceTests(unittest.TestCase):
             ].move_item.destination.parent
             destination_parent.rmdir()
             destination_parent.symlink_to(Path(outside), target_is_directory=True)
-            with self.assertRaisesRegex(OrganizationDecisionError, "unsafe_destination"):
+            with self.assertRaisesRegex(
+                OrganizationDecisionError, "unsafe_destination"
+            ):
                 approve_organization_plan(completed, projection)
 
         with tempfile.TemporaryDirectory() as directory:
@@ -372,7 +412,9 @@ class OrganizationDecisionServiceTests(unittest.TestCase):
                     {projection.recommendations_by_id["O1"].file_id}
                 ),
             )
-            with self.assertRaisesRegex(OrganizationDecisionError, "protected_item_selected"):
+            with self.assertRaisesRegex(
+                OrganizationDecisionError, "protected_item_selected"
+            ):
                 approve_organization_plan(completed, protected)
 
         with tempfile.TemporaryDirectory() as directory:
@@ -396,7 +438,9 @@ class OrganizationDecisionServiceTests(unittest.TestCase):
                 projection,
                 recommendations_by_id=MappingProxyType(candidates),
             )
-            with self.assertRaisesRegex(OrganizationDecisionError, "unsafe_destination"):
+            with self.assertRaisesRegex(
+                OrganizationDecisionError, "unsafe_destination"
+            ):
                 approve_organization_plan(completed, conflicting)
 
     def test_duplicate_approval_rehashes_and_rejects_changed_group(self) -> None:
@@ -427,7 +471,9 @@ class OrganizationDecisionServiceTests(unittest.TestCase):
             ):
                 approve_organization_plan(completed, projection)
 
-    def test_store_isolates_sessions_rejects_stale_state_and_replays_approval(self) -> None:
+    def test_store_isolates_sessions_rejects_stale_state_and_replays_approval(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             result = _recommendation_result(root)
@@ -535,7 +581,9 @@ def _recommendation_result(root: Path):
 def _destination_choice_result(root: Path):
     result = _recommendation_result(root)
     report = deepcopy(result.report)
-    report["anchor_decisions"]["suggested_groups"][0]["evidence"] = "deterministic_group"
+    report["anchor_decisions"]["suggested_groups"][0]["evidence"] = (
+        "deterministic_group"
+    )
     return replace(result, report=report)
 
 

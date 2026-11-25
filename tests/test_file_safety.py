@@ -9,11 +9,11 @@ from __future__ import annotations
 
 import json
 import os
-from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from organizer.executor import apply_move_plan, undo_operation_log
@@ -138,9 +138,7 @@ class MoveNeverReplacesFilesTests(unittest.TestCase):
 
             self.assertEqual([result.success for result in log.operations], [False])
             self.assertEqual(destination.read_text(encoding="utf-8"), "ALREADY HERE")
-            self.assertEqual(
-                (root / "one.txt").read_text(encoding="utf-8"), "MOVING"
-            )
+            self.assertEqual((root / "one.txt").read_text(encoding="utf-8"), "MOVING")
 
 
 class StartedBatchAlwaysLeavesLogTests(unittest.TestCase):
@@ -179,9 +177,7 @@ class StartedBatchAlwaysLeavesLogTests(unittest.TestCase):
                 [True, False],
             )
             undo_operation_log(log.log_path, root)
-            self.assertEqual(
-                (root / "one.txt").read_text(encoding="utf-8"), "ONE"
-            )
+            self.assertEqual((root / "one.txt").read_text(encoding="utf-8"), "ONE")
 
     def test_log_exists_after_each_move_even_if_the_batch_is_interrupted(
         self,
@@ -248,7 +244,9 @@ class OperationLogIsNeverPartialTests(unittest.TestCase):
                     )
 
             log_dir = root / "AI_Review" / "operation_logs"
-            self.assertEqual([p.name for p in log_dir.iterdir() if p.suffix == ".tmp"], [])
+            self.assertEqual(
+                [p.name for p in log_dir.iterdir() if p.suffix == ".tmp"], []
+            )
             (log,) = log_dir.glob("operation_log_*.json")
             logged = json.loads(log.read_text(encoding="utf-8"))
             self.assertEqual(len(logged["operations"]), 1)
@@ -258,7 +256,10 @@ class OperationLogIsNeverPartialTests(unittest.TestCase):
 
 class UndoWorksForDotFolderTests(unittest.TestCase):
     def test_apply_with_dot_folder_can_be_undone_from_any_directory(self) -> None:
-        with tempfile.TemporaryDirectory() as directory, tempfile.TemporaryDirectory() as elsewhere:
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            tempfile.TemporaryDirectory() as elsewhere,
+        ):
             root = Path(directory).resolve()
             (root / "a.txt").write_text("same", encoding="utf-8")
             (root / "b.txt").write_text("same", encoding="utf-8")
@@ -267,10 +268,10 @@ class UndoWorksForDotFolderTests(unittest.TestCase):
                 root, ".", "--apply-duplicate-plan", "--confirm", "APPLY_DUPLICATE_PLAN"
             )
             self.assertEqual(applied.returncode, 0, applied.stderr)
-            log = next((root / "AI_Review" / "operation_logs").glob("operation_log_*.json"))
-            self.assertEqual(
-                sorted(p.name for p in root.glob("*.txt")), ["a.txt"]
+            log = next(
+                (root / "AI_Review" / "operation_logs").glob("operation_log_*.json")
             )
+            self.assertEqual(sorted(p.name for p in root.glob("*.txt")), ["a.txt"])
 
             undone = run_cli(Path(elsewhere), str(root), "--undo-log", str(log))
 
@@ -288,7 +289,9 @@ class UndoWorksForDotFolderTests(unittest.TestCase):
                 root, ".", "--apply-duplicate-plan", "--confirm", "APPLY_DUPLICATE_PLAN"
             )
             self.assertEqual(applied.returncode, 0, applied.stderr)
-            log = next((root / "AI_Review" / "operation_logs").glob("operation_log_*.json"))
+            log = next(
+                (root / "AI_Review" / "operation_logs").glob("operation_log_*.json")
+            )
 
             undone = run_cli(root, ".", "--undo-log", str(log.relative_to(root)))
 
@@ -304,7 +307,9 @@ class UndoWorksForDotFolderTests(unittest.TestCase):
                 root, ".", "--apply-duplicate-plan", "--confirm", "APPLY_DUPLICATE_PLAN"
             )
             self.assertEqual(applied.returncode, 0, applied.stderr)
-            log = next((root / "AI_Review" / "operation_logs").glob("operation_log_*.json"))
+            log = next(
+                (root / "AI_Review" / "operation_logs").glob("operation_log_*.json")
+            )
             logged = json.loads(log.read_text(encoding="utf-8"))
             original = Path(logged["operations"][0]["source"])
             if not original.is_absolute():
@@ -381,7 +386,9 @@ class ReviewApplyRefusesProtectedPathsTests(unittest.TestCase):
 
             with self.assertRaisesRegex(ValueError, "protected"):
                 self._apply(
-                    root, "AI_Review/operation_logs/operation_log_1.json", "Organized/log.json"
+                    root,
+                    "AI_Review/operation_logs/operation_log_1.json",
+                    "Organized/log.json",
                 )
 
             self.assertTrue((logs / "operation_log_1.json").exists())

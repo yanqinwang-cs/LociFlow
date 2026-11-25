@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import unittest
 from datetime import datetime, timedelta
 from pathlib import Path
-import unittest
 
 from organizer.web.formatting import (
     folder_name,

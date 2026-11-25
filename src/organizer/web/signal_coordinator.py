@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from collections.abc import Callable
-from dataclasses import dataclass
-from enum import StrEnum
 import os
 import select
 import signal
+from collections.abc import Callable
+from dataclasses import dataclass
+from enum import StrEnum
 from threading import Lock, Thread, current_thread, main_thread
 from types import FrameType
 

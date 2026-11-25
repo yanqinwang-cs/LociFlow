@@ -8,7 +8,6 @@ from organizer.application.content_identity import (
     identity_compatibility,
 )
 
-
 ORGANIZATION_OPERATION_SCHEMA_VERSION = 1
 ORGANIZATION_OPERATION_SCHEMA_VERSION_V2 = 2
 ORGANIZATION_OPERATION_RECORD_TYPE = "loci_flow_organization_operation"

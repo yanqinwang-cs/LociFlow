@@ -1,11 +1,11 @@
 from __future__ import annotations
 
+import os
+import stat
+from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import Enum
-import os
 from pathlib import Path
-import stat
-from typing import Iterable
 
 from organizer.file_identity import (
     REGULAR_FILE_TYPE,
@@ -14,7 +14,6 @@ from organizer.file_identity import (
 )
 from organizer.models import MovePlanItem
 from organizer.safety import validate_under_root
-
 
 _SAFE_MESSAGES = {
     "invalid_strict_plan": "The file could not be moved safely. Check the folder and try again.",
@@ -154,9 +153,7 @@ def validate_identity_move_plan(
         len(set(structural_sources)) != len(items)
         or len(set(structural_destinations)) != len(items)
         or set(structural_sources) & set(structural_destinations)
-        or _has_path_ancestry_overlap(
-            structural_sources + structural_destinations
-        )
+        or _has_path_ancestry_overlap(structural_sources + structural_destinations)
     ):
         raise StrictExecutorError("invalid_strict_plan")
 
@@ -193,9 +190,7 @@ def validate_same_volume_identity_move_plan(
     root: Path,
 ) -> ValidatedIdentityMovePlan:
     plan = validate_identity_move_plan(items, root)
-    if any(
-        item.placement is VolumePlacement.INDETERMINATE for item in plan.items
-    ):
+    if any(item.placement is VolumePlacement.INDETERMINATE for item in plan.items):
         raise StrictExecutorError("destination_volume_indeterminate")
     if any(item.placement is VolumePlacement.CROSS_VOLUME for item in plan.items):
         raise StrictExecutorError("cross_volume_unsupported")
@@ -219,7 +214,7 @@ def _absolute_normalized(path: Path) -> Path:
             raise ValueError
         return Path(os.path.abspath(candidate))
     except (OSError, TypeError, ValueError):
-        raise StrictExecutorError("invalid_strict_plan")
+        raise StrictExecutorError("invalid_strict_plan") from None
 
 
 def _validate_source(

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Callable
 
 from organizer.application.organization_operation_models import (
     MOVE_ATTEMPTING,
@@ -49,8 +49,7 @@ class DurableOrganizationMovementRecorder:
         for plan_item, expected in zip(plan_items, self.record.expected_moves):
             if (
                 _relative(plan_item.source, self.root) != expected.source
-                or _relative(plan_item.destination, self.root)
-                != expected.destination
+                or _relative(plan_item.destination, self.root) != expected.destination
             ):
                 raise ValueError("approved move batch changed")
         self.record = replace(
@@ -96,9 +95,7 @@ class DurableOrganizationMovementRecorder:
         )
         moved = sum(move.result_state == MOVE_MOVED for move in moves)
         failed = sum(move.result_state == MOVE_FAILED for move in moves)
-        unattempted = sum(
-            move.result_state == MOVE_UNATTEMPTED for move in moves
-        )
+        unattempted = sum(move.result_state == MOVE_UNATTEMPTED for move in moves)
         if moved == len(moves):
             status = STATUS_MOVED_UNVERIFIED
             completed_at = None
@@ -182,4 +179,4 @@ def _relative(path: Path, root: Path) -> str:
 
 
 def _utc_timestamp() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()

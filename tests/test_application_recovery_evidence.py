@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-from dataclasses import replace
-from datetime import timedelta
 import json
 import os
-from pathlib import Path
 import shutil
 import tempfile
 import unittest
-from unittest import mock
 import uuid
+from dataclasses import replace
+from datetime import timedelta
+from pathlib import Path
+from unittest import mock
 
 from organizer.application.content_identity import RegularFileContentIdentity
 from organizer.application.duplicate_bin_models import (
@@ -18,8 +18,14 @@ from organizer.application.duplicate_bin_models import (
 )
 from organizer.application.duplicate_bin_movement_models import (
     MOVE_ATTEMPTING as DUPLICATE_MOVE_ATTEMPTING,
+)
+from organizer.application.duplicate_bin_movement_models import (
     MOVE_MOVED as DUPLICATE_MOVE_MOVED,
+)
+from organizer.application.duplicate_bin_movement_models import (
     MOVE_PENDING as DUPLICATE_MOVE_PENDING,
+)
+from organizer.application.duplicate_bin_movement_models import (
     OP_INTERRUPTED,
     OP_MOVED_UNVERIFIED,
     OP_MOVING,
@@ -28,8 +34,14 @@ from organizer.application.duplicate_bin_movement_models import (
 )
 from organizer.application.duplicate_bin_restore_models import (
     ITEM_ATTEMPTING as RESTORE_ITEM_ATTEMPTING,
+)
+from organizer.application.duplicate_bin_restore_models import (
     ITEM_PENDING as RESTORE_ITEM_PENDING,
+)
+from organizer.application.duplicate_bin_restore_models import (
     ITEM_RESTORED as RESTORE_ITEM_RESTORED,
+)
+from organizer.application.duplicate_bin_restore_models import (
     RESTORE_INTERRUPTED,
     RESTORE_PREPARED,
     RESTORE_RESTORED_UNVERIFIED,
@@ -47,13 +59,13 @@ from organizer.application.organization_operation_models import (
     MOVE_ATTEMPTING,
     MOVE_MOVED,
     MOVE_PENDING,
+    ORGANIZATION_OPERATION_SCHEMA_VERSION_V2,
     STATUS_INTERRUPTED,
     STATUS_MOVED_UNVERIFIED,
     STATUS_MOVING,
     STATUS_PARTIAL_MOVEMENT,
     STATUS_PREPARED,
     VERIFICATION_NOT_RUN,
-    ORGANIZATION_OPERATION_SCHEMA_VERSION_V2,
     OrganizationOperationVerification,
 )
 from organizer.application.organization_undo_models import (
@@ -68,16 +80,16 @@ from organizer.application.organization_undo_models import (
     UNDO_UNDOING,
     UndoVerificationResult,
 )
+from organizer.application.recovery_check_service import (
+    RecoveryCheckEligibilityInspector,
+)
 from organizer.application.recovery_evidence import (
     FilesystemEvidence,
-    RecoveryActionKind,
     RecoveryActionability,
+    RecoveryActionKind,
     RecoveryEvidenceInspector,
     RecoveryEvidenceState,
     RecoveryOperationFamily,
-)
-from organizer.application.recovery_check_service import (
-    RecoveryCheckEligibilityInspector,
 )
 from organizer.application.recovery_projection_service import (
     RecoveryProjectionService,
@@ -87,6 +99,8 @@ from organizer.web.config import WebAppConfig
 from tests.test_application_duplicate_bin_movement_service import ISSUED
 from tests.test_application_duplicate_bin_restore_service import (
     _moved as _duplicate_moved,
+)
+from tests.test_application_duplicate_bin_restore_service import (
     _restore,
     _restore_preview,
 )
@@ -153,7 +167,10 @@ class RecoveryEvidenceTests(unittest.TestCase):
 
     def test_partial_outcomes_project_read_only_copy_without_d1_check(self) -> None:
         for family in ("movement", "undo"):
-            with self.subTest(family=family), tempfile.TemporaryDirectory() as directory:
+            with (
+                self.subTest(family=family),
+                tempfile.TemporaryDirectory() as directory,
+            ):
                 root = Path(directory).resolve()
                 if family == "movement":
                     _ordinary_movement(
@@ -214,16 +231,16 @@ class RecoveryEvidenceTests(unittest.TestCase):
             self.assertEqual(
                 one.case.family, RecoveryOperationFamily.ORGANIZATION_MOVEMENT
             )
-            self.assertEqual(
-                one.actionability, RecoveryActionability.INSPECT_ONLY
-            )
+            self.assertEqual(one.actionability, RecoveryActionability.INSPECT_ONLY)
 
             second, second_record = _ordinary_operation(root, status=STATUS_PREPARED)
             second.save(
                 replace(
                     second_record,
                     expected_moves=(
-                        replace(second_record.expected_moves[0], result_state=MOVE_PENDING),
+                        replace(
+                            second_record.expected_moves[0], result_state=MOVE_PENDING
+                        ),
                     ),
                     verification=OrganizationOperationVerification(
                         status=VERIFICATION_NOT_RUN
@@ -245,7 +262,9 @@ class RecoveryEvidenceTests(unittest.TestCase):
             self.assertEqual(aggregate.safe_projection().affected_items, 2)
             self.assertEqual(len(first.list_records()), 2)
 
-    def test_v2_representation_does_not_enable_recovery_and_malformed_v2_blocks(self) -> None:
+    def test_v2_representation_does_not_enable_recovery_and_malformed_v2_blocks(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             repository, record = _ordinary_movement(
@@ -295,9 +314,7 @@ class RecoveryEvidenceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             operations, parent = _ordinary_operation(root)
-            identity = RegularFileContentIdentity(
-                "regular_file", "sha256", "b" * 64
-            )
+            identity = RegularFileContentIdentity("regular_file", "sha256", "b" * 64)
             parent_v2 = replace(
                 parent,
                 schema_version=ORGANIZATION_OPERATION_SCHEMA_VERSION_V2,
@@ -364,7 +381,9 @@ class RecoveryEvidenceTests(unittest.TestCase):
             )
             self.assertIsNone(result.case)
 
-    def test_evidence_digest_is_deterministic_and_changes_with_both_inputs(self) -> None:
+    def test_evidence_digest_is_deterministic_and_changes_with_both_inputs(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             repository, record = _ordinary_movement(root, STATUS_MOVING, "pending")
@@ -383,7 +402,9 @@ class RecoveryEvidenceTests(unittest.TestCase):
             filesystem_changed = _inspect(root).case.digest.value
             self.assertNotEqual(filesystem_changed, durable_changed)
 
-    def test_same_size_same_mtime_replacement_never_proves_ordinary_identity(self) -> None:
+    def test_same_size_same_mtime_replacement_never_proves_ordinary_identity(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             _, record = _ordinary_movement(root, STATUS_PREPARED, "pending")
@@ -394,9 +415,7 @@ class RecoveryEvidenceTests(unittest.TestCase):
 
             replaced = _inspect(root)
 
-            self.assertEqual(
-                replaced.actionability, RecoveryActionability.INSPECT_ONLY
-            )
+            self.assertEqual(replaced.actionability, RecoveryActionability.INSPECT_ONLY)
             self.assertNotIn(
                 RecoveryActionKind.CONTINUE,
                 replaced.case.available_action_kinds,
@@ -416,9 +435,7 @@ class RecoveryEvidenceTests(unittest.TestCase):
 
             replaced = _inspect(root)
 
-            self.assertEqual(
-                replaced.actionability, RecoveryActionability.INSPECT_ONLY
-            )
+            self.assertEqual(replaced.actionability, RecoveryActionability.INSPECT_ONLY)
             self.assertNotIn(
                 RecoveryActionKind.CONTINUE,
                 replaced.case.available_action_kinds,
@@ -429,7 +446,10 @@ class RecoveryEvidenceTests(unittest.TestCase):
             )
 
     def test_roots_are_isolated(self) -> None:
-        with tempfile.TemporaryDirectory() as first, tempfile.TemporaryDirectory() as second:
+        with (
+            tempfile.TemporaryDirectory() as first,
+            tempfile.TemporaryDirectory() as second,
+        ):
             first_root = Path(first).resolve()
             second_root = Path(second).resolve()
             _ordinary_movement(first_root, STATUS_PREPARED, "pending")
@@ -454,7 +474,10 @@ class RecoveryEvidenceTests(unittest.TestCase):
             ),
         )
         for status, placement, expected in cases:
-            with self.subTest(status=status), tempfile.TemporaryDirectory() as directory:
+            with (
+                self.subTest(status=status),
+                tempfile.TemporaryDirectory() as directory,
+            ):
                 root = Path(directory).resolve()
                 repository, record = _ordinary_movement(root, status, placement)
                 before = _durable_bytes_and_mtimes(root)
@@ -506,7 +529,9 @@ class RecoveryEvidenceTests(unittest.TestCase):
             self.assertEqual(
                 both.actionability, RecoveryActionability.NON_ACTIONABLE_AMBIGUOUS
             )
-            self.assertIn(FilesystemEvidence.BOTH_PRESENT, both.case.items[0].observations)
+            self.assertIn(
+                FilesystemEvidence.BOTH_PRESENT, both.case.items[0].observations
+            )
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
@@ -548,7 +573,10 @@ class RecoveryEvidenceTests(unittest.TestCase):
             ),
         )
         for status, placement, expected in cases:
-            with self.subTest(status=status), tempfile.TemporaryDirectory() as directory:
+            with (
+                self.subTest(status=status),
+                tempfile.TemporaryDirectory() as directory,
+            ):
                 root = Path(directory).resolve()
                 undo_repository, undo = _ordinary_undo_state(root, status, placement)
                 before = _durable_bytes_and_mtimes(root)
@@ -570,7 +598,9 @@ class RecoveryEvidenceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             _, undo = _ordinary_undo_state(root, UNDO_PREPARED, "pending")
-            parent = root / "AI_Review/organization_operations" / f"{undo.operation_id}.json"
+            parent = (
+                root / "AI_Review/organization_operations" / f"{undo.operation_id}.json"
+            )
             parent.unlink()
             result = _inspect(root)
             self.assertEqual(
@@ -626,8 +656,13 @@ class RecoveryEvidenceTests(unittest.TestCase):
             ),
         )
         for status, placement, expected in cases:
-            with self.subTest(status=status), tempfile.TemporaryDirectory() as directory:
-                owners, record = _duplicate_move_state(Path(directory).resolve(), status, placement)
+            with (
+                self.subTest(status=status),
+                tempfile.TemporaryDirectory() as directory,
+            ):
+                owners, record = _duplicate_move_state(
+                    Path(directory).resolve(), status, placement
+                )
                 before = _durable_bytes_and_mtimes(owners.root)
                 result = _inspect(owners.root)
                 self.assertEqual(result.actionability, expected)
@@ -703,7 +738,10 @@ class RecoveryEvidenceTests(unittest.TestCase):
             ),
         )
         for status, placement, expected in cases:
-            with self.subTest(status=status), tempfile.TemporaryDirectory() as directory:
+            with (
+                self.subTest(status=status),
+                tempfile.TemporaryDirectory() as directory,
+            ):
                 owners, restores, record = _duplicate_restore_state(
                     Path(directory).resolve(), status, placement
                 )
@@ -787,14 +825,18 @@ class RecoveryEvidenceTests(unittest.TestCase):
             ):
                 self.assertNotIn(forbidden, serialized)
 
-    def test_explicit_inspection_is_non_mutating_and_startup_does_not_hash(self) -> None:
+    def test_explicit_inspection_is_non_mutating_and_startup_does_not_hash(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             owners, _ = _duplicate_move_state(root, OP_PREPARED, "pending")
             before = _durable_bytes_and_mtimes(root)
             with (
                 mock.patch("organizer.executor.apply_move_plan") as executor,
-                mock.patch("organizer.application.activity_service.list_activity_entries") as activity,
+                mock.patch(
+                    "organizer.application.activity_service.list_activity_entries"
+                ) as activity,
             ):
                 _inspect(root)
             executor.assert_not_called()
@@ -833,9 +875,7 @@ def _write_expected(path: Path) -> None:
     os.utime(path, (100.0, 100.0))
 
 
-def _ordinary_movement(
-    root: Path, status: str, placement: str, *, count: int = 1
-):
+def _ordinary_movement(root: Path, status: str, placement: str, *, count: int = 1):
     repository, record = _ordinary_operation(root, status=status)
     item_state = (
         MOVE_PENDING
@@ -867,9 +907,7 @@ def _ordinary_movement(
     return repository, record
 
 
-def _ordinary_undo_state(
-    root: Path, status: str, placement: str, *, count: int = 1
-):
+def _ordinary_undo_state(root: Path, status: str, placement: str, *, count: int = 1):
     operation_repository, operation = _ordinary_operation(root)
     if count > 1:
         moves = tuple(
@@ -932,9 +970,7 @@ def _duplicate_move_state(
     )
     attempted_at = None if status == OP_PREPARED else record.started_at
     completed_at = (
-        record.completed_at
-        if status in {OP_MOVED_UNVERIFIED, OP_INTERRUPTED}
-        else None
+        record.completed_at if status in {OP_MOVED_UNVERIFIED, OP_INTERRUPTED} else None
     )
     record = replace(
         record,
@@ -975,7 +1011,9 @@ def _duplicate_restore_state(
         current_batch.batch_id,
         expected_version=current_batch.batch_version,
         status=BATCH_MOVED,
-        items=tuple(replace(item, state=ITEM_AVAILABLE) for item in current_batch.items),
+        items=tuple(
+            replace(item, state=ITEM_AVAILABLE) for item in current_batch.items
+        ),
         updated_at=(ISSUED + timedelta(minutes=2)).isoformat(),
     )
     item_state = (

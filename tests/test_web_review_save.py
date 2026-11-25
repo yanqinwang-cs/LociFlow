@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import json
-from unittest import mock
 import unittest
+from unittest import mock
 
 from organizer.review_session import load_reviewed_plan_items
 from tests.web_review_support import WebReviewFixture
@@ -30,7 +30,9 @@ class WebReviewSaveTests(
         self.assertIn("Loci Flow is closing", response.text)
         self.assertFalse((self.root / "AI_Review" / "review_sessions").exists())
 
-    async def test_explicit_save_writes_all_rows_and_returns_clean_session(self) -> None:
+    async def test_explicit_save_writes_all_rows_and_returns_clean_session(
+        self,
+    ) -> None:
         client = await self.authenticated_client()
         try:
             csrf = await self.csrf(client)
@@ -48,9 +50,7 @@ class WebReviewSaveTests(
         finally:
             await client.aclose()
 
-        paths = sorted(
-            (self.root / "AI_Review" / "review_sessions").glob("*.json")
-        )
+        paths = sorted((self.root / "AI_Review" / "review_sessions").glob("*.json"))
         self.assertEqual(changed.status_code, 303)
         self.assertEqual(saved.status_code, 303)
         self.assertEqual(len(paths), 1)
@@ -67,7 +67,9 @@ class WebReviewSaveTests(
         self.assertIn("Approved conflicts: 0", page.text)
         self.assertNotIn(str(self.root), page.text)
         self.assertTrue(
-            (self.root / "AI_Review" / "review_state" / "review_decisions.json").is_file()
+            (
+                self.root / "AI_Review" / "review_state" / "review_decisions.json"
+            ).is_file()
         )
         self.assertFalse((self.root / "AI_Review" / "operation_logs").exists())
 
@@ -98,7 +100,9 @@ class WebReviewSaveTests(
         self.assertNotEqual(paths[0], paths[1])
         self.assertTrue(all(name.endswith("_reviewed_plan.json") for name in paths))
 
-    async def test_decisions_never_autosave_and_browser_cannot_choose_path(self) -> None:
+    async def test_decisions_never_autosave_and_browser_cannot_choose_path(
+        self,
+    ) -> None:
         client = await self.authenticated_client()
         try:
             csrf = await self.csrf(client)

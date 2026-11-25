@@ -78,12 +78,33 @@ NON_COURSE_CODE_PREFIXES = frozenset(
 )
 PAPER_TOKENS = {"paper", "article", "journal", "reading", "reference"}
 RESULT_TOKENS = {"result", "results", "output", "experiment", "eval", "evaluation"}
-CODE_EXTENSIONS = {".py", ".js", ".ts", ".java", ".c", ".cpp", ".h", ".html", ".css", ".ipynb"}
+CODE_EXTENSIONS = {
+    ".py",
+    ".js",
+    ".ts",
+    ".java",
+    ".c",
+    ".cpp",
+    ".h",
+    ".html",
+    ".css",
+    ".ipynb",
+}
 DATASET_EXTENSIONS = {".csv", ".tsv", ".xlsx", ".xls", ".json", ".parquet"}
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"}
 ARCHIVE_EXTENSIONS = {".zip", ".tar", ".gz", ".rar", ".7z"}
 DOCUMENT_EXTENSIONS = {".doc", ".docx", ".odt", ".pages"}
-EXAM_TOKENS = {"exam", "final", "finals", "midterm", "pe", "solution", "solutions", "answer", "answers"}
+EXAM_TOKENS = {
+    "exam",
+    "final",
+    "finals",
+    "midterm",
+    "pe",
+    "solution",
+    "solutions",
+    "answer",
+    "answers",
+}
 RECITATION_TOKENS = {"recitation", "rec"}
 TUTORIAL_TOKENS = {"tutorial", "tut"}
 PRACTICAL_TOKENS = {"practical", "lab", "mission", "contest", "exercise"}
@@ -91,15 +112,6 @@ LECTURE_TOKENS = {"lecture", "lec", "lesson"}
 ASSIGNMENT_TOKENS = {"assignment", "homework", "pset"}
 ADMIN_TOKENS = {"syllabus", "schedule", "rubric", "briefing", "form"}
 NOTE_TOKENS = {"note", "notes", "summary", "cheatsheet", "guide"}
-NARROW_ROLE_TOKENS = (
-    EXAM_TOKENS
-    | RECITATION_TOKENS
-    | TUTORIAL_TOKENS
-    | PRACTICAL_TOKENS
-    | LECTURE_TOKENS
-    | ASSIGNMENT_TOKENS
-    | {"slide", "slides", "project"}
-)
 QUESTION_SOLUTION_TOKENS = {"solution", "solutions", "answer", "answers", "key"}
 TITLE_VARIANT_TOKENS = {
     "copy",
@@ -262,9 +274,7 @@ def find_project_groups(
         if decision.decision != ANCHOR_DECISION_SUGGESTED:
             continue
         available_files = [
-            file
-            for file in decision.files
-            if file.relative_path not in assigned_paths
+            file for file in decision.files if file.relative_path not in assigned_paths
         ]
         if len(available_files) < min_group_size:
             continue
@@ -314,10 +324,13 @@ def analyze_anchor_decisions(
         if len(unique_files) < min_group_size:
             continue
         evidence = _best_evidence(bucket_evidence)
-        if evidence in ALLOWED_ORGANIZATION_EVIDENCE and not _valid_narrow_or_locked_group(
-            canonical,
-            evidence,
-            unique_files,
+        if (
+            evidence in ALLOWED_ORGANIZATION_EVIDENCE
+            and not _valid_narrow_or_locked_group(
+                canonical,
+                evidence,
+                unique_files,
+            )
         ):
             continue
         display_name = str(bucket["display"])
@@ -336,10 +349,7 @@ def analyze_anchor_decisions(
                 evidence=final_evidence,
                 file_count=len(unique_files),
                 files=unique_files,
-                examples=[
-                    file.relative_path.as_posix()
-                    for file in unique_files[:3]
-                ],
+                examples=[file.relative_path.as_posix() for file in unique_files[:3]],
             )
         )
 
@@ -508,7 +518,10 @@ def _narrow_anchor_candidates(
     base_key, base_display = base
     if base_key in rules.ignored_terms or _is_default_ignored_anchor(base_key):
         return []
-    if _looks_personal_name_anchor(base_display) and base_key not in rules.locked_anchors:
+    if (
+        _looks_personal_name_anchor(base_display)
+        and base_key not in rules.locked_anchors
+    ):
         return []
 
     tokens = _token_sequence(file)
@@ -573,7 +586,9 @@ def _dedupe_anchor_candidates(
     for candidate in candidates:
         normalized = normalize_token(candidate.key)
         current = best_by_anchor.get(normalized)
-        if current is None or _evidence_rank(candidate.evidence) < _evidence_rank(current.evidence):
+        if current is None or _evidence_rank(candidate.evidence) < _evidence_rank(
+            current.evidence
+        ):
             best_by_anchor[normalized] = _AnchorCandidate(
                 key=normalized,
                 display_name=candidate.display_name,
@@ -629,7 +644,9 @@ def _narrow_reason(display_name: str, evidence: str) -> str:
     if evidence == GROUP_EVIDENCE_YEAR_VARIANT_SET:
         return f"Files appear to be the same document set across years or terms: {display_name}"
     if evidence == GROUP_EVIDENCE_NUMBERED_SERIES:
-        return f"Files appear to be a numbered continuous document series: {display_name}"
+        return (
+            f"Files appear to be a numbered continuous document series: {display_name}"
+        )
     if evidence == GROUP_EVIDENCE_QUESTION_SOLUTION_SET:
         return f"Files appear to be a question/solution document pair: {display_name}"
     if evidence == GROUP_EVIDENCE_TITLE_VARIANT_SET:
@@ -662,11 +679,15 @@ def _valid_narrow_or_locked_group(
         return numeric_values == list(range(numeric_values[0], numeric_values[-1] + 1))
     if evidence == GROUP_EVIDENCE_QUESTION_SOLUTION_SET:
         has_solution = any(_has_solution_token(_token_sequence(file)) for file in files)
-        has_question = any(not _has_solution_token(_token_sequence(file)) for file in files)
+        has_question = any(
+            not _has_solution_token(_token_sequence(file)) for file in files
+        )
         return has_solution and has_question
     if evidence == GROUP_EVIDENCE_TITLE_VARIANT_SET:
         extensions = {file.extension.lower() for file in files}
-        has_variant = any(_has_title_variant_token(_token_sequence(file)) for file in files)
+        has_variant = any(
+            _has_title_variant_token(_token_sequence(file)) for file in files
+        )
         return has_variant or len(extensions) >= 2
     return False
 
@@ -720,7 +741,9 @@ def _role_display(role: str) -> str:
 
 def _year_or_term_tokens(tokens: list[str]) -> set[str]:
     values: set[str] = set()
-    month_pattern = re.compile(r"^(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\d{2,4}$")
+    month_pattern = re.compile(
+        r"^(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\d{2,4}$"
+    )
     term_pattern = re.compile(r"^(spring|summer|fall|autumn|winter)\d{2,4}$")
     for token in tokens:
         if re.fullmatch(r"(19|20)\d{2}", token):
@@ -731,11 +754,7 @@ def _year_or_term_tokens(tokens: list[str]) -> set[str]:
 
 
 def _number_tokens(tokens: list[str]) -> set[str]:
-    return {
-        str(int(token))
-        for token in tokens
-        if re.fullmatch(r"\d{1,3}", token)
-    }
+    return {str(int(token)) for token in tokens if re.fullmatch(r"\d{1,3}", token)}
 
 
 def _solution_pair_base(
@@ -770,7 +789,8 @@ def _title_variant_candidate(
     stripped_tokens = [
         token
         for token in title_tokens
-        if token not in TITLE_VARIANT_TOKENS and token not in _year_or_term_tokens(tokens)
+        if token not in TITLE_VARIANT_TOKENS
+        and token not in _year_or_term_tokens(tokens)
     ]
     if len(stripped_tokens) < 2:
         return None
@@ -790,11 +810,7 @@ def _title_tokens_after_base(tokens: list[str], base_key: str) -> list[str]:
     if tokens and tokens[0] == base_key:
         return tokens[1:]
     course_index = next(
-        (
-            index
-            for index, token in enumerate(tokens)
-            if token == base_key
-        ),
+        (index for index, token in enumerate(tokens) if token == base_key),
         -1,
     )
     if course_index >= 0:
@@ -858,60 +874,9 @@ def _unique_sorted_files(files: list[FileMetadata]) -> list[FileMetadata]:
     return [by_path[path] for path in sorted(by_path)]
 
 
-def _find_named_anchor_groups(
-    files: list[FileMetadata],
-    min_group_size: int,
-) -> list[ProjectGroup]:
-    anchor_to_files: dict[str, list[FileMetadata]] = {}
-    file_to_anchors: dict[Path, set[str]] = {}
-    anchor_display_names: dict[str, str] = {}
-
-    for file in files:
-        anchors = _named_anchor_candidates(file)
-        file_to_anchors[file.relative_path] = {anchor for anchor, _display in anchors}
-        for anchor, display_name in anchors:
-            anchor_to_files.setdefault(anchor, []).append(file)
-            anchor_display_names.setdefault(anchor, display_name)
-
-    valid_anchors = {
-        anchor
-        for anchor, anchor_files in anchor_to_files.items()
-        if len(anchor_files) >= min_group_size
-    }
-    assigned_by_anchor: dict[str, list[FileMetadata]] = {}
-    for file in files:
-        candidate_anchors = file_to_anchors[file.relative_path] & valid_anchors
-        if not candidate_anchors:
-            continue
-        chosen_anchor = sorted(
-            candidate_anchors,
-            key=lambda anchor: (-len(anchor_to_files[anchor]), -len(anchor), anchor),
-        )[0]
-        assigned_by_anchor.setdefault(chosen_anchor, []).append(file)
-
-    groups: list[ProjectGroup] = []
-    for anchor, group_files in sorted(assigned_by_anchor.items()):
-        if len(group_files) < min_group_size:
-            continue
-        display_name = anchor_display_names[anchor]
-        groups.append(
-            ProjectGroup(
-                group_name=display_name,
-                files=_sort_files(group_files),
-                reason=f"files share strong filename anchor {anchor}; evidence {GROUP_EVIDENCE_NAMED_PROJECT}",
-                confidence=80,
-            )
-        )
-    return groups
-
-
 def _named_anchor_candidates(file: FileMetadata) -> list[tuple[str, str]]:
     stem = file.relative_path.stem
-    raw_tokens = [
-        token
-        for token in re.split(r"[^A-Za-z0-9]+", stem)
-        if token
-    ]
+    raw_tokens = [token for token in re.split(r"[^A-Za-z0-9]+", stem) if token]
     normalized_tokens = [normalize_token(token) for token in raw_tokens]
     candidates: list[tuple[str, str]] = []
     if not normalized_tokens:

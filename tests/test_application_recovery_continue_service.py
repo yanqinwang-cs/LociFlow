@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from pathlib import Path
 import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from organizer.application.execution_coordinator import (
@@ -44,9 +44,7 @@ class RecoveryContinueContextServiceTests(unittest.TestCase):
             eligibility = RecoveryContinueEligibilityInspector(
                 FilesystemOperationInspector(root)
             )
-            contexts = RecoveryContinueContextStore(
-                repository.configured_root_identity
-            )
+            contexts = RecoveryContinueContextStore(repository.configured_root_identity)
             service = RecoveryContinueContextService(
                 lifecycle,
                 coordinator,

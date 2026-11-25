@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from dataclasses import asdict, replace
-from datetime import datetime, timedelta, timezone
 import json
 import os
-from pathlib import Path
 import tempfile
-from threading import Lock
 import uuid
+from dataclasses import asdict, replace
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from threading import Lock
 
 from organizer.application.duplicate_bin_models import (
     ApprovedDuplicateBatch,
@@ -24,7 +24,6 @@ from organizer.application.duplicate_bin_movement_models import (
 )
 from organizer.safety import validate_under_root
 from organizer.scope import DUPLICATE_BIN_RELATIVE_ROOT
-
 
 AUTHORIZATION_LIFETIME = timedelta(minutes=15)
 
@@ -63,7 +62,7 @@ class DuplicateBinAuthorizationRepository:
             raise DuplicateBinAuthorizationError("duplicate_batch_not_approved")
         if batch.configured_root_identity != self.configured_root_identity:
             raise DuplicateBinAuthorizationError("duplicate_batch_wrong_root")
-        issued = _parse_timestamp(issued_at or datetime.now(timezone.utc).isoformat())
+        issued = _parse_timestamp(issued_at or datetime.now(UTC).isoformat())
         authorization_id = str(uuid.uuid4())
         authorization = DuplicateBinMovementAuthorization(
             authorization_id=authorization_id,

@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from dataclasses import FrozenInstanceError
 import errno
 import hashlib
 import os
-from pathlib import Path
 import stat
 import tempfile
 import unittest
+from dataclasses import FrozenInstanceError
+from pathlib import Path
 from unittest import mock
 
 from organizer.application.file_identity_capture import (
@@ -19,7 +19,9 @@ from organizer.application.file_identity_capture import (
 
 
 class FileIdentityCaptureTests(unittest.TestCase):
-    def test_stable_regular_file_is_captured_deterministically_and_immutably(self) -> None:
+    def test_stable_regular_file_is_captured_deterministically_and_immutably(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             source = root / "alpha.txt"
@@ -57,7 +59,9 @@ class FileIdentityCaptureTests(unittest.TestCase):
             ):
                 captured = capture_regular_file_identity(source, root, chunk_size=17)
 
-            self.assertEqual(captured.content_identity.digest, hashlib.sha256(payload).hexdigest())
+            self.assertEqual(
+                captured.content_identity.digest, hashlib.sha256(payload).hexdigest()
+            )
             self.assertGreater(len(requested), 2)
             self.assertEqual(set(requested), {17})
 
@@ -70,7 +74,9 @@ class FileIdentityCaptureTests(unittest.TestCase):
                 with self.subTest(invalid=invalid), self.assertRaises(ValueError):
                     capture_regular_file_identity(source, root, chunk_size=invalid)
 
-    def test_rejects_symlink_directory_fifo_outside_and_missing_without_blocking(self) -> None:
+    def test_rejects_symlink_directory_fifo_outside_and_missing_without_blocking(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory)
             root = base / "root"
@@ -97,7 +103,10 @@ class FileIdentityCaptureTests(unittest.TestCase):
                 cases.append((fifo, "unsupported_item"))
 
             for path, code in cases:
-                with self.subTest(path=path.name), self.assertRaises(FileIdentityCaptureError) as raised:
+                with (
+                    self.subTest(path=path.name),
+                    self.assertRaises(FileIdentityCaptureError) as raised,
+                ):
                     capture_regular_file_identity(path, root)
                 self.assertEqual(raised.exception.code, code)
 
@@ -108,7 +117,9 @@ class FileIdentityCaptureTests(unittest.TestCase):
             source.write_bytes(b"private-content")
             with mock.patch(
                 "organizer.file_identity.os.open",
-                side_effect=PermissionError(errno.EACCES, "private operating-system detail"),
+                side_effect=PermissionError(
+                    errno.EACCES, "private operating-system detail"
+                ),
             ):
                 with self.assertRaises(FileIdentityCaptureError) as raised:
                     capture_regular_file_identity(source, root)
@@ -116,7 +127,12 @@ class FileIdentityCaptureTests(unittest.TestCase):
             self.assertEqual(raised.exception.code, "source_unreadable")
             self.assertEqual(str(raised.exception), IDENTITY_CAPTURE_SAFE_MESSAGE)
             rendered = str(raised.exception)
-            for secret in (str(root), "private-name", "private-content", "operating-system"):
+            for secret in (
+                str(root),
+                "private-name",
+                "private-content",
+                "operating-system",
+            ):
                 self.assertNotIn(secret, rendered)
 
     def test_devices_and_sockets_are_rejected_before_open(self) -> None:
@@ -124,28 +140,37 @@ class FileIdentityCaptureTests(unittest.TestCase):
             root = Path(directory)
             candidate = root / "special"
             for mode in (stat.S_IFCHR, stat.S_IFBLK, stat.S_IFSOCK):
-                fake_stat = os.stat_result(
-                    (mode | 0o600, 1, 1, 1, 0, 0, 0, 0, 0, 0)
-                )
+                fake_stat = os.stat_result((mode | 0o600, 1, 1, 1, 0, 0, 0, 0, 0, 0))
                 with (
                     self.subTest(mode=mode),
                     mock.patch(
                         "organizer.file_identity._lstat_initial",
                         return_value=fake_stat,
                     ),
-                    mock.patch(
-                        "organizer.file_identity.os.open"
-                    ) as opened,
+                    mock.patch("organizer.file_identity.os.open") as opened,
                     self.assertRaises(FileIdentityCaptureError) as raised,
                 ):
                     capture_regular_file_identity(candidate, root)
                 self.assertEqual(raised.exception.code, "unsupported_item")
                 opened.assert_not_called()
 
-    def test_removal_rename_replacement_and_same_inode_changes_fail_closed(self) -> None:
-        mutations = ("remove", "rename", "replace", "rewrite", "truncate", "extend", "touch")
+    def test_removal_rename_replacement_and_same_inode_changes_fail_closed(
+        self,
+    ) -> None:
+        mutations = (
+            "remove",
+            "rename",
+            "replace",
+            "rewrite",
+            "truncate",
+            "extend",
+            "touch",
+        )
         for mutation in mutations:
-            with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as directory:
+            with (
+                self.subTest(mutation=mutation),
+                tempfile.TemporaryDirectory() as directory,
+            ):
                 root = Path(directory)
                 source = root / "source.bin"
                 source.write_bytes(b"abcdefgh")
@@ -173,7 +198,10 @@ class FileIdentityCaptureTests(unittest.TestCase):
                             source.write_bytes(b"abcdefghijkl")
                         else:
                             current = source.stat()
-                            os.utime(source, ns=(current.st_atime_ns, current.st_mtime_ns + 1))
+                            os.utime(
+                                source,
+                                ns=(current.st_atime_ns, current.st_mtime_ns + 1),
+                            )
                     return block
 
                 with mock.patch(
@@ -186,7 +214,10 @@ class FileIdentityCaptureTests(unittest.TestCase):
 
     def test_read_failure_and_interruption_close_the_descriptor(self) -> None:
         for failure in (OSError(errno.EIO, "private read detail"), KeyboardInterrupt()):
-            with self.subTest(failure=type(failure).__name__), tempfile.TemporaryDirectory() as directory:
+            with (
+                self.subTest(failure=type(failure).__name__),
+                tempfile.TemporaryDirectory() as directory,
+            ):
                 root = Path(directory)
                 source = root / "source"
                 source.write_bytes(b"bytes")
@@ -208,7 +239,11 @@ class FileIdentityCaptureTests(unittest.TestCase):
                         side_effect=failure,
                     ),
                 ):
-                    expected = FileIdentityCaptureInterrupted if isinstance(failure, KeyboardInterrupt) else FileIdentityCaptureError
+                    expected = (
+                        FileIdentityCaptureInterrupted
+                        if isinstance(failure, KeyboardInterrupt)
+                        else FileIdentityCaptureError
+                    )
                     with self.assertRaises(expected) as raised:
                         capture_regular_file_identity(source, root)
 
@@ -221,7 +256,9 @@ class FileIdentityCaptureTests(unittest.TestCase):
                     {"source_unreadable", "identity_capture_interrupted"},
                 )
 
-    def test_success_and_post_hash_failure_close_descriptors_without_leakage(self) -> None:
+    def test_success_and_post_hash_failure_close_descriptors_without_leakage(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             source = root / "source"

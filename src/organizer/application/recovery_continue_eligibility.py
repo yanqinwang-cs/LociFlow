@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, replace
-from datetime import datetime
-from enum import StrEnum
 import errno
 import hashlib
 import os
+from dataclasses import asdict, dataclass, replace
+from datetime import datetime
+from enum import StrEnum
 from pathlib import Path
 
 from organizer.application.content_identity import RegularFileContentIdentity
@@ -103,8 +103,7 @@ class RecoveryContinueEligibilityResult:
                 or self.operation_id is None
                 or not self.completed_change_ids
                 or not self.pending_change_ids
-                or len(self.pending_change_ids)
-                != len(self.pending_capture_evidence)
+                or len(self.pending_change_ids) != len(self.pending_capture_evidence)
                 or any(
                     value is None
                     for value in (
@@ -236,12 +235,12 @@ class RecoveryContinueEligibilityInspector:
             raise _Unavailable from None
 
         unresolved = tuple(
-            [item for item in organization if item.status in BLOCKING_OPERATION_STATUSES]
-            + [
+            [
                 item
                 for item in organization
-                if item.status == STATUS_PARTIAL_MOVEMENT
+                if item.status in BLOCKING_OPERATION_STATUSES
             ]
+            + [item for item in organization if item.status == STATUS_PARTIAL_MOVEMENT]
             + [item for item in undos if item.status in _UNDO_BLOCKING]
             + [
                 item
@@ -416,8 +415,7 @@ class RecoveryContinueEligibilityInspector:
             completed_at=None,
             failure_code=None,
             expected_moves=tuple(
-                replace(item, result_state=MOVE_MOVED)
-                for item in record.expected_moves
+                replace(item, result_state=MOVE_MOVED) for item in record.expected_moves
             ),
         )
         try:
@@ -444,8 +442,7 @@ class RecoveryContinueEligibilityInspector:
             or UNDO_ITEM_RESTORED not in states
             or UNDO_ITEM_PENDING not in states
             or any(
-                state not in {UNDO_ITEM_RESTORED, UNDO_ITEM_PENDING}
-                for state in states
+                state not in {UNDO_ITEM_RESTORED, UNDO_ITEM_PENDING} for state in states
             )
             or not isinstance(record.started_at, str)
             or not _valid_timestamp(record.started_at)

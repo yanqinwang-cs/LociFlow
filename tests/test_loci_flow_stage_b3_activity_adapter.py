@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 import shutil
 import subprocess
 import textwrap
 import unittest
-
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 LOCI = ROOT / "src" / "organizer" / "web" / "static" / "loci_flow"
@@ -21,17 +20,17 @@ class LociFlowStageB3ActivityAdapterTests(unittest.TestCase):
         script = textwrap.dedent(
             f"""
             import assert from "node:assert/strict";
-            import * as api from {json.dumps((LOCI / 'api.js').as_uri())};
+            import * as api from {json.dumps((LOCI / "api.js").as_uri())};
             import {{
               ActivityDataError, activityErrorMessage, createBackendDataSource,
               isCanonicalActivityId, isUncertainUndoError, validateActivityResponse,
               validateUndoPreview
-            }} from {json.dumps((LOCI / 'data_source.js').as_uri())};
+            }} from {json.dumps((LOCI / "data_source.js").as_uri())};
             import {{
               buildProductionActivityEntries, buildProductionStageB1Contract,
               buildRouteViewModel
-            }} from {json.dumps((LOCI / 'view_models.js').as_uri())};
-            import {{ renderRoute }} from {json.dumps((LOCI / 'views.js').as_uri())};
+            }} from {json.dumps((LOCI / "view_models.js").as_uri())};
+            import {{ renderRoute }} from {json.dumps((LOCI / "views.js").as_uri())};
 
             const movementId="4d7b4e92-14c8-4bb9-8328-3d271f355574";
             const restoreId="77249be2-06f0-41a4-a7c4-6c25b97a3ab1";
@@ -69,7 +68,9 @@ class LociFlowStageB3ActivityAdapterTests(unittest.TestCase):
         self.assertEqual(completed.returncode, 0, completed.stderr)
         return json.loads(completed.stdout)
 
-    def test_activity_client_uses_only_fixed_same_origin_routes_and_fields(self) -> None:
+    def test_activity_client_uses_only_fixed_same_origin_routes_and_fields(
+        self,
+    ) -> None:
         result = self.run_node(
             """
             const requests=[];
@@ -121,10 +122,20 @@ class LociFlowStageB3ActivityAdapterTests(unittest.TestCase):
             },
         )
         all_fields = set(requests[1]["fields"]) | set(requests[2]["fields"])
-        for forbidden in ("path", "root", "source", "destination", "log_path", "file_id", "count"):
+        for forbidden in (
+            "path",
+            "root",
+            "source",
+            "destination",
+            "log_path",
+            "file_id",
+            "count",
+        ):
             self.assertNotIn(forbidden, all_fields)
 
-    def test_activity_validation_accepts_safe_records_and_strips_unknown_fields(self) -> None:
+    def test_activity_validation_accepts_safe_records_and_strips_unknown_fields(
+        self,
+    ) -> None:
         result = self.run_node(
             """
             const payload={activity:[{...clone(movement),log_path:"/private/secret",details:[
@@ -144,16 +155,25 @@ class LociFlowStageB3ActivityAdapterTests(unittest.TestCase):
         )
         self.assertEqual(result["empty"], {"activity": []})
         self.assertTrue(result["frozen"])
-        self.assertEqual(result["order"], [
-            "4d7b4e92-14c8-4bb9-8328-3d271f355574",
-            "77249be2-06f0-41a4-a7c4-6c25b97a3ab1",
-        ])
+        self.assertEqual(
+            result["order"],
+            [
+                "4d7b4e92-14c8-4bb9-8328-3d271f355574",
+                "77249be2-06f0-41a4-a7c4-6c25b97a3ab1",
+            ],
+        )
         serialized = json.dumps(result)
         for forbidden in ("log_path", "artifact_path", "sha256", "/private"):
             self.assertNotIn(forbidden, serialized)
-        self.assertEqual(set(result["preview"]), {
-            "operation_id", "files_to_restore", "confirmation", "confirmation_token",
-        })
+        self.assertEqual(
+            set(result["preview"]),
+            {
+                "operation_id",
+                "files_to_restore",
+                "confirmation",
+                "confirmation_token",
+            },
+        )
 
     def test_activity_validation_rejects_every_unsafe_contract_class(self) -> None:
         result = self.run_node(
@@ -206,28 +226,50 @@ class LociFlowStageB3ActivityAdapterTests(unittest.TestCase):
             console.log(JSON.stringify({entries,html,order:entries.map((entry)=>entry.id)}));
             """
         )
-        self.assertEqual(result["order"], [
-            "4d7b4e92-14c8-4bb9-8328-3d271f355574",
-            "105f4827-d0f9-4ccf-929d-3b95db6f1260",
-            "77249be2-06f0-41a4-a7c4-6c25b97a3ab1",
-            "58b61703-fe5d-4ef1-8c91-95a3936ff31d",
-        ])
-        self.assertEqual([entry["status"] for entry in result["entries"]], [
-            "Completed", "Partly completed", "Restored", "Partly completed",
-        ])
+        self.assertEqual(
+            result["order"],
+            [
+                "4d7b4e92-14c8-4bb9-8328-3d271f355574",
+                "105f4827-d0f9-4ccf-929d-3b95db6f1260",
+                "77249be2-06f0-41a4-a7c4-6c25b97a3ab1",
+                "58b61703-fe5d-4ef1-8c91-95a3936ff31d",
+            ],
+        )
+        self.assertEqual(
+            [entry["status"] for entry in result["entries"]],
+            [
+                "Completed",
+                "Partly completed",
+                "Restored",
+                "Partly completed",
+            ],
+        )
         self.assertEqual(result["entries"][0]["summary"], "2 files moved")
-        self.assertEqual(result["entries"][1]["summary"], "1 file moved · 1 file did not move")
+        self.assertEqual(
+            result["entries"][1]["summary"], "1 file moved · 1 file did not move"
+        )
         self.assertEqual(result["entries"][2]["summary"], "2 files restored")
-        self.assertEqual(result["entries"][3]["summary"], "1 file restored · 1 file did not restore")
-        self.assertEqual(result["entries"][0]["details"]["filesMoved"][0], "Inbox/alpha.txt → Documents/alpha.txt")
+        self.assertEqual(
+            result["entries"][3]["summary"], "1 file restored · 1 file did not restore"
+        )
+        self.assertEqual(
+            result["entries"][0]["details"]["filesMoved"][0],
+            "Inbox/alpha.txt → Documents/alpha.txt",
+        )
         self.assertIn("Did not restore", result["entries"][3]["details"]["problems"][0])
         html = result["html"]
         self.assertEqual(html.count("Undo move"), 1)
         self.assertIn("activity-details", html)
-        for machine_status in ("partial_movement", "partial_undo", "verification_failed"):
+        for machine_status in (
+            "partial_movement",
+            "partial_undo",
+            "verification_failed",
+        ):
             self.assertNotIn(machine_status, html)
 
-    def test_data_source_uses_backend_owned_eligibility_serializes_undo_and_maps_errors(self) -> None:
+    def test_data_source_uses_backend_owned_eligibility_serializes_undo_and_maps_errors(
+        self,
+    ) -> None:
         result = self.run_node(
             """
             const calls=[];
@@ -261,7 +303,10 @@ class LociFlowStageB3ActivityAdapterTests(unittest.TestCase):
         self.assertTrue(result["olderRejected"])
         self.assertTrue(result["serialized"])
         self.assertEqual(result["calls"].count("activity"), 2)
-        self.assertEqual([call[0] for call in result["calls"] if isinstance(call, list)], ["preview", "undo"])
+        self.assertEqual(
+            [call[0] for call in result["calls"] if isinstance(call, list)],
+            ["preview", "undo"],
+        )
         self.assertEqual(result["uncertain"], [True, True, False])
         self.assertEqual(
             result["messages"],

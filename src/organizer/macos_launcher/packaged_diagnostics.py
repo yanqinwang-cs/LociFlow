@@ -1,19 +1,18 @@
 from __future__ import annotations
 
-from collections.abc import Callable
-from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
 import fcntl
 import json
 import os
-from pathlib import Path
 import re
 import stat
+from collections.abc import Callable
+from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
+from pathlib import Path
 from threading import Lock
 from typing import Final, Protocol
 
 from organizer.macos_launcher.application_paths import MacOSApplicationPaths
-
 
 ACTIVE_LOG_NAME: Final = "launcher.log"
 ROTATED_LOG_NAMES: Final = ("launcher.log.1", "launcher.log.2")
@@ -163,7 +162,7 @@ class PackagedDiagnosticSink:
     ) -> None:
         self._paths = paths
         self._identity = _bounded_identity(identity)
-        self._now = now or (lambda: datetime.now(timezone.utc))
+        self._now = now or (lambda: datetime.now(UTC))
         self._lock = Lock()
 
     def __call__(self, diagnostic: DiagnosticLike) -> None:
@@ -206,7 +205,7 @@ class PackagedDiagnosticSink:
         if timestamp.tzinfo is None or timestamp.utcoffset() is None:
             return None
         return PackagedDiagnosticEvent(
-            timestamp_utc=timestamp.astimezone(timezone.utc).isoformat(),
+            timestamp_utc=timestamp.astimezone(UTC).isoformat(),
             application_version=identity.application_version,
             build_number=identity.build_number,
             phase=phase,

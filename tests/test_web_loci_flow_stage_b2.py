@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import asyncio
-from pathlib import Path
 import re
 import tempfile
 import unittest
+from pathlib import Path
 
 import httpx
 
@@ -19,7 +19,9 @@ class WebLociFlowStageB2Tests(unittest.IsolatedAsyncioTestCase):
         destination = self.root / "Organized" / "EvoSim_project_slides" / "slides"
         destination.mkdir(parents=True)
         (self.root / "EvoSim_project_slides.pptx").write_text("a", encoding="utf-8")
-        (self.root / "EvoSim_project_slides_final.pptx").write_text("b", encoding="utf-8")
+        (self.root / "EvoSim_project_slides_final.pptx").write_text(
+            "b", encoding="utf-8"
+        )
         self.token = "q" * 32
         self.app = create_app(
             WebAppConfig(
@@ -47,7 +49,9 @@ class WebLociFlowStageB2Tests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(launch.headers["location"], "/loci-flow")
         self.assertEqual(shell.status_code, 200)
         self.assertEqual(shell.headers["cache-control"], "no-store")
-        self.assertTrue(all(response.status_code == 200 for response in (app, api, data_source)))
+        self.assertTrue(
+            all(response.status_code == 200 for response in (app, api, data_source))
+        )
         self.assertIn("createBackendDataSource", app.text)
         self.assertNotIn("createFixtureDataSource", app.text)
         self.assertNotIn("fixtures.json", app.text)
@@ -56,7 +60,9 @@ class WebLociFlowStageB2Tests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("No files can move in this stage", shell.text)
         self.assertNotIn(str(self.root), shell.text)
 
-    async def test_existing_scan_stays_in_loci_flow_and_produces_real_recommendations(self) -> None:
+    async def test_existing_scan_stays_in_loci_flow_and_produces_real_recommendations(
+        self,
+    ) -> None:
         async with _client(self.app) as client:
             csrf = await self._authenticate(client)
             started = await client.post(
@@ -66,7 +72,9 @@ class WebLociFlowStageB2Tests(unittest.IsolatedAsyncioTestCase):
                 follow_redirects=False,
             )
             snapshot = await _wait_for_scan(self.app)
-            root_redirect = await client.get(started.headers["location"], follow_redirects=False)
+            root_redirect = await client.get(
+                started.headers["location"], follow_redirects=False
+            )
             shell = await client.get(root_redirect.headers["location"])
             organization = await client.get("/api/organization/current")
 
@@ -90,9 +98,19 @@ class WebLociFlowStageB2Tests(unittest.IsolatedAsyncioTestCase):
             {item["destination_folder"] for item in payload["recommended_changes"]},
             {"Organized/EvoSim_project_slides/slides"},
         )
-        self.assertFalse((self.root / "Organized" / "EvoSim_project_slides" / "slides" / "EvoSim_project_slides.pptx").exists())
+        self.assertFalse(
+            (
+                self.root
+                / "Organized"
+                / "EvoSim_project_slides"
+                / "slides"
+                / "EvoSim_project_slides.pptx"
+            ).exists()
+        )
 
-    async def test_real_decisions_approval_and_reload_reach_ready_without_movement(self) -> None:
+    async def test_real_decisions_approval_and_reload_reach_ready_without_movement(
+        self,
+    ) -> None:
         first_source = self.root / "EvoSim_project_slides.pptx"
         second_source = self.root / "EvoSim_project_slides_final.pptx"
         before = (first_source.read_bytes(), second_source.read_bytes())
@@ -151,10 +169,14 @@ class WebLociFlowStageB2Tests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(reloaded.json()["review"]["summary"]["files_to_move"], 1)
         self.assertTrue(first_source.exists())
         self.assertTrue(second_source.exists())
-        self.assertEqual((first_source.read_bytes(), second_source.read_bytes()), before)
+        self.assertEqual(
+            (first_source.read_bytes(), second_source.read_bytes()), before
+        )
         self.assertFalse((self.root / "AI_Review" / "organization_operations").exists())
 
-    async def test_backend_movement_is_post_only_and_executor_stays_out_of_routes(self) -> None:
+    async def test_backend_movement_is_post_only_and_executor_stays_out_of_routes(
+        self,
+    ) -> None:
         methods_by_path = {
             route.path: set(route.methods or set())
             for route in _application_routes(self.app.routes)
@@ -172,9 +194,12 @@ class WebLociFlowStageB2Tests(unittest.IsolatedAsyncioTestCase):
             "/api/loci-flow/move",
         ):
             self.assertNotIn(forbidden, methods_by_path)
-        routes_root = Path(__file__).resolve().parents[1] / "src" / "organizer" / "web" / "routes"
+        routes_root = (
+            Path(__file__).resolve().parents[1] / "src" / "organizer" / "web" / "routes"
+        )
         route_code = "\n".join(
-            path.read_text(encoding="utf-8") for path in sorted(routes_root.glob("*.py"))
+            path.read_text(encoding="utf-8")
+            for path in sorted(routes_root.glob("*.py"))
         )
         self.assertNotRegex(route_code, r"(?:from|import)\s+organizer\.executor")
 

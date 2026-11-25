@@ -7,7 +7,9 @@ from tests.web_consumer_support import ConsumerWebFixture
 
 
 class WebGuidedQueueTests(ConsumerWebFixture, unittest.IsolatedAsyncioTestCase):
-    async def test_skip_is_deferred_and_revisit_restores_queue_without_dirtying(self) -> None:
+    async def test_skip_is_deferred_and_revisit_restores_queue_without_dirtying(
+        self,
+    ) -> None:
         client = await self.authenticated_client()
         try:
             csrf = await self.csrf(client, "/duplicates")
@@ -55,7 +57,9 @@ class WebGuidedQueueTests(ConsumerWebFixture, unittest.IsolatedAsyncioTestCase):
         ).queue_for(ReviewModule.DUPLICATES)
         self.assertEqual(queue.deferred_ids, ())
 
-    async def test_guided_markup_is_accessible_and_uses_no_inline_behavior(self) -> None:
+    async def test_guided_markup_is_accessible_and_uses_no_inline_behavior(
+        self,
+    ) -> None:
         client = await self.authenticated_client()
         try:
             page = await client.get("/duplicates")

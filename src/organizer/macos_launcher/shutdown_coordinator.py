@@ -12,7 +12,6 @@ from organizer.web.signal_coordinator import (
     ShutdownSequenceState,
 )
 
-
 SAFE_SHUTDOWN_FAILURE_MESSAGE = (
     "Loci Flow couldn’t close safely. Keep the application open."
 )
@@ -267,9 +266,7 @@ class NativeShutdownCoordinator:
             }:
                 return
             self._state = NativeShutdownState.FAILED
-            should_reply = (
-                self._termination_reply_expected and not self._reply_sent
-            )
+            should_reply = self._termination_reply_expected and not self._reply_sent
             if should_reply:
                 self._reply_sent = True
         try:

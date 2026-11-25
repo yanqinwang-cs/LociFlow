@@ -1,10 +1,10 @@
 from __future__ import annotations
 
+import tempfile
+import unittest
 from dataclasses import replace
 from pathlib import Path
-import tempfile
 from threading import Barrier, Thread
-import unittest
 from unittest import mock
 
 from organizer.application.current_recovery_admission_status import (
@@ -28,7 +28,10 @@ from tests.test_application_filesystem_operation_admission import (
 class CurrentRecoveryAdmissionStatusTests(unittest.TestCase):
     def test_same_process_refresh_publishes_partial_attention(self) -> None:
         for family in ("movement", "undo"):
-            with self.subTest(family=family), tempfile.TemporaryDirectory() as directory:
+            with (
+                self.subTest(family=family),
+                tempfile.TemporaryDirectory() as directory,
+            ):
                 root = Path(directory).resolve()
                 operations, operation = _ordinary_operation(root)
                 inspector = FilesystemOperationInspector(root)
@@ -36,9 +39,7 @@ class CurrentRecoveryAdmissionStatusTests(unittest.TestCase):
                 self.assertFalse(status.snapshot().is_blocked)
 
                 if family == "movement":
-                    operations.save(
-                        replace(operation, status=STATUS_PARTIAL_MOVEMENT)
-                    )
+                    operations.save(replace(operation, status=STATUS_PARTIAL_MOVEMENT))
                 else:
                     undos, undo = _ordinary_undo(root, operation)
                     undos.save(replace(undo, status=UNDO_PARTIAL))
@@ -53,13 +54,14 @@ class CurrentRecoveryAdmissionStatusTests(unittest.TestCase):
         self,
     ) -> None:
         for family in ("movement", "undo"):
-            with self.subTest(family=family), tempfile.TemporaryDirectory() as directory:
+            with (
+                self.subTest(family=family),
+                tempfile.TemporaryDirectory() as directory,
+            ):
                 root = Path(directory).resolve()
                 operations, operation = _ordinary_operation(root)
                 if family == "movement":
-                    operations.save(
-                        replace(operation, status=STATUS_PARTIAL_MOVEMENT)
-                    )
+                    operations.save(replace(operation, status=STATUS_PARTIAL_MOVEMENT))
                 else:
                     undos, undo = _ordinary_undo(root, operation)
                     undos.save(replace(undo, status=UNDO_PARTIAL))

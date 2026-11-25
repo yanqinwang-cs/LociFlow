@@ -10,7 +10,9 @@ class WebReviewDirtyStateTests(
     WebReviewFixture,
     unittest.IsolatedAsyncioTestCase,
 ):
-    async def test_view_navigation_and_inspection_do_not_mark_session_dirty(self) -> None:
+    async def test_view_navigation_and_inspection_do_not_mark_session_dirty(
+        self,
+    ) -> None:
         client = await self.authenticated_client()
         try:
             clean = await client.get("/review/advanced")
@@ -58,7 +60,9 @@ class WebReviewDirtyStateTests(
         self.assertIn("Current: <strong>Keep here</strong>", page.text)
         self.assertIn("Unsaved review changes", page.text)
 
-    async def test_successful_save_allows_new_scan_and_invalidates_old_session(self) -> None:
+    async def test_successful_save_allows_new_scan_and_invalidates_old_session(
+        self,
+    ) -> None:
         client = await self.authenticated_client()
         try:
             csrf = await self.csrf(client)
@@ -95,7 +99,9 @@ class WebReviewDirtyStateTests(
             assert snapshot.session is not None
             self.assertFalse(snapshot.session.dirty)
 
-    async def test_dirty_marker_and_internal_navigation_script_are_csp_compliant(self) -> None:
+    async def test_dirty_marker_and_internal_navigation_script_are_csp_compliant(
+        self,
+    ) -> None:
         client = await self.authenticated_client()
         try:
             csrf = await self.csrf(client)

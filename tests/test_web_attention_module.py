@@ -7,7 +7,9 @@ from tests.web_consumer_support import ConsumerWebFixture
 
 
 class WebAttentionModuleTests(ConsumerWebFixture, unittest.IsolatedAsyncioTestCase):
-    async def test_attention_queue_is_cautious_and_secondary_row_is_preserved(self) -> None:
+    async def test_attention_queue_is_cautious_and_secondary_row_is_preserved(
+        self,
+    ) -> None:
         client = await self.authenticated_client()
         try:
             page = await client.get("/attention")

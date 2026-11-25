@@ -1,10 +1,10 @@
-from dataclasses import replace
-from pathlib import Path
 import json
 import tempfile
 import unittest
-from unittest import mock
 import uuid
+from dataclasses import replace
+from pathlib import Path
+from unittest import mock
 
 from organizer.application.duplicate_bin_models import (
     BATCH_APPROVED,
@@ -29,7 +29,6 @@ from organizer.application.duplicate_bin_repository import (
     DuplicateBinRepositoryError,
 )
 from tests.test_application_duplicate_bin_movement_service import _approved_batch
-
 
 STAMP = "2026-07-16T10:00:00+00:00"
 
@@ -118,7 +117,10 @@ class DuplicateBinRepositoryTests(unittest.TestCase):
             ITEM_UNATTEMPTED,
             ITEM_MOVING,
         ):
-            with self.subTest(state=unresolved_state), tempfile.TemporaryDirectory() as directory:
+            with (
+                self.subTest(state=unresolved_state),
+                tempfile.TemporaryDirectory() as directory,
+            ):
                 root = Path(directory).resolve()
                 repository = DuplicateBinRepository(root)
                 batch = _approved_batch(root, repository, selected=2)
@@ -147,9 +149,7 @@ class DuplicateBinRepositoryTests(unittest.TestCase):
                     restarted = DuplicateBinRepository(root)
                 atomic_write.assert_not_called()
                 current = restarted.load(batch.batch_id)
-                catalog = json.loads(
-                    restarted.catalog_path.read_text(encoding="utf-8")
-                )
+                catalog = json.loads(restarted.catalog_path.read_text(encoding="utf-8"))
                 self.assertEqual(current.status, BATCH_MOVED)
                 self.assertEqual(current.batch_version, unresolved.batch_version)
                 self.assertEqual(len(catalog["active_claims"]), 3)
@@ -161,9 +161,7 @@ class DuplicateBinRepositoryTests(unittest.TestCase):
             repository = DuplicateBinRepository(root)
             batch = _batch(repository, path="Inbox/copy.txt")
             repository.create_or_recover_approved_batch(batch)
-            malformed = json.loads(
-                repository.catalog_path.read_text(encoding="utf-8")
-            )
+            malformed = json.loads(repository.catalog_path.read_text(encoding="utf-8"))
             malformed["batches"][0]["status"] = BATCH_COMPLETED
             malformed["active_claims"] = []
             repository.catalog_path.write_text(
@@ -222,7 +220,9 @@ class DuplicateBinRepositoryTests(unittest.TestCase):
                 batch.batch_id,
                 expected_version=1,
                 status=BATCH_MOVED,
-                items=tuple(replace(item, state=ITEM_AVAILABLE) for item in batch.items),
+                items=tuple(
+                    replace(item, state=ITEM_AVAILABLE) for item in batch.items
+                ),
                 updated_at="2026-07-16T10:05:00+00:00",
             )
             restarted = DuplicateBinRepository(repository.root)

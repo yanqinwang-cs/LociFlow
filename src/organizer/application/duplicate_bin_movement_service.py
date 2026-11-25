@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import replace
-from datetime import datetime, timezone
 import os
-from pathlib import Path
 import stat
 import uuid
+from dataclasses import replace
+from datetime import UTC, datetime
+from pathlib import Path
 
 from organizer.application.duplicate_bin_authorization_repository import (
     DuplicateBinAuthorizationError,
@@ -74,7 +74,6 @@ from organizer.scope import (
     validate_duplicate_bin_item_destination,
 )
 
-
 CONFIRM_MOVE_COPIES_TO_DUPLICATE_BIN = "MOVE COPIES TO DUPLICATE BIN"
 
 
@@ -132,9 +131,7 @@ def _preview_duplicate_bin_movement(
         if not batch.can_receive_authorization:
             raise DuplicateBinMovementError("duplicate_batch_not_approved")
         if operation_repository.find_for_batch(batch_id) is not None:
-            raise DuplicateBinMovementError(
-                "duplicate_bin_movement_already_started"
-            )
+            raise DuplicateBinMovementError("duplicate_bin_movement_already_started")
         admission = filesystem_operation_admission or FilesystemOperationAdmission(
             FilesystemOperationInspector(batch_repository.root)
         )
@@ -190,7 +187,7 @@ def execute_duplicate_bin_movement(
         )
         batch = None
         if authorization.status == AUTH_AVAILABLE:
-            current_time = _timestamp(now or datetime.now(timezone.utc).isoformat())
+            current_time = _timestamp(now or datetime.now(UTC).isoformat())
             if current_time >= _timestamp(authorization.expires_at):
                 raise DuplicateBinMovementError("confirmation_expired")
             try:
@@ -763,4 +760,4 @@ def _server_uuid(value: str, code: str) -> None:
 
 
 def _utc_timestamp() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()

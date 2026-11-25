@@ -12,7 +12,14 @@ class ConsumerNavigationTests(ConsumerWebFixture, unittest.IsolatedAsyncioTestCa
             root = await client.get("/")
             responses = {
                 path: await client.get(path)
-                for path in ("/duplicates", "/organize", "/attention", "/scans", "/settings", "/review/advanced")
+                for path in (
+                    "/duplicates",
+                    "/organize",
+                    "/attention",
+                    "/scans",
+                    "/settings",
+                    "/review/advanced",
+                )
             }
         finally:
             await client.aclose()
@@ -24,10 +31,16 @@ class ConsumerNavigationTests(ConsumerWebFixture, unittest.IsolatedAsyncioTestCa
         for label in ("Home", "Duplicates", "Organize", "Scans", "Settings"):
             self.assertIn(f">{label}</a>", responses["/scans"].text)
         self.assertNotIn('href="/attention" aria-current', responses["/scans"].text)
-        self.assertIn('href="/duplicates" aria-current="page"', responses["/duplicates"].text)
-        self.assertIn('href="/organize" aria-current="page"', responses["/organize"].text)
+        self.assertIn(
+            'href="/duplicates" aria-current="page"', responses["/duplicates"].text
+        )
+        self.assertIn(
+            'href="/organize" aria-current="page"', responses["/organize"].text
+        )
         self.assertIn('href="/scans" aria-current="page"', responses["/scans"].text)
-        self.assertIn('href="/settings" aria-current="page"', responses["/settings"].text)
+        self.assertIn(
+            'href="/settings" aria-current="page"', responses["/settings"].text
+        )
         self.assertIn("Local only on this computer", responses["/settings"].text)
         self.assertIn("Cloud services", responses["/settings"].text)
         self.assertNotIn("<form", responses["/settings"].text)

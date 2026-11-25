@@ -2,12 +2,11 @@ from __future__ import annotations
 
 import hashlib
 import json
-from pathlib import Path
 import shutil
 import subprocess
 import textwrap
 import unittest
-
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 LOCI = ROOT / "src" / "organizer" / "web" / "static" / "loci_flow"
@@ -185,15 +184,15 @@ class LociFlowStageB2AdapterTests(unittest.TestCase):
         script = textwrap.dedent(
             f"""
             import assert from "node:assert/strict";
-            import * as api from {json.dumps((LOCI / 'api.js').as_uri())};
+            import * as api from {json.dumps((LOCI / "api.js").as_uri())};
             import {{
               createBackendDataSource, isSafeRelativePath,
               validateOrganizationResponse
-            }} from {json.dumps((LOCI / 'data_source.js').as_uri())};
+            }} from {json.dumps((LOCI / "data_source.js").as_uri())};
             import {{
               buildProductionStageB1Contract, buildRouteViewModel
-            }} from {json.dumps((LOCI / 'view_models.js').as_uri())};
-            import {{ renderRoute }} from {json.dumps((LOCI / 'views.js').as_uri())};
+            }} from {json.dumps((LOCI / "view_models.js").as_uri())};
+            import {{ renderRoute }} from {json.dumps((LOCI / "views.js").as_uri())};
             const original = {json.dumps(_payload())};
             const clone = (value) => JSON.parse(JSON.stringify(value));
             const payload = clone(original);
@@ -309,7 +308,9 @@ class LociFlowStageB2AdapterTests(unittest.TestCase):
         self.assertTrue(all(result["malformed"]))
         self.assertEqual(result["safe"], [True, True])
 
-    def test_real_view_model_maps_backend_values_without_inference_or_leaks(self) -> None:
+    def test_real_view_model_maps_backend_values_without_inference_or_leaks(
+        self,
+    ) -> None:
         result = self.run_node(
             """
             payload.recommended_changes[0].item.kind="future_kind";
@@ -334,7 +335,9 @@ class LociFlowStageB2AdapterTests(unittest.TestCase):
         self.assertEqual(result["workflow"]["status"], "3 changes are waiting")
         self.assertEqual(result["scope"]["displayName"], "Downloads")
         self.assertEqual(result["recommendation"]["kind"], "Document")
-        self.assertEqual(result["recommendation"]["destinationFolderLabel"], "Documents › Reports")
+        self.assertEqual(
+            result["recommendation"]["destinationFolderLabel"], "Documents › Reports"
+        )
         self.assertEqual(result["recommendation"]["reasonText"], "Clear folder match")
         self.assertEqual(
             [option["optionId"] for option in result["destination"]["options"]],
@@ -344,7 +347,9 @@ class LociFlowStageB2AdapterTests(unittest.TestCase):
         self.assertEqual(len(result["duplicate"]["copies"]), 2)
         self.assertEqual(result["kept"]["standardName"], "Protect submissions")
         self.assertEqual(result["tree"]["nodes"][0]["name"], "Documents › Reports")
-        self.assertTrue(all(not value["connected"] for value in result["disconnected"].values()))
+        self.assertTrue(
+            all(not value["connected"] for value in result["disconnected"].values())
+        )
         for forbidden in (
             "matched_existing_group",
             "multiple_safe_destinations",
@@ -355,7 +360,9 @@ class LociFlowStageB2AdapterTests(unittest.TestCase):
         ):
             self.assertNotIn(forbidden, result["html"])
 
-    def test_backend_data_source_polls_serializes_and_uses_current_revision(self) -> None:
+    def test_backend_data_source_polls_serializes_and_uses_current_revision(
+        self,
+    ) -> None:
         result = self.run_node(
             """
             const delays=[]; const calls=[];
@@ -398,7 +405,9 @@ class LociFlowStageB2AdapterTests(unittest.TestCase):
             """
         )
         self.assertTrue(result["delays"] and min(result["delays"]) >= 1000)
-        recommendation = next(call for call in result["calls"] if call[0] == "recommendation")
+        recommendation = next(
+            call for call in result["calls"] if call[0] == "recommendation"
+        )
         self.assertEqual(recommendation[1]["scanGeneration"], "g1")
         self.assertEqual(recommendation[1]["expectedRevision"], 0)
         self.assertEqual(recommendation[2], "csrf")
@@ -407,7 +416,9 @@ class LociFlowStageB2AdapterTests(unittest.TestCase):
         self.assertTrue(result["invalidSubset"])
         self.assertTrue(result["serialized"])
 
-    def test_production_bootstrap_has_no_fixture_fallback_or_future_requests(self) -> None:
+    def test_production_bootstrap_has_no_fixture_fallback_or_future_requests(
+        self,
+    ) -> None:
         app = (LOCI / "app.js").read_text(encoding="utf-8")
         data_source = (LOCI / "data_source.js").read_text(encoding="utf-8")
         api = (LOCI / "api.js").read_text(encoding="utf-8")

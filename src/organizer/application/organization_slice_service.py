@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from types import MappingProxyType
 from typing import Any
@@ -140,10 +140,7 @@ def build_internal_organization_projection(
         for metadata in metadata_items
         if metadata.is_dir
     }
-    all_paths = {
-        _metadata_relative_path(metadata)
-        for metadata in metadata_items
-    }
+    all_paths = {_metadata_relative_path(metadata) for metadata in metadata_items}
     evaluations = {
         relative_path: evaluate_actionable_source_path(
             metadata.relative_path,
@@ -188,18 +185,14 @@ def build_internal_organization_projection(
         evaluations=evaluations,
         root=scan_result.root,
     )
-    visible_paths = {
-        change.item.relative_path for change in recommended
-    }
+    visible_paths = {change.item.relative_path for change in recommended}
     visible_paths.update(
         choice.item.relative_path
         for choice in destination_choices
         if choice.item is not None
     )
     visible_paths.update(
-        copy.relative_path
-        for choice in duplicate_choices
-        for copy in choice.copies
+        copy.relative_path for choice in duplicate_choices for copy in choice.copies
     )
     kept = _kept_by_standards(
         evaluations,
@@ -267,7 +260,7 @@ def _consumer_snapshot(
         size_bytes=metadata.size_bytes,
         modified_at=datetime.fromtimestamp(
             metadata.modified_time,
-            tz=timezone.utc,
+            tz=UTC,
         ).isoformat(),
         relative_path=relative_path,
         current_folder=current_folder,
@@ -286,11 +279,7 @@ def _kept_by_standards(
     for relative_path in sorted(snapshots):
         evaluation = evaluations[relative_path]
         standard = read_item_by_id(standards, evaluation.standard_id)
-        if (
-            evaluation.allowed
-            or evaluation.reason_code is None
-            or standard is None
-        ):
+        if evaluation.allowed or evaluation.reason_code is None or standard is None:
             continue
         kept.append(
             KeptByStandard(
@@ -305,10 +294,14 @@ def _kept_by_standards(
         kept_paths.add(relative_path)
 
     for standard in standards.items:
-        if standard.preset_type not in {
-            "legacy_ignored_term",
-            "keep_folder_unchanged",
-        } or not standard.active:
+        if (
+            standard.preset_type
+            not in {
+                "legacy_ignored_term",
+                "keep_folder_unchanged",
+            }
+            or not standard.active
+        ):
             continue
         for relative_path in standard.matched_relative_paths:
             if (
@@ -351,7 +344,9 @@ def _duplicate_choices(
         if not isinstance(raw_group, dict):
             raise ValueError("scan report duplicate group must be an object")
         files = raw_group.get("files")
-        if not isinstance(files, list) or not all(isinstance(path, str) for path in files):
+        if not isinstance(files, list) or not all(
+            isinstance(path, str) for path in files
+        ):
             raise ValueError("scan report duplicate files must be strings")
         eligible_paths = sorted(
             {
@@ -369,15 +364,15 @@ def _duplicate_choices(
         if not isinstance(sha256, str) or not sha256:
             raise ValueError("scan report duplicate hash must be a string")
         if type(size_bytes) is not int or size_bytes < 0:
-            raise ValueError("scan report duplicate size must be a non-negative integer")
+            raise ValueError(
+                "scan report duplicate size must be a non-negative integer"
+            )
         copies = tuple(snapshots[path] for path in eligible_paths)
         files_tuple = tuple(metadata_by_path[path] for path in eligible_paths)
         copy_groups.append((copies, sha256, size_bytes, files_tuple))
         duplicate_paths.update(eligible_paths)
 
-    copy_groups.sort(
-        key=lambda row: tuple(copy.relative_path for copy in row[0])
-    )
+    copy_groups.sort(key=lambda row: tuple(copy.relative_path for copy in row[0]))
     choices = tuple(
         ChoiceNeeded(
             id=f"D{index}",

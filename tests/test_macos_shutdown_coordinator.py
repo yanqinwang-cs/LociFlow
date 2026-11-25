@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+import unittest
 from collections.abc import Callable
 from concurrent.futures import Future
 from threading import Event, Lock
-import unittest
 from unittest import mock
 
 from organizer.application.runtime_lifecycle import (

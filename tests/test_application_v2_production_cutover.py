@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import replace
-from pathlib import Path
 import tempfile
 import unittest
+from dataclasses import replace
+from pathlib import Path
 from unittest import mock
 
 from organizer.application.activity_service import (
@@ -194,9 +194,7 @@ def _owners(root: Path) -> _Owners:
         consume_authorization=owners.coordinator.consume,
         refresh_recovery_status=owners.status.refresh,
     )
-    store = V2UndoAuthorizationStore(
-        owners.operations.configured_root_identity
-    )
+    store = V2UndoAuthorizationStore(owners.operations.configured_root_identity)
     owners.undo = OrganizationIdentityUndoOrchestrationService(
         owners.operations,
         owners.undos,

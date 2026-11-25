@@ -1,18 +1,24 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
-from enum import Enum
 import hashlib
 import os
-from pathlib import Path, PurePosixPath
 import stat
+from dataclasses import asdict, dataclass
+from enum import Enum
+from pathlib import Path, PurePosixPath
 
 from organizer.application.content_identity import OrdinaryFileIdentityCompatibility
 from organizer.application.duplicate_bin_models import canonical_json_bytes
 from organizer.application.duplicate_bin_movement_models import (
     MOVE_ATTEMPTING as DUPLICATE_MOVE_ATTEMPTING,
+)
+from organizer.application.duplicate_bin_movement_models import (
     MOVE_MOVED as DUPLICATE_MOVE_MOVED,
+)
+from organizer.application.duplicate_bin_movement_models import (
     MOVE_PENDING as DUPLICATE_MOVE_PENDING,
+)
+from organizer.application.duplicate_bin_movement_models import (
     OP_INTERRUPTED,
     OP_MOVED_UNVERIFIED,
     OP_MOVING,
@@ -20,8 +26,14 @@ from organizer.application.duplicate_bin_movement_models import (
 )
 from organizer.application.duplicate_bin_restore_models import (
     ITEM_ATTEMPTING as DUPLICATE_RESTORE_ATTEMPTING,
+)
+from organizer.application.duplicate_bin_restore_models import (
     ITEM_PENDING as DUPLICATE_RESTORE_PENDING,
+)
+from organizer.application.duplicate_bin_restore_models import (
     ITEM_RESTORED as DUPLICATE_RESTORE_RESTORED,
+)
+from organizer.application.duplicate_bin_restore_models import (
     RESTORE_INTERRUPTED,
     RESTORE_PREPARED,
     RESTORE_RESTORED_UNVERIFIED,
@@ -260,9 +272,7 @@ class RecoveryEvidenceInspector:
         organization = self.inspector.organization_operations.list_records()
         undos = self.inspector.organization_undos.list_records()
         catalog = self.inspector.duplicate_bin_batches.read_catalog()
-        move_authorizations = (
-            self.inspector.duplicate_bin_authorizations.list_records()
-        )
+        move_authorizations = self.inspector.duplicate_bin_authorizations.list_records()
         duplicate_moves = self.inspector.duplicate_bin_operations.list_records()
         restore_authorizations = (
             self.inspector.duplicate_bin_restores.list_authorizations()
@@ -282,9 +292,7 @@ class RecoveryEvidenceInspector:
 
         unresolved = tuple(
             [
-                _UnresolvedRecord(
-                    RecoveryOperationFamily.ORGANIZATION_MOVEMENT, item
-                )
+                _UnresolvedRecord(RecoveryOperationFamily.ORGANIZATION_MOVEMENT, item)
                 for item in organization
                 if item.status
                 in {
@@ -308,17 +316,13 @@ class RecoveryEvidenceInspector:
                 }
             ]
             + [
-                _UnresolvedRecord(
-                    RecoveryOperationFamily.DUPLICATE_BIN_MOVEMENT, item
-                )
+                _UnresolvedRecord(RecoveryOperationFamily.DUPLICATE_BIN_MOVEMENT, item)
                 for item in duplicate_moves
                 if item.status
                 in {OP_PREPARED, OP_MOVING, OP_MOVED_UNVERIFIED, OP_INTERRUPTED}
             ]
             + [
-                _UnresolvedRecord(
-                    RecoveryOperationFamily.DUPLICATE_BIN_RESTORE, item
-                )
+                _UnresolvedRecord(RecoveryOperationFamily.DUPLICATE_BIN_RESTORE, item)
                 for item in restores
                 if item.status
                 in {
@@ -411,12 +415,19 @@ class RecoveryEvidenceInspector:
             pending_states = {UNDO_ITEM_PENDING, UNDO_ITEM_ATTEMPTING}
         elif family is RecoveryOperationFamily.DUPLICATE_BIN_MOVEMENT:
             batch = next(
-                (item for item in state["catalog"].batches if item.batch_id == record.batch_id),
+                (
+                    item
+                    for item in state["catalog"].batches
+                    if item.batch_id == record.batch_id
+                ),
                 None,
             )
             authorization = next(
-                (item for item in state["move_authorizations"]
-                 if item.authorization_id == record.authorization_id),
+                (
+                    item
+                    for item in state["move_authorizations"]
+                    if item.authorization_id == record.authorization_id
+                ),
                 None,
             )
             if batch is None or authorization is None:
@@ -439,9 +450,7 @@ class RecoveryEvidenceInspector:
         else:
             batch_ids = {item.batch_id for item in record.items}
             batches = tuple(
-                item
-                for item in state["catalog"].batches
-                if item.batch_id in batch_ids
+                item for item in state["catalog"].batches if item.batch_id in batch_ids
             )
             parents = tuple(
                 item
@@ -449,8 +458,11 @@ class RecoveryEvidenceInspector:
                 if item.operation_id in record.parent_movement_operation_ids
             )
             authorization = next(
-                (item for item in state["restore_authorizations"]
-                 if item.authorization_id == record.authorization_id),
+                (
+                    item
+                    for item in state["restore_authorizations"]
+                    if item.authorization_id == record.authorization_id
+                ),
                 None,
             )
             if not batches or not parents or authorization is None:
@@ -479,25 +491,19 @@ class RecoveryEvidenceInspector:
             completed_states,
             pending_states,
         )
-        if (
-            family is RecoveryOperationFamily.ORGANIZATION_MOVEMENT
-            and (
-                record.status == STATUS_MOVED_UNVERIFIED
-                or record.identity_compatibility
-                is OrdinaryFileIdentityCompatibility.IDENTITY_V2
-            )
+        if family is RecoveryOperationFamily.ORGANIZATION_MOVEMENT and (
+            record.status == STATUS_MOVED_UNVERIFIED
+            or record.identity_compatibility
+            is OrdinaryFileIdentityCompatibility.IDENTITY_V2
         ):
             # Neither historical metadata nor the disconnected v2 verifier is
             # a public recovery capability. Review remains the only safe action.
             actionability = RecoveryActionability.INSPECT_ONLY
             actions = ()
-        elif (
-            family is RecoveryOperationFamily.ORGANIZATION_UNDO
-            and (
-                record.status == UNDO_RESTORED_UNVERIFIED
-                or record.identity_compatibility
-                is OrdinaryFileIdentityCompatibility.IDENTITY_V2
-            )
+        elif family is RecoveryOperationFamily.ORGANIZATION_UNDO and (
+            record.status == UNDO_RESTORED_UNVERIFIED
+            or record.identity_compatibility
+            is OrdinaryFileIdentityCompatibility.IDENTITY_V2
         ):
             # Historical v1 records lack authoritative content identity, and
             # the v2 verifier is not yet a public recovery capability. Neither
@@ -596,7 +602,9 @@ def _classify(
     completed_states: set[str],
     pending_states: set[str],
 ) -> tuple[RecoveryActionability, tuple[RecoveryActionKind, ...]]:
-    if not items or any(item.disposition is _ItemDisposition.AMBIGUOUS for item in items):
+    if not items or any(
+        item.disposition is _ItemDisposition.AMBIGUOUS for item in items
+    ):
         return RecoveryActionability.NON_ACTIONABLE_AMBIGUOUS, ()
     all_complete = all(item.disposition is _ItemDisposition.COMPLETE for item in items)
     all_pending = all(item.disposition is _ItemDisposition.PENDING for item in items)
@@ -617,7 +625,12 @@ def _classify(
                 (RecoveryActionKind.CHECK_RESULT,),
             )
         return RecoveryActionability.NON_ACTIONABLE_AMBIGUOUS, ()
-    if durable_status in {STATUS_PREPARED, UNDO_PREPARED, OP_PREPARED, RESTORE_PREPARED}:
+    if durable_status in {
+        STATUS_PREPARED,
+        UNDO_PREPARED,
+        OP_PREPARED,
+        RESTORE_PREPARED,
+    }:
         if all_pending and recorded_pre_move:
             return (
                 RecoveryActionability.CONTINUE_POSSIBLE,
@@ -649,9 +662,7 @@ def _path_evidence(
 ) -> _PathEvidence:
     parts = PurePosixPath(relative).parts
     if not parts or PurePosixPath(relative).is_absolute() or ".." in parts:
-        return _PathEvidence(
-            False, None, exceptional=FilesystemEvidence.AMBIGUOUS
-        )
+        return _PathEvidence(False, None, exceptional=FilesystemEvidence.AMBIGUOUS)
     current = root
     try:
         for index, component in enumerate(parts):
@@ -669,9 +680,7 @@ def _path_evidence(
                     True, None, exceptional=FilesystemEvidence.AMBIGUOUS
                 )
         if not stat.S_ISREG(metadata.st_mode):
-            return _PathEvidence(
-                True, None, exceptional=FilesystemEvidence.AMBIGUOUS
-            )
+            return _PathEvidence(True, None, exceptional=FilesystemEvidence.AMBIGUOUS)
         identity_matches = metadata.st_size == expected_size and (
             expected_mtime is None or metadata.st_mtime == expected_mtime
         )

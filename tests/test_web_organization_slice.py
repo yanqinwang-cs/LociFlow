@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import json
-from pathlib import Path
 import re
 import tempfile
 import unittest
+from datetime import UTC, datetime
+from pathlib import Path
 
 import httpx
 
@@ -36,7 +36,7 @@ class WebOrganizationSliceTests(unittest.IsolatedAsyncioTestCase):
                 testing=True,
             )
         )
-        self.completed_at = datetime(2026, 7, 14, 18, 52, tzinfo=timezone.utc)
+        self.completed_at = datetime(2026, 7, 14, 18, 52, tzinfo=UTC)
 
     async def asyncTearDown(self) -> None:
         self.directory.cleanup()
@@ -112,9 +112,7 @@ class WebOrganizationSliceTests(unittest.IsolatedAsyncioTestCase):
             await client.get(f"/launch/{self.token}", follow_redirects=False)
             unknown = await client.get("/api/organization/current?unknown=1")
             root = await client.get("/api/organization/current?root=/tmp")
-            duplicate = await client.get(
-                "/api/organization/current?style=a&style=b"
-            )
+            duplicate = await client.get("/api/organization/current?style=a&style=b")
             post = await client.post("/api/organization/current")
 
         for response in (unknown, root, duplicate):
@@ -123,7 +121,9 @@ class WebOrganizationSliceTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(response.headers["cache-control"], "no-store")
         self.assertEqual(post.status_code, 405)
 
-    async def test_unavailable_standards_block_review_approval_and_movement_then_recover(self) -> None:
+    async def test_unavailable_standards_block_review_approval_and_movement_then_recover(
+        self,
+    ) -> None:
         config = self.root / ORGANIZATION_RULES_RELATIVE_PATH
         config.parent.mkdir(parents=True, exist_ok=True)
         config.write_text("{invalid", encoding="utf-8")

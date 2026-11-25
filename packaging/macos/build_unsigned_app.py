@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import importlib.util
 import os
-from pathlib import Path
 import platform
 import shutil
 import subprocess
 import sys
+from pathlib import Path
 
 from release_metadata import (
     APP_NAME,
@@ -18,7 +18,6 @@ from validate_app_bundle import (
     format_validation_report,
     validate_app_bundle,
 )
-
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 PACKAGING_ROOT = PROJECT_ROOT / "packaging" / "macos"
@@ -37,15 +36,13 @@ def main() -> int:
         importlib.util.find_spec("PyInstaller") is None
         or importlib.util.find_spec("PIL") is None
     ):
-        print('Install the build extra with: uv sync --extra macos-build')
+        print("Install the build extra with: uv sync --extra macos-build")
         return 2
     if not SPEC_PATH.is_file():
         print("The checked-in Loci Flow packaging specification is unavailable.")
         return 1
     if platform.machine() != SUPPORTED_ARCHITECTURE:
-        print(
-            "The build host does not match the declared Loci Flow architecture."
-        )
+        print("The build host does not match the declared Loci Flow architecture.")
         return 2
 
     for output in (BUILD_PATH, DIST_PATH):

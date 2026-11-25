@@ -1,0 +1,34 @@
+name: Checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  tests-and-lint:
+    name: Tests and lint
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.4.0
+
+      - name: Install dependencies from the lockfile
+        run: uv sync --locked --python 3.13 --extra web --extra web-test --extra macos-launcher --extra macos-build
+
+      - name: Lint and format check
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+
+      - name: Run the test suite
+        env:
+          PYTHONPATH: src
+        run: uv run python -m unittest discover -s tests

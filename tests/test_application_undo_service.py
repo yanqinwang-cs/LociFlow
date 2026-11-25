@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import json
 import os
-from pathlib import Path
 import tempfile
-from threading import Event, Thread
 import unittest
-from unittest import mock
 import uuid
+from pathlib import Path
+from threading import Event, Thread
+from unittest import mock
 
 import organizer.application.undo_service as undo_service
 from organizer.application.execution_coordinator import OrganizationExecutionCoordinator
@@ -24,24 +24,28 @@ from organizer.application.organization_operation_models import (
     OrganizationOperationRecord,
     OrganizationOperationVerification,
 )
-from organizer.application.organization_operation_repository import OrganizationOperationRepository
+from organizer.application.organization_operation_repository import (
+    OrganizationOperationRepository,
+)
 from organizer.application.organization_undo_models import (
     UNDO_ITEM_FAILED,
     UNDO_ITEM_RESTORED,
     UNDO_PARTIAL,
     UNDO_RESTORED,
 )
-from organizer.application.organization_undo_repository import OrganizationUndoRepository
+from organizer.application.organization_undo_repository import (
+    OrganizationUndoRepository,
+)
+from organizer.application.runtime_lifecycle import (
+    ApplicationStoppingError,
+    RuntimeOperationKind,
+)
 from organizer.application.undo_service import (
     CONFIRM_UNDO_FILE_MOVE,
     OrganizationUndoError,
     inspect_incomplete_organization_undo,
     preview_organization_undo,
     undo_organization_operation,
-)
-from organizer.application.runtime_lifecycle import (
-    ApplicationStoppingError,
-    RuntimeOperationKind,
 )
 from organizer.executor import apply_move_plan
 from organizer.models import MovePlanItem
@@ -124,7 +128,9 @@ class OrganizationUndoServiceTests(unittest.TestCase):
             )
             self.assertEqual(undos.list_records(), ())
 
-    def test_preview_and_complete_undo_are_authorized_durable_verified_and_replay_safe(self) -> None:
+    def test_preview_and_complete_undo_are_authorized_durable_verified_and_replay_safe(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             operations, undos, coordinator, record = _verified_operation(root, 2)
@@ -174,9 +180,9 @@ class OrganizationUndoServiceTests(unittest.TestCase):
             self.assertEqual(persisted.status, UNDO_RESTORED)
             self.assertEqual(persisted.schema_version, 1)
             payload = json.loads(
-                (
-                    undos.directory / f"{persisted.undo_id}.json"
-                ).read_text(encoding="utf-8")
+                (undos.directory / f"{persisted.undo_id}.json").read_text(
+                    encoding="utf-8"
+                )
             )
             self.assertNotIn("content_identity", payload["expected_restores"][0])
             self.assertTrue(persisted.legacy_undo_log)
@@ -196,7 +202,9 @@ class OrganizationUndoServiceTests(unittest.TestCase):
                 0,
             )
 
-    def test_stopping_rejects_before_undo_intent_or_filesystem_side_effects(self) -> None:
+    def test_stopping_rejects_before_undo_intent_or_filesystem_side_effects(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             operations, undos, coordinator, record = _verified_operation(root, 1)
@@ -262,7 +270,9 @@ class OrganizationUndoServiceTests(unittest.TestCase):
 
             self.assertTrue(coordinator.try_acquire())
             try:
-                with self.assertRaisesRegex(OrganizationUndoError, "movement_or_undo_in_progress"):
+                with self.assertRaisesRegex(
+                    OrganizationUndoError, "movement_or_undo_in_progress"
+                ):
                     undo_organization_operation(
                         browser_session_id="browser-one",
                         confirmation=CONFIRM_UNDO_FILE_MOVE,
@@ -279,9 +289,17 @@ class OrganizationUndoServiceTests(unittest.TestCase):
             )
             self.assertEqual(outcome.status, UNDO_RESTORED)
 
-    def test_changed_destination_and_source_collision_reject_preview_without_mutation(self) -> None:
-        for change, code in (("changed", "undo_source_changed"), ("collision", "undo_destination_occupied")):
-            with self.subTest(change=change), tempfile.TemporaryDirectory() as directory:
+    def test_changed_destination_and_source_collision_reject_preview_without_mutation(
+        self,
+    ) -> None:
+        for change, code in (
+            ("changed", "undo_source_changed"),
+            ("collision", "undo_destination_occupied"),
+        ):
+            with (
+                self.subTest(change=change),
+                tempfile.TemporaryDirectory() as directory,
+            ):
                 root = Path(directory).resolve()
                 operations, undos, coordinator, record = _verified_operation(root, 1)
                 if change == "changed":
@@ -300,13 +318,19 @@ class OrganizationUndoServiceTests(unittest.TestCase):
                     )
                 self.assertEqual(undos.list_records(), ())
 
-    def test_missing_symlink_and_broken_source_are_rejected_without_restore(self) -> None:
+    def test_missing_symlink_and_broken_source_are_rejected_without_restore(
+        self,
+    ) -> None:
         for change, code in (
             ("missing", "undo_source_missing"),
             ("destination_symlink", "unsafe_undo_path"),
             ("broken_source_symlink", "undo_destination_occupied"),
         ):
-            with self.subTest(change=change), tempfile.TemporaryDirectory() as directory, tempfile.TemporaryDirectory() as outside_directory:
+            with (
+                self.subTest(change=change),
+                tempfile.TemporaryDirectory() as directory,
+                tempfile.TemporaryDirectory() as outside_directory,
+            ):
                 root = Path(directory).resolve()
                 operations, undos, coordinator, record = _verified_operation(root, 1)
                 destination = root / "Documents/file-0.txt"
@@ -330,7 +354,9 @@ class OrganizationUndoServiceTests(unittest.TestCase):
                     )
                 self.assertEqual(undos.list_records(), ())
 
-    def test_legacy_log_is_server_resolved_strictly_typed_and_exactly_correlated(self) -> None:
+    def test_legacy_log_is_server_resolved_strictly_typed_and_exactly_correlated(
+        self,
+    ) -> None:
         import json
 
         for change, code in (
@@ -339,7 +365,10 @@ class OrganizationUndoServiceTests(unittest.TestCase):
             ("malformed_bool", "unsafe_undo_path"),
             ("wrong_pair", "operation_not_undoable"),
         ):
-            with self.subTest(change=change), tempfile.TemporaryDirectory() as directory:
+            with (
+                self.subTest(change=change),
+                tempfile.TemporaryDirectory() as directory,
+            ):
                 root = Path(directory).resolve()
                 operations, undos, coordinator, record = _verified_operation(root, 1)
                 log = root / str(record.legacy_operation_log)
@@ -354,7 +383,9 @@ class OrganizationUndoServiceTests(unittest.TestCase):
                     if change == "malformed_bool":
                         payload["operations"][0]["success"] = "true"
                     else:
-                        payload["operations"][0]["destination"] = str(root / "Documents/other.txt")
+                        payload["operations"][0]["destination"] = str(
+                            root / "Documents/other.txt"
+                        )
                     log.write_text(json.dumps(payload), encoding="utf-8")
                 with self.assertRaisesRegex(OrganizationUndoError, code):
                     preview_organization_undo(
@@ -366,7 +397,9 @@ class OrganizationUndoServiceTests(unittest.TestCase):
                     )
                 self.assertEqual(undos.list_records(), ())
 
-    def test_injected_second_restore_failure_is_durable_partial_and_not_reoffered(self) -> None:
+    def test_injected_second_restore_failure_is_durable_partial_and_not_reoffered(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             operations, undos, coordinator, record = _verified_operation(root, 2)
@@ -378,6 +411,7 @@ class OrganizationUndoServiceTests(unittest.TestCase):
                 undo_repository=undos,
             )
             import shutil
+
             real_move = shutil.move
             calls = 0
 
@@ -453,7 +487,6 @@ class OrganizationUndoServiceTests(unittest.TestCase):
             )
             self.assertEqual(inspection.likely_not_restored, 1)
             self.assertTrue((root / "Documents/file-0.txt").exists())
-
 
     def test_admitted_activity_undo_completes_after_shutdown_begins(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -531,26 +564,41 @@ def _verified_operation(
         modified = 100.0 + index
         os.utime(source, (modified, modified))
         plan.append(MovePlanItem(source, destination, "test", 100, "move", False))
-        moves.append(OrganizationExpectedMove(
-            change_id=f"O{index}", source=source.relative_to(root).as_posix(),
-            destination=destination.relative_to(root).as_posix(),
-            source_size_bytes=source.stat().st_size, source_modified_time=modified,
-            reason="test", confidence=100, operation="move", overwrite_risk=False,
-            result_state=MOVE_MOVED,
-        ))
+        moves.append(
+            OrganizationExpectedMove(
+                change_id=f"O{index}",
+                source=source.relative_to(root).as_posix(),
+                destination=destination.relative_to(root).as_posix(),
+                source_size_bytes=source.stat().st_size,
+                source_modified_time=modified,
+                reason="test",
+                confidence=100,
+                operation="move",
+                overwrite_risk=False,
+                result_state=MOVE_MOVED,
+            )
+        )
     log = apply_move_plan(plan, root)
     timestamp = "2026-07-15T08:00:00+00:00"
     record = OrganizationOperationRecord(
-        operation_id=str(uuid.uuid4()), authorization_id=str(uuid.uuid4()),
-        status=STATUS_VERIFIED, scan_generation="scan-1", decision_revision=1,
-        approved_at=timestamp, created_at=timestamp, started_at=timestamp,
-        completed_at=timestamp, configured_root_identity=operations.configured_root_identity,
+        operation_id=str(uuid.uuid4()),
+        authorization_id=str(uuid.uuid4()),
+        status=STATUS_VERIFIED,
+        scan_generation="scan-1",
+        decision_revision=1,
+        approved_at=timestamp,
+        created_at=timestamp,
+        started_at=timestamp,
+        completed_at=timestamp,
+        configured_root_identity=operations.configured_root_identity,
         expected_moves=tuple(moves),
         verification=OrganizationOperationVerification(
-            status=VERIFICATION_PASSED, verified_count=count,
+            status=VERIFICATION_PASSED,
+            verified_count=count,
         ),
         legacy_operation_log=log.log_path.relative_to(root).as_posix(),
-        failure_code=None, duplicate_actions_deferred=0,
+        failure_code=None,
+        duplicate_actions_deferred=0,
     )
     operations.create(record)
     return operations, undos, coordinator, record

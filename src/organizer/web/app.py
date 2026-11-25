@@ -12,54 +12,32 @@ from starlette.responses import Response
 from starlette.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
 
-from organizer.web.config import WebAppConfig
-from organizer.web.routes.home import create_home_router
-from organizer.web.routes.activity_api import create_activity_api_router
-from organizer.web.routes.consumer import create_consumer_router
-from organizer.web.routes.loci_flow import create_loci_flow_router
-from organizer.web.routes.organization_api import create_organization_api_router
-from organizer.web.routes.recovery_api import create_recovery_api_router
-from organizer.web.routes.review import create_review_router
-from organizer.web.routes.standards_api import create_standards_api_router
-from organizer.web.review_explorer import ReviewExplorerStore
-from organizer.web.organization_decision_store import OrganizationDecisionStore
-from organizer.web.scan_jobs import ScanJobController
-from organizer.application.execution_coordinator import OrganizationExecutionCoordinator
 from organizer.application.current_recovery_admission_status import (
     CurrentRecoveryAdmissionStatus,
 )
-from organizer.application.identity_verification_publication import (
-    OrganizationIdentityVerificationPublicationService,
-)
-from organizer.application.filesystem_operation_admission import (
-    FilesystemOperationAdmission,
-    FilesystemOperationInspector,
-)
-from organizer.application.recovery_evidence import RecoveryEvidenceInspector
-from organizer.application.recovery_check_context import (
-    RecoveryCheckContextStore,
-)
-from organizer.application.recovery_check_service import (
-    RecoveryCheckEligibilityInspector,
-    RecoveryCheckService,
-)
-from organizer.application.recovery_projection_service import RecoveryProjectionService
-from organizer.application.duplicate_bin_repository import DuplicateBinRepository
 from organizer.application.duplicate_bin_authorization_repository import (
     DuplicateBinAuthorizationRepository,
 )
 from organizer.application.duplicate_bin_operation_repository import (
     DuplicateBinOperationRepository,
 )
+from organizer.application.duplicate_bin_repository import DuplicateBinRepository
 from organizer.application.duplicate_bin_restore_repository import (
     DuplicateBinRestoreRepository,
 )
-from organizer.web.routes.duplicate_bin_api import create_duplicate_bin_api_router
-from organizer.application.organization_operation_repository import (
-    OrganizationOperationRepository,
+from organizer.application.execution_coordinator import OrganizationExecutionCoordinator
+from organizer.application.filesystem_operation_admission import (
+    FilesystemOperationAdmission,
+    FilesystemOperationInspector,
+)
+from organizer.application.identity_verification_publication import (
+    OrganizationIdentityVerificationPublicationService,
 )
 from organizer.application.organization_identity_execution import (
     OrganizationIdentityExecutionService,
+)
+from organizer.application.organization_operation_repository import (
+    OrganizationOperationRepository,
 )
 from organizer.application.organization_undo_identity_authorization import (
     V2UndoAuthorizationStore,
@@ -70,21 +48,43 @@ from organizer.application.organization_undo_identity_orchestration import (
 from organizer.application.organization_undo_repository import (
     OrganizationUndoRepository,
 )
-from organizer.application.undo_identity_verification_publication import (
-    OrganizationUndoIdentityVerificationPublicationService,
+from organizer.application.recovery_check_context import (
+    RecoveryCheckContextStore,
 )
+from organizer.application.recovery_check_service import (
+    RecoveryCheckEligibilityInspector,
+    RecoveryCheckService,
+)
+from organizer.application.recovery_evidence import RecoveryEvidenceInspector
+from organizer.application.recovery_projection_service import RecoveryProjectionService
 from organizer.application.runtime_lifecycle import RuntimeLifecycle
 from organizer.application.standards_creation_application_service import (
     StandardsCreationApplicationService,
 )
 from organizer.application.standards_repository import StandardsRepository
 from organizer.application.standards_service import StandardsService
-from organizer.web.standards_creation_store import StandardsCreationStore
+from organizer.application.undo_identity_verification_publication import (
+    OrganizationUndoIdentityVerificationPublicationService,
+)
+from organizer.web.config import WebAppConfig
+from organizer.web.organization_decision_store import OrganizationDecisionStore
+from organizer.web.review_explorer import ReviewExplorerStore
+from organizer.web.routes.activity_api import create_activity_api_router
+from organizer.web.routes.consumer import create_consumer_router
+from organizer.web.routes.duplicate_bin_api import create_duplicate_bin_api_router
+from organizer.web.routes.home import create_home_router
+from organizer.web.routes.loci_flow import create_loci_flow_router
+from organizer.web.routes.organization_api import create_organization_api_router
+from organizer.web.routes.recovery_api import create_recovery_api_router
+from organizer.web.routes.review import create_review_router
+from organizer.web.routes.standards_api import create_standards_api_router
+from organizer.web.scan_jobs import ScanJobController
 from organizer.web.security import (
     LaunchTokenGate,
     SecurityHeadersMiddleware,
     apply_security_headers,
 )
+from organizer.web.standards_creation_store import StandardsCreationStore
 
 _PACKAGE_DIRECTORY = Path(__file__).resolve().parent
 _TEMPLATE_DIRECTORY = _PACKAGE_DIRECTORY / "templates"
@@ -149,10 +149,8 @@ def create_app(config: WebAppConfig) -> FastAPI:
         duplicate_bin_operations=app.state.duplicate_bin_operations,
         duplicate_bin_restores=app.state.duplicate_bin_restores,
     )
-    app.state.current_recovery_admission_status = (
-        CurrentRecoveryAdmissionStatus(
-            app.state.filesystem_operation_inspector
-        )
+    app.state.current_recovery_admission_status = CurrentRecoveryAdmissionStatus(
+        app.state.filesystem_operation_inspector
     )
     app.state.recovery_admission_snapshot = (
         app.state.current_recovery_admission_status.snapshot()
@@ -163,29 +161,19 @@ def create_app(config: WebAppConfig) -> FastAPI:
     app.state.filesystem_operation_admission = FilesystemOperationAdmission(
         app.state.filesystem_operation_inspector
     )
-    app.state.organization_identity_execution = (
-        OrganizationIdentityExecutionService(
-            app.state.organization_operations,
-            consume_authorization=app.state.organization_execution.consume,
-            refresh_recovery_status=(
-                app.state.current_recovery_admission_status.refresh
-            ),
-        )
+    app.state.organization_identity_execution = OrganizationIdentityExecutionService(
+        app.state.organization_operations,
+        consume_authorization=app.state.organization_execution.consume,
+        refresh_recovery_status=(app.state.current_recovery_admission_status.refresh),
     )
-    app.state.organization_identity_undo_authorizations = (
-        V2UndoAuthorizationStore(
-            app.state.organization_operations.configured_root_identity
-        )
+    app.state.organization_identity_undo_authorizations = V2UndoAuthorizationStore(
+        app.state.organization_operations.configured_root_identity
     )
-    app.state.organization_identity_undo = (
-        OrganizationIdentityUndoOrchestrationService(
-            app.state.organization_operations,
-            app.state.organization_undos,
-            app.state.organization_identity_undo_authorizations,
-            refresh_recovery_status=(
-                app.state.current_recovery_admission_status.refresh
-            ),
-        )
+    app.state.organization_identity_undo = OrganizationIdentityUndoOrchestrationService(
+        app.state.organization_operations,
+        app.state.organization_undos,
+        app.state.organization_identity_undo_authorizations,
+        refresh_recovery_status=(app.state.current_recovery_admission_status.refresh),
     )
     app.state.recovery_check_contexts = RecoveryCheckContextStore(
         app.state.organization_operations.configured_root_identity

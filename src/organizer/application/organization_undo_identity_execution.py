@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
-from datetime import datetime, timezone
-from enum import Enum
 import os
-from pathlib import Path
-from typing import Callable
 import uuid
+from collections.abc import Callable
+from dataclasses import dataclass, replace
+from datetime import UTC, datetime
+from enum import Enum
+from pathlib import Path
 
 from organizer.application.organization_operation_repository import (
     OrganizationOperationRepository,
@@ -168,9 +168,7 @@ def execute_v2_organization_undo_intent(
                 now,
                 operation_log=None,
                 recovery_required=False,
-                primary=OrganizationIdentityUndoExecutionError(
-                    "recovery_required"
-                ),
+                primary=OrganizationIdentityUndoExecutionError("recovery_required"),
             )
             return _result(interrupted)
 
@@ -353,7 +351,10 @@ class _V2UndoMovementRecorder:
 
     def before_move(self, index: int, item: MovePlanItem) -> None:
         expected = self._expected_item(index, item)
-        if self.record.status != UNDO_UNDOING or expected.result_state != UNDO_ITEM_PENDING:
+        if (
+            self.record.status != UNDO_UNDOING
+            or expected.result_state != UNDO_ITEM_PENDING
+        ):
             raise ValueError("v2 Undo recorder item state is invalid")
         self._save_item(index, UNDO_ITEM_ATTEMPTING)
 
@@ -442,8 +443,7 @@ class _V2UndoMovementRecorder:
             raise ValueError("v2 Undo recorder item is invalid")
         expected = self.record.expected_restores[index]
         if (
-            Path(os.path.abspath(item.source))
-            != self.root / expected.moved_from
+            Path(os.path.abspath(item.source)) != self.root / expected.moved_from
             or Path(os.path.abspath(item.destination))
             != self.root / expected.restore_target
         ):
@@ -603,12 +603,10 @@ def _result(record: OrganizationUndoRecord) -> IdentityUndoExecutionResult:
         state=state,
         files_expected=len(record.expected_restores),
         files_restored=sum(
-            item.result_state == UNDO_ITEM_RESTORED
-            for item in record.expected_restores
+            item.result_state == UNDO_ITEM_RESTORED for item in record.expected_restores
         ),
         files_failed=sum(
-            item.result_state == UNDO_ITEM_FAILED
-            for item in record.expected_restores
+            item.result_state == UNDO_ITEM_FAILED for item in record.expected_restores
         ),
         files_unattempted=sum(
             item.result_state in {UNDO_ITEM_PENDING, UNDO_ITEM_UNATTEMPTED}
@@ -627,4 +625,4 @@ def _canonical_uuid(value: object) -> bool:
 
 
 def _utc_timestamp() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()

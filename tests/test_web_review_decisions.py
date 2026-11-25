@@ -11,7 +11,9 @@ class WebReviewDecisionTests(
     WebReviewFixture,
     unittest.IsolatedAsyncioTestCase,
 ):
-    async def test_standard_decision_redirects_and_marks_only_changed_rows_dirty(self) -> None:
+    async def test_standard_decision_redirects_and_marks_only_changed_rows_dirty(
+        self,
+    ) -> None:
         before = self.artifact_paths()
         client = await self.authenticated_client()
         try:
@@ -151,7 +153,9 @@ class WebReviewDecisionTests(
             await client.aclose()
         self.assertEqual(response.status_code, 400)
 
-    async def test_stopping_rejects_item_decision_without_changing_session(self) -> None:
+    async def test_stopping_rejects_item_decision_without_changing_session(
+        self,
+    ) -> None:
         client = await self.authenticated_client()
         try:
             csrf = await self.csrf(client)
@@ -183,7 +187,6 @@ class WebReviewDecisionTests(
         self.assertIn("Loci Flow is closing", response.text)
         self.assertEqual(wrong_origin.status_code, 403)
         self.assertEqual(after.session, before.session)
-
 
 
 def _client(app: object) -> httpx.AsyncClient:

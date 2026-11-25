@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from pathlib import Path
 import tempfile
-from threading import Event
 import time
 import unittest
+from pathlib import Path
+from threading import Event
 from unittest import mock
 
 from organizer.application.runtime_lifecycle import (
@@ -194,7 +194,9 @@ class ScanJobControllerTests(unittest.TestCase):
                 gate.wait(timeout=2)
                 return _result(path)
 
-            controller = ScanJobController(root, scan=scan, write_report=lambda _: root / "report.json")
+            controller = ScanJobController(
+                root, scan=scan, write_report=lambda _: root / "report.json"
+            )
             controller.start()
             with self.assertRaises(ScanAlreadyRunning):
                 controller.start()

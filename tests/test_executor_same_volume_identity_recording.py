@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-from contextlib import nullcontext
-from dataclasses import replace
 import errno
 import json
 import os
-from pathlib import Path
 import tempfile
 import unittest
-from unittest import mock
 import uuid
+from contextlib import nullcontext
+from dataclasses import replace
+from pathlib import Path
+from unittest import mock
 
 import organizer.executor as executor
 from organizer.application.content_identity import RegularFileContentIdentity
@@ -97,7 +97,9 @@ class SameVolumeIdentityRecordingTests(unittest.TestCase):
                     "after_batch",
                 ],
             )
-            self.assertEqual([result.success for result in operation_log.operations], [True, True])
+            self.assertEqual(
+                [result.success for result in operation_log.operations], [True, True]
+            )
             payload = json.loads(operation_log.log_path.read_text(encoding="utf-8"))
             self.assertEqual(
                 set(payload["operations"][0]),
@@ -117,7 +119,9 @@ class SameVolumeIdentityRecordingTests(unittest.TestCase):
             for plan in ((ordinary,), (strict, ordinary)):
                 with self.subTest(plan=plan), self.assertRaises(StrictExecutorError):
                     apply_same_volume_identity_move_plan(
-                        plan, root, recorder=recorder  # type: ignore[arg-type]
+                        plan,
+                        root,
+                        recorder=recorder,  # type: ignore[arg-type]
                     )
 
             self.assertEqual(recorder.events, [])
@@ -161,9 +165,7 @@ class SameVolumeIdentityRecordingTests(unittest.TestCase):
                 ) as opened,
                 self.assertRaises(MovementRecordingError) as raised,
             ):
-                apply_same_volume_identity_move_plan(
-                    (item,), root, recorder=recorder
-                )
+                apply_same_volume_identity_move_plan((item,), root, recorder=recorder)
 
             self.assertEqual(raised.exception.phase, "before_move")
             opened.assert_not_called()
@@ -177,9 +179,7 @@ class SameVolumeIdentityRecordingTests(unittest.TestCase):
             recorder = _Recorder(fail="before_batch")
 
             with self.assertRaises(MovementRecordingError) as raised:
-                apply_same_volume_identity_move_plan(
-                    (item,), root, recorder=recorder
-                )
+                apply_same_volume_identity_move_plan((item,), root, recorder=recorder)
 
             self.assertEqual(raised.exception.phase, "before_batch")
             self.assertFalse(raised.exception.filesystem_changed)
@@ -224,12 +224,13 @@ class SameVolumeIdentityRecordingTests(unittest.TestCase):
             recorder = _Recorder(fail="after_batch")
 
             with (
-                mock.patch("organizer.executor.os.link", side_effect=OSError(errno.EIO, "private")),
+                mock.patch(
+                    "organizer.executor.os.link",
+                    side_effect=OSError(errno.EIO, "private"),
+                ),
                 self.assertRaises(MovementRecordingError) as raised,
             ):
-                apply_same_volume_identity_move_plan(
-                    (item,), root, recorder=recorder
-                )
+                apply_same_volume_identity_move_plan((item,), root, recorder=recorder)
 
             self.assertEqual(raised.exception.phase, "after_batch")
             self.assertTrue(raised.exception.filesystem_changed)
@@ -254,9 +255,7 @@ class SameVolumeIdentityRecordingTests(unittest.TestCase):
                 ),
                 self.assertRaises(MovementRecordingError) as raised,
             ):
-                apply_same_volume_identity_move_plan(
-                    (item,), root, recorder=recorder
-                )
+                apply_same_volume_identity_move_plan((item,), root, recorder=recorder)
 
             self.assertEqual(raised.exception.phase, "after_failure")
             self.assertTrue(raised.exception.filesystem_changed)
@@ -264,7 +263,9 @@ class SameVolumeIdentityRecordingTests(unittest.TestCase):
             self.assertTrue(item.plan_item.source.exists())
             self.assertFalse(item.plan_item.destination.exists())
 
-    def test_postpublication_failure_leaves_attempting_and_skips_terminal_callbacks(self) -> None:
+    def test_postpublication_failure_leaves_attempting_and_skips_terminal_callbacks(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             item = _item(root, "O1", "source", "Dest/source")
@@ -282,9 +283,7 @@ class SameVolumeIdentityRecordingTests(unittest.TestCase):
                 ),
                 self.assertRaises(StrictExecutorError) as raised,
             ):
-                apply_same_volume_identity_move_plan(
-                    (item,), root, recorder=recorder
-                )
+                apply_same_volume_identity_move_plan((item,), root, recorder=recorder)
 
             self.assertTrue(raised.exception.recovery_required)
             self.assertEqual(recorder.events, ["before_batch", "before_move:0"])
@@ -310,9 +309,7 @@ class SameVolumeIdentityRecordingTests(unittest.TestCase):
                 ),
                 self.assertRaises(StrictExecutorError) as raised,
             ):
-                apply_same_volume_identity_move_plan(
-                    (item,), root, recorder=recorder
-                )
+                apply_same_volume_identity_move_plan((item,), root, recorder=recorder)
 
             self.assertTrue(raised.exception.filesystem_changed)
             self.assertTrue(raised.exception.recovery_required)
@@ -350,9 +347,7 @@ class SameVolumeIdentityRecordingTests(unittest.TestCase):
             recorder = _Recorder(fail="after_success:0")
 
             with self.assertRaises(MovementRecordingError) as raised:
-                apply_same_volume_identity_move_plan(
-                    (item,), root, recorder=recorder
-                )
+                apply_same_volume_identity_move_plan((item,), root, recorder=recorder)
 
             self.assertEqual(raised.exception.phase, "after_success")
             self.assertTrue(raised.exception.filesystem_changed)
@@ -389,20 +384,22 @@ class SameVolumeIdentityRecordingTests(unittest.TestCase):
                 "_fsync_after_publication",
                 side_effect=observed_fsync,
             ):
-                apply_same_volume_identity_move_plan(
-                    (item,), root, recorder=recorder
-                )
+                apply_same_volume_identity_move_plan((item,), root, recorder=recorder)
 
             self.assertEqual(recorder.events[-2:], ["after_success:0", "after_batch"])
 
-    def test_durable_attempting_states_remain_visible_to_recovery_inspector(self) -> None:
+    def test_durable_attempting_states_remain_visible_to_recovery_inspector(
+        self,
+    ) -> None:
         for failure_point in ("after_link", "after_unlink"):
             with (
                 self.subTest(failure_point=failure_point),
                 tempfile.TemporaryDirectory() as directory,
             ):
                 root = Path(directory).resolve()
-                item = _item(root, "O1", "Inbox/file.txt", "Documents/file.txt", b"data")
+                item = _item(
+                    root, "O1", "Inbox/file.txt", "Documents/file.txt", b"data"
+                )
                 repository, record = _ordinary_operation(root, status=STATUS_PREPARED)
                 record = replace(
                     record,
@@ -455,8 +452,12 @@ class SameVolumeIdentityRecordingTests(unittest.TestCase):
                     FilesystemOperationInspector(root)
                 ).inspect()
                 self.assertEqual(durable.status, STATUS_MOVING)
-                self.assertEqual(durable.expected_moves[0].result_state, MOVE_ATTEMPTING)
-                self.assertEqual(evidence.actionability, RecoveryActionability.INSPECT_ONLY)
+                self.assertEqual(
+                    durable.expected_moves[0].result_state, MOVE_ATTEMPTING
+                )
+                self.assertEqual(
+                    evidence.actionability, RecoveryActionability.INSPECT_ONLY
+                )
                 self.assertEqual(evidence.case.available_action_kinds, ())
 
     def test_only_disconnected_v2_owners_import_public_strict_api(self) -> None:
@@ -533,9 +534,7 @@ def _ordinary_operation(root: Path, *, status: str):
                 result_state=MOVE_PENDING,
             ),
         ),
-        verification=OrganizationOperationVerification(
-            status=VERIFICATION_NOT_RUN
-        ),
+        verification=OrganizationOperationVerification(status=VERIFICATION_NOT_RUN),
         legacy_operation_log=None,
         failure_code=None,
         duplicate_actions_deferred=0,

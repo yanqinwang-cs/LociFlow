@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-from dataclasses import replace
-from datetime import datetime, timedelta, timezone
-from pathlib import Path
 import shutil
 import tempfile
-from threading import Event, Thread
 import unittest
-from unittest import mock
 import uuid
+from dataclasses import replace
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from threading import Event, Thread
+from unittest import mock
 
 import organizer.application.duplicate_bin_movement_service as movement_service
 from organizer.application.duplicate_bin_authorization_repository import (
@@ -47,8 +47,7 @@ from organizer.application.runtime_lifecycle import (
 )
 from organizer.duplicates import hash_file
 
-
-ISSUED = datetime(2026, 7, 16, 10, tzinfo=timezone.utc)
+ISSUED = datetime(2026, 7, 16, 10, tzinfo=UTC)
 
 
 class DuplicateBinMovementServiceTests(unittest.TestCase):
@@ -76,17 +75,23 @@ class DuplicateBinMovementServiceTests(unittest.TestCase):
                     filesystem_operation_admission=admission,
                 )
 
-            self.assertEqual(owners.authorizations.path.read_bytes(), authorization_before)
+            self.assertEqual(
+                owners.authorizations.path.read_bytes(), authorization_before
+            )
             self.assertEqual(owners.batches.catalog_path.read_bytes(), catalog_before)
             self.assertEqual(owners.operations.list_records(), ())
             self.assertTrue(
-                all((owners.root / item.previous_relative_path).is_file() for item in owners.batch.items)
+                all(
+                    (owners.root / item.previous_relative_path).is_file()
+                    for item in owners.batch.items
+                )
             )
             self.assertEqual(
                 owners.coordinator.runtime_lifecycle.snapshot().active_count, 0
             )
             self.assertTrue(owners.coordinator.try_acquire())
             owners.coordinator.release()
+
     def test_stopping_rejects_preview_without_superseding_authorization(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             owners = _owners(Path(directory).resolve(), selected=1)

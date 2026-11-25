@@ -1,17 +1,16 @@
 from __future__ import annotations
 
+import os
+import stat
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
-import os
 from pathlib import Path
-import stat
-from typing import Callable
 
 from organizer.application.organization_decision_models import (
     ApprovedOrganizationPlan,
 )
 from organizer.safety import validate_under_root
-
 
 SAFE_CROSS_VOLUME_MESSAGE = (
     "Some approved files are on different storage volumes. Nothing was moved."
@@ -226,10 +225,7 @@ class OrganizationVolumeAdmission:
             destination_stat = self._stat(destination_ancestor)
         except OSError:
             return VolumeAdmissionState.INDETERMINATE
-        if (
-            source_stat.st_dev != root_device
-            or destination_stat.st_dev != root_device
-        ):
+        if source_stat.st_dev != root_device or destination_stat.st_dev != root_device:
             return VolumeAdmissionState.CROSS_VOLUME
         return VolumeAdmissionState.ALLOWED
 

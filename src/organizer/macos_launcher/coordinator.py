@@ -1,15 +1,15 @@
 from __future__ import annotations
 
+import os
+import re
+import sys
+import traceback
 from collections.abc import Callable
 from concurrent.futures import Future
 from dataclasses import dataclass
 from enum import StrEnum
-import os
 from pathlib import Path
-import re
-import sys
 from threading import Event, Lock, Thread
-import traceback
 from typing import Protocol, TextIO
 
 from organizer.macos_launcher.application_paths import MacOSApplicationPaths
@@ -24,9 +24,9 @@ from organizer.macos_launcher.shutdown_coordinator import (
 )
 from organizer.web.config import WebAppConfig
 from organizer.web.launcher import (
-    LaunchPhase,
     LauncherDependencies,
     LauncherError,
+    LaunchPhase,
     LaunchResult,
     LaunchRuntimeHandle,
     LaunchStopController,
@@ -187,8 +187,7 @@ class NativeLauncherCoordinator:
             self._signals = ProcessSignalCoordinator(
                 self._receive_signal,
                 terminal_completed=lambda: (
-                    self._terminal_result.done()
-                    or self._pre_root_terminal.is_set()
+                    self._terminal_result.done() or self._pre_root_terminal.is_set()
                 ),
                 diagnostic=self._record_signal_diagnostic,
             )
@@ -615,9 +614,7 @@ class NativeLauncherCoordinator:
         diagnostic = NativeDiagnostic(
             phase="native_shutdown",
             code=code,
-            exception_class=(
-                None if exception is None else type(exception).__name__
-            ),
+            exception_class=(None if exception is None else type(exception).__name__),
             traceback=None,
         )
         try:

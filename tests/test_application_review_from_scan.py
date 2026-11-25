@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from pathlib import Path
 import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from organizer.application.review_service import (
@@ -14,8 +14,8 @@ from organizer.application.review_service import (
     update_review_page_size,
     update_review_sort,
 )
-from organizer.application.standards_read_models import OrganizationUnavailableError
 from organizer.application.scan_service import scan_root
+from organizer.application.standards_read_models import OrganizationUnavailableError
 from organizer.organization_rules import ORGANIZATION_RULES_RELATIVE_PATH
 
 
@@ -125,9 +125,13 @@ class ReviewFromScanTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             result = scan_root(root)
-            before = sorted(path.relative_to(root).as_posix() for path in root.rglob("*"))
+            before = sorted(
+                path.relative_to(root).as_posix() for path in root.rglob("*")
+            )
             create_review_session_from_scan_result(result)
-            after = sorted(path.relative_to(root).as_posix() for path in root.rglob("*"))
+            after = sorted(
+                path.relative_to(root).as_posix() for path in root.rglob("*")
+            )
             self.assertEqual(before, after)
 
     def test_review_session_keeps_scan_time_metadata_without_live_stat(self) -> None:
@@ -138,7 +142,9 @@ class ReviewFromScanTests(unittest.TestCase):
             source.write_text("same", encoding="utf-8")
             result = scan_root(root)
             scanned = next(
-                item for item in result.metadata_items if item.relative_path == Path("b.txt")
+                item
+                for item in result.metadata_items
+                if item.relative_path == Path("b.txt")
             )
             session = create_review_session_from_scan_result(result)
             source.write_text("changed after scan", encoding="utf-8")
@@ -146,7 +152,9 @@ class ReviewFromScanTests(unittest.TestCase):
             with mock.patch.object(
                 Path,
                 "stat",
-                side_effect=AssertionError("review metadata must use the scan snapshot"),
+                side_effect=AssertionError(
+                    "review metadata must use the scan snapshot"
+                ),
             ):
                 item_metadata = get_review_item_metadata(session, "D1")
 

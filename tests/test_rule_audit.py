@@ -1,18 +1,17 @@
-from pathlib import Path
 import json
 import tempfile
 import unittest
-
-from datetime import datetime, timezone
 import uuid
+from datetime import UTC, datetime
+from pathlib import Path
 
 from organizer.application.standards_repository import StandardsRepository
 from organizer.html_report import render_html_report
 from organizer.organization_rules import (
     STANDARD_LEGACY_IGNORED_TERM,
     StandardRecord,
-    StandardScope,
     StandardsCatalog,
+    StandardScope,
 )
 from organizer.reports import build_scan_report
 from organizer.rule_audit import _expansion_warnings
@@ -31,7 +30,9 @@ class RuleAuditTests(unittest.TestCase):
             self.assertIsNone(audit["rules_path"])
             self.assertEqual(audit["rule_effects"], [])
             self.assertIn("Rule-aware audit was skipped", audit["warnings"][0])
-            self.assertFalse((root / "AI_Review" / "config" / "organization_rules.json").exists())
+            self.assertFalse(
+                (root / "AI_Review" / "config" / "organization_rules.json").exists()
+            )
             self.assertNotIn("plan_items", audit)
 
     def test_invalid_rules_file_is_not_modified_and_audit_is_unloaded(self) -> None:
@@ -47,8 +48,15 @@ class RuleAuditTests(unittest.TestCase):
             audit = report["rule_audit"]
 
             self.assertFalse(audit["rules_loaded"])
-            self.assertEqual(audit["rules_path"], "AI_Review/config/organization_rules.json")
-            self.assertTrue(any("invalid" in warning.lower() or "unloaded" in warning.lower() for warning in audit["warnings"]))
+            self.assertEqual(
+                audit["rules_path"], "AI_Review/config/organization_rules.json"
+            )
+            self.assertTrue(
+                any(
+                    "invalid" in warning.lower() or "unloaded" in warning.lower()
+                    for warning in audit["warnings"]
+                )
+            )
             self.assertEqual(rules_path.read_text(encoding="utf-8"), original)
 
     def test_rules_loaded_reflects_loaded_values(self) -> None:
@@ -74,10 +82,14 @@ class RuleAuditTests(unittest.TestCase):
             audit = build_scan_report(root)["rule_audit"]
 
             self.assertTrue(audit["rules_loaded"])
-            self.assertEqual(audit["rules_path"], "AI_Review/config/organization_rules.json")
+            self.assertEqual(
+                audit["rules_path"], "AI_Review/config/organization_rules.json"
+            )
             self.assertEqual(audit["locked_anchors"], ["CS1010X"])
             self.assertEqual(audit["ignored_terms"], ["Python"])
-            self.assertEqual(audit["anchor_aliases"], {"programming methodology": "CS1010X"})
+            self.assertEqual(
+                audit["anchor_aliases"], {"programming methodology": "CS1010X"}
+            )
             self.assertEqual(audit["preferred_granularities"], ["course_code"])
             self.assertEqual(rules_path.read_text(encoding="utf-8"), original_rules)
 
@@ -85,7 +97,7 @@ class RuleAuditTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             repository = StandardsRepository(root)
-            timestamp = datetime(2026, 1, 1, tzinfo=timezone.utc).isoformat()
+            timestamp = datetime(2026, 1, 1, tzinfo=UTC).isoformat()
 
             def record(standard_type, parameters, *, active, archived_at=None):
                 return StandardRecord(
@@ -101,22 +113,22 @@ class RuleAuditTests(unittest.TestCase):
                 )
 
             standards = (
-                        record(
-                            STANDARD_LEGACY_IGNORED_TERM,
-                            {"term": "Scratch"},
-                            active=True,
-                        ),
-                        record(
-                            STANDARD_LEGACY_IGNORED_TERM,
-                            {"term": "Draft"},
-                            active=False,
-                        ),
-                        record(
-                            STANDARD_LEGACY_IGNORED_TERM,
-                            {"term": "Old"},
-                            active=False,
-                            archived_at=timestamp,
-                        ),
+                record(
+                    STANDARD_LEGACY_IGNORED_TERM,
+                    {"term": "Scratch"},
+                    active=True,
+                ),
+                record(
+                    STANDARD_LEGACY_IGNORED_TERM,
+                    {"term": "Draft"},
+                    active=False,
+                ),
+                record(
+                    STANDARD_LEGACY_IGNORED_TERM,
+                    {"term": "Old"},
+                    active=False,
+                    archived_at=timestamp,
+                ),
             )
             repository.save_catalog(
                 StandardsCatalog(
@@ -142,11 +154,15 @@ class RuleAuditTests(unittest.TestCase):
                 (root / name).write_text("x", encoding="utf-8")
 
             effects = build_scan_report(root)["rule_audit"]["rule_effects"]
-            effect = next(item for item in effects if item["rule_type"] == "locked_anchor")
+            effect = next(
+                item for item in effects if item["rule_type"] == "locked_anchor"
+            )
 
             self.assertEqual(effect["value"], "CS1010X")
             self.assertGreater(effect["matched_file_count"], 0)
-            self.assertIn(effect["before_decision"], {"needs_decision", "suggested", None})
+            self.assertIn(
+                effect["before_decision"], {"needs_decision", "suggested", None}
+            )
             self.assertEqual(effect["after_decision"], "locked_anchor")
 
     def test_broad_locked_anchor_warning_is_high_risk(self) -> None:
@@ -154,7 +170,9 @@ class RuleAuditTests(unittest.TestCase):
             root = Path(directory)
             self._write_rules(root, {"version": 1, "locked_anchors": ["CS1010X"]})
             for index in range(52):
-                (root / f"CS1010X document {index:02d}.pdf").write_text("x", encoding="utf-8")
+                (root / f"CS1010X document {index:02d}.pdf").write_text(
+                    "x", encoding="utf-8"
+                )
 
             effect = next(
                 item
@@ -163,7 +181,9 @@ class RuleAuditTests(unittest.TestCase):
             )
 
             self.assertEqual(effect["risk_level"], "high")
-            self.assertIn("Review generated organization suggestions", effect["warning"])
+            self.assertIn(
+                "Review generated organization suggestions", effect["warning"]
+            )
 
     def test_ignored_term_alias_and_preferred_granularity_effects(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -189,7 +209,9 @@ class RuleAuditTests(unittest.TestCase):
                 {"alias": "programming methodology", "canonical": "CS1010X"},
             )
             self.assertEqual(by_type["preferred_granularity"]["value"], "course_code")
-            self.assertIn("advisory metadata", by_type["preferred_granularity"]["effect"])
+            self.assertIn(
+                "advisory metadata", by_type["preferred_granularity"]["effect"]
+            )
             self.assertEqual(by_type["preferred_granularity"]["risk_level"], "none")
 
     def test_before_after_counts_are_present(self) -> None:
@@ -240,7 +262,9 @@ class RuleAuditTests(unittest.TestCase):
             self.assertIn("Rule effects", html)
 
     def test_rule_audit_module_has_no_movement_dependencies(self) -> None:
-        module_path = Path(__file__).resolve().parents[1] / "src" / "organizer" / "rule_audit.py"
+        module_path = (
+            Path(__file__).resolve().parents[1] / "src" / "organizer" / "rule_audit.py"
+        )
         source = module_path.read_text(encoding="utf-8")
 
         self.assertNotIn("exec" + "utor", source)

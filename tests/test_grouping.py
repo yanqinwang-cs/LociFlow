@@ -1,9 +1,9 @@
-from pathlib import Path
 import os
 import subprocess
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 
 from organizer.grouping import (
     ANCHOR_DECISION_IGNORED,
@@ -45,7 +45,9 @@ def metadata_for(relative_path: str) -> FileMetadata:
 class GroupingTokenTests(unittest.TestCase):
     def test_extract_course_code_detects_common_codes(self) -> None:
         for code in ["CS2103", "CS2103T", "CS2030S", "MA2001", "ST2334", "IS1108"]:
-            self.assertEqual(extract_course_code(metadata_for(f"{code}_notes.pdf")), code)
+            self.assertEqual(
+                extract_course_code(metadata_for(f"{code}_notes.pdf")), code
+            )
 
     def test_term_folder_is_not_read_as_a_course_code(self) -> None:
         for folder in ("Fall2023", "Spring2024", "Summer2022", "Winter2021"):
@@ -112,8 +114,12 @@ class ProjectGroupingTests(unittest.TestCase):
             with self.subTest(extension=extension):
                 with tempfile.TemporaryDirectory() as directory:
                     root = Path(directory)
-                    (root / f"evosim_one{extension}").write_text("one", encoding="utf-8")
-                    (root / f"evosim_two{extension}").write_text("two", encoding="utf-8")
+                    (root / f"evosim_one{extension}").write_text(
+                        "one", encoding="utf-8"
+                    )
+                    (root / f"evosim_two{extension}").write_text(
+                        "two", encoding="utf-8"
+                    )
                     rules = OrganizationRules(
                         locked_anchors=frozenset({"evosim"}),
                         ignored_terms=frozenset(),
@@ -137,11 +143,11 @@ class ProjectGroupingTests(unittest.TestCase):
 
             self.assertEqual(groups, [])
             course_decisions = [
-                decision
-                for decision in decisions
-                if decision.anchor == "CS2103"
+                decision for decision in decisions if decision.anchor == "CS2103"
             ]
-            self.assertEqual(course_decisions[0].decision, ANCHOR_DECISION_NEEDS_DECISION)
+            self.assertEqual(
+                course_decisions[0].decision, ANCHOR_DECISION_NEEDS_DECISION
+            )
 
     def test_broad_filename_anchor_is_needs_decision_by_default(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -154,11 +160,11 @@ class ProjectGroupingTests(unittest.TestCase):
 
             self.assertEqual(groups, [])
             evosim_decisions = [
-                decision
-                for decision in decisions
-                if decision.anchor == "Evosim"
+                decision for decision in decisions if decision.anchor == "Evosim"
             ]
-            self.assertEqual(evosim_decisions[0].decision, ANCHOR_DECISION_NEEDS_DECISION)
+            self.assertEqual(
+                evosim_decisions[0].decision, ANCHOR_DECISION_NEEDS_DECISION
+            )
 
     def test_course_code_groups_varied_filenames_under_strong_anchor(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -177,11 +183,11 @@ class ProjectGroupingTests(unittest.TestCase):
 
             self.assertEqual(groups, [])
             course_decisions = [
-                decision
-                for decision in decisions
-                if decision.anchor == "CS1010X"
+                decision for decision in decisions if decision.anchor == "CS1010X"
             ]
-            self.assertEqual(course_decisions[0].decision, ANCHOR_DECISION_NEEDS_DECISION)
+            self.assertEqual(
+                course_decisions[0].decision, ANCHOR_DECISION_NEEDS_DECISION
+            )
 
     def test_weak_token_groups_are_suppressed(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -241,30 +247,42 @@ class ProjectGroupingTests(unittest.TestCase):
     def test_course_code_grouping_takes_precedence_over_token_grouping(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            (root / "evosim_CS2103_finals_2025.txt").write_text("notes", encoding="utf-8")
-            (root / "evosim_CS2103_finals_2026.pdf").write_text("report", encoding="utf-8")
+            (root / "evosim_CS2103_finals_2025.txt").write_text(
+                "notes", encoding="utf-8"
+            )
+            (root / "evosim_CS2103_finals_2026.pdf").write_text(
+                "report", encoding="utf-8"
+            )
             (root / "evosim_other.txt").write_text("other", encoding="utf-8")
 
             groups = find_project_groups(scan_directory(root))
 
             self.assertEqual(groups[0].group_name, "CS2103 finals")
-            self.assertNotIn("evosim_CS2103_finals_2025.txt", [
-                file.relative_path.as_posix()
-                for group in groups[1:]
-                for file in group.files
-            ])
+            self.assertNotIn(
+                "evosim_CS2103_finals_2025.txt",
+                [
+                    file.relative_path.as_posix()
+                    for group in groups[1:]
+                    for file in group.files
+                ],
+            )
 
     def test_group_order_and_file_order_are_deterministic(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "ZetaSim_project_slides.pptx").write_text("two", encoding="utf-8")
-            (root / "ZetaSim_project_slides_final.pptx").write_text("one", encoding="utf-8")
+            (root / "ZetaSim_project_slides_final.pptx").write_text(
+                "one", encoding="utf-8"
+            )
             (root / "CS2103 finals 2026.txt").write_text("b", encoding="utf-8")
             (root / "CS2103 finals 2025.txt").write_text("a", encoding="utf-8")
 
             groups = find_project_groups(scan_directory(root))
 
-            self.assertEqual([group.group_name for group in groups], ["CS2103 finals", "ZetaSim project slides"])
+            self.assertEqual(
+                [group.group_name for group in groups],
+                ["CS2103 finals", "ZetaSim project slides"],
+            )
             self.assertEqual(
                 [file.relative_path.as_posix() for file in groups[0].files],
                 ["CS2103 finals 2025.txt", "CS2103 finals 2026.txt"],
@@ -273,8 +291,12 @@ class ProjectGroupingTests(unittest.TestCase):
     def test_standalone_html_is_eligible_but_web_project_html_is_excluded(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            (root / "EvoSim_article_notes.html").write_text("<h1>one</h1>", encoding="utf-8")
-            (root / "EvoSim_article_notes_final.htm").write_text("<h1>two</h1>", encoding="utf-8")
+            (root / "EvoSim_article_notes.html").write_text(
+                "<h1>one</h1>", encoding="utf-8"
+            )
+            (root / "EvoSim_article_notes_final.htm").write_text(
+                "<h1>two</h1>", encoding="utf-8"
+            )
             web = root / "web_project"
             web.mkdir()
             (web / "index.html").write_text("<html></html>", encoding="utf-8")
@@ -293,7 +315,9 @@ class ProjectGroupingTests(unittest.TestCase):
             self.assertIn("EvoSim_article_notes_final.htm", grouped_paths)
             self.assertNotIn("web_project/index.html", grouped_paths)
 
-    def test_code_media_archive_config_and_protected_contexts_are_excluded(self) -> None:
+    def test_code_media_archive_config_and_protected_contexts_are_excluded(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             excluded_paths = [
@@ -417,7 +441,9 @@ class ProjectGroupingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "CS1010X lecture 1.pdf").write_text("lecture", encoding="utf-8")
-            (root / "CS1010X recitation 1.pdf").write_text("recitation", encoding="utf-8")
+            (root / "CS1010X recitation 1.pdf").write_text(
+                "recitation", encoding="utf-8"
+            )
             (root / "CS1010X finals 2025.pdf").write_text("finals", encoding="utf-8")
             rules = OrganizationRules(
                 locked_anchors=frozenset({"cs1010x"}),
@@ -464,17 +490,27 @@ class ProjectGroupingTests(unittest.TestCase):
 
             self.assertTrue(decisions)
             self.assertTrue(
-                all(decision.decision != ANCHOR_DECISION_SUGGESTED for decision in decisions)
+                all(
+                    decision.decision != ANCHOR_DECISION_SUGGESTED
+                    for decision in decisions
+                )
             )
             self.assertTrue(
-                any(decision.decision == ANCHOR_DECISION_IGNORED for decision in decisions)
+                any(
+                    decision.decision == ANCHOR_DECISION_IGNORED
+                    for decision in decisions
+                )
             )
 
-    def test_broad_course_anchor_does_not_create_organized_course_group_by_default(self) -> None:
+    def test_broad_course_anchor_does_not_create_organized_course_group_by_default(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "CS1010X lecture 1.pdf").write_text("lecture", encoding="utf-8")
-            (root / "CS1010X recitation 1.pdf").write_text("recitation", encoding="utf-8")
+            (root / "CS1010X recitation 1.pdf").write_text(
+                "recitation", encoding="utf-8"
+            )
             (root / "CS1010X finals 2025.pdf").write_text("finals", encoding="utf-8")
 
             decisions = analyze_anchor_decisions(scan_directory(root))
@@ -482,11 +518,11 @@ class ProjectGroupingTests(unittest.TestCase):
 
             self.assertEqual(groups, [])
             course_decisions = [
-                decision
-                for decision in decisions
-                if decision.anchor == "CS1010X"
+                decision for decision in decisions if decision.anchor == "CS1010X"
             ]
-            self.assertEqual(course_decisions[0].decision, ANCHOR_DECISION_NEEDS_DECISION)
+            self.assertEqual(
+                course_decisions[0].decision, ANCHOR_DECISION_NEEDS_DECISION
+            )
 
     def test_finals_year_variant_creates_concrete_suggestion(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -502,31 +538,43 @@ class ProjectGroupingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             for number in ["01", "02", "03"]:
-                (root / f"CS1010X recitation {number}.pdf").write_text("rec", encoding="utf-8")
+                (root / f"CS1010X recitation {number}.pdf").write_text(
+                    "rec", encoding="utf-8"
+                )
 
             groups = find_project_groups(scan_directory(root))
 
-            self.assertEqual([group.group_name for group in groups], ["CS1010X recitation"])
+            self.assertEqual(
+                [group.group_name for group in groups], ["CS1010X recitation"]
+            )
 
     def test_question_solution_pair_creates_concrete_suggestion(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "cs1010x-final-jun21.pdf").write_text("question", encoding="utf-8")
-            (root / "cs1010x-final-solutions-jun21.pdf").write_text("solution", encoding="utf-8")
+            (root / "cs1010x-final-solutions-jun21.pdf").write_text(
+                "solution", encoding="utf-8"
+            )
 
             groups = find_project_groups(scan_directory(root))
 
-            self.assertEqual([group.group_name for group in groups], ["CS1010X finals jun21"])
+            self.assertEqual(
+                [group.group_name for group in groups], ["CS1010X finals jun21"]
+            )
 
     def test_title_variant_set_creates_concrete_suggestion(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "EvoSim_project_slides.pptx").write_text("slides", encoding="utf-8")
-            (root / "EvoSim_project_slides_final.pptx").write_text("slides", encoding="utf-8")
+            (root / "EvoSim_project_slides_final.pptx").write_text(
+                "slides", encoding="utf-8"
+            )
 
             groups = find_project_groups(scan_directory(root))
 
-            self.assertEqual([group.group_name for group in groups], ["EvoSim project slides"])
+            self.assertEqual(
+                [group.group_name for group in groups], ["EvoSim project slides"]
+            )
 
     def test_repeated_names_are_needs_decision_unless_locked(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -567,7 +615,9 @@ class ProjectGroupingTests(unittest.TestCase):
 
 
 class OrganizationSuggestionTests(unittest.TestCase):
-    def test_suggestions_create_destinations_under_organized_group_subfolder(self) -> None:
+    def test_suggestions_create_destinations_under_organized_group_subfolder(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             file_path = root / "evosim_notes.txt"
@@ -588,7 +638,9 @@ class OrganizationSuggestionTests(unittest.TestCase):
                 root / "Organized" / "Evosim" / "notes" / "evosim_notes.txt",
             )
 
-    def test_course_code_role_based_subfolders_are_assigned_after_grouping(self) -> None:
+    def test_course_code_role_based_subfolders_are_assigned_after_grouping(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             filenames = [
@@ -692,9 +744,7 @@ class OrganizationSuggestionTests(unittest.TestCase):
             )
 
             suggestions = build_organization_suggestions([group], root)
-            destinations = [
-                item.destination.name for item in suggestions[0].plan_items
-            ]
+            destinations = [item.destination.name for item in suggestions[0].plan_items]
 
             self.assertEqual(destinations, ["evosim.txt", "b_evosim.txt"])
 

@@ -53,9 +53,7 @@ def scan_root(
     report_warnings = _string_tuple(report.get("warnings"), "report warnings")
     # Boundaries remain scan-generation state in B2-B1. The existing durable
     # report format is unchanged until a versioned artifact contract owns them.
-    warnings = report_warnings + safe_boundary_summaries(
-        directory_scan.boundaries
-    )
+    warnings = report_warnings + safe_boundary_summaries(directory_scan.boundaries)
     duplicates = _list(report.get("duplicates"), "report duplicates")
 
     return ScanApplicationResult(
@@ -63,7 +61,9 @@ def scan_root(
         report=report,
         summary=ScanSummary(
             file_count=_non_negative_int(summary_data.get("file_count"), "file_count"),
-            total_bytes=_non_negative_int(summary_data.get("total_bytes"), "total_bytes"),
+            total_bytes=_non_negative_int(
+                summary_data.get("total_bytes"), "total_bytes"
+            ),
             duplicate_group_count=_non_negative_int(
                 summary_data.get("duplicate_group_count"),
                 "duplicate_group_count",

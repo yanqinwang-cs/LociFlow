@@ -1,11 +1,11 @@
 from __future__ import annotations
 
+import os
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-import os
 from pathlib import Path
-from typing import Callable
 
 from organizer.application.file_identity_capture import (
     CapturedRegularFileIdentity,
@@ -143,7 +143,10 @@ class OrganizationUndoIdentityEligibilityInspector:
             return _ineligible(IdentityUndoEligibilityReason.PARENT_NOT_V2)
         if parent.status != STATUS_VERIFIED:
             return _ineligible(IdentityUndoEligibilityReason.PARENT_NOT_VERIFIED)
-        if parent.configured_root_identity != self.operation_repository.configured_root_identity:
+        if (
+            parent.configured_root_identity
+            != self.operation_repository.configured_root_identity
+        ):
             return _ineligible(IdentityUndoEligibilityReason.WRONG_ROOT)
         try:
             validate_v2_organization_undo_parent(
@@ -185,7 +188,9 @@ class OrganizationUndoIdentityEligibilityInspector:
             try:
                 occupied = self._lexists(self.root / pair.destination_relative_path)
             except (OSError, TypeError, ValueError):
-                return _unavailable(IdentityUndoEligibilityReason.INSPECTION_UNAVAILABLE)
+                return _unavailable(
+                    IdentityUndoEligibilityReason.INSPECTION_UNAVAILABLE
+                )
             if occupied:
                 return _ineligible(
                     IdentityUndoEligibilityReason.RESTORE_TARGET_OCCUPIED
@@ -266,19 +271,15 @@ def _is_meaningful(record: OrganizationOperationRecord) -> bool:
             item.result_state not in {MOVE_FAILED, MOVE_UNATTEMPTED}
             for item in record.expected_moves
         )
-    return (
-        record.status
-        in {
-            STATUS_PREPARED,
-            STATUS_MOVING,
-            STATUS_MOVED_UNVERIFIED,
-            STATUS_VERIFIED,
-            STATUS_PARTIAL_MOVEMENT,
-            STATUS_VERIFICATION_FAILED,
-            STATUS_INTERRUPTED,
-        }
-        or any(
-            item.result_state in {MOVE_MOVED, MOVE_ATTEMPTING}
-            for item in record.expected_moves
-        )
+    return record.status in {
+        STATUS_PREPARED,
+        STATUS_MOVING,
+        STATUS_MOVED_UNVERIFIED,
+        STATUS_VERIFIED,
+        STATUS_PARTIAL_MOVEMENT,
+        STATUS_VERIFICATION_FAILED,
+        STATUS_INTERRUPTED,
+    } or any(
+        item.result_state in {MOVE_MOVED, MOVE_ATTEMPTING}
+        for item in record.expected_moves
     )

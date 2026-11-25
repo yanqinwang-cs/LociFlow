@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-from dataclasses import replace
 import hashlib
 import os
-from pathlib import Path
-from types import SimpleNamespace
 import tempfile
 import unittest
-from unittest import mock
 import uuid
+from dataclasses import replace
+from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
 
 from organizer.application.content_identity import RegularFileContentIdentity
 from organizer.application.file_identity_capture import FileIdentityCaptureError
@@ -87,7 +87,10 @@ class OrganizationUndoIdentityEligibilityTests(unittest.TestCase):
 
     def test_missing_or_malformed_legacy_log_does_not_supply_identity(self) -> None:
         for log_contents in (None, b"not-json"):
-            with self.subTest(log_contents=log_contents), tempfile.TemporaryDirectory() as directory:
+            with (
+                self.subTest(log_contents=log_contents),
+                tempfile.TemporaryDirectory() as directory,
+            ):
                 root = Path(directory).resolve()
                 operations, undos, parent = _stored_parent(root, (b"content",))
                 log_relative = "AI_Review/operation_logs/legacy.json"
@@ -104,7 +107,9 @@ class OrganizationUndoIdentityEligibilityTests(unittest.TestCase):
 
                 self.assertTrue(result.eligible)
 
-    def test_v1_nonterminal_invalid_wrong_root_and_superseded_parents_reject(self) -> None:
+    def test_v1_nonterminal_invalid_wrong_root_and_superseded_parents_reject(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             operations, undos, parent = _stored_parent(root, (b"content",))
@@ -120,8 +125,11 @@ class OrganizationUndoIdentityEligibilityTests(unittest.TestCase):
                 STATUS_PARTIAL_MOVEMENT,
                 STATUS_INTERRUPTED,
             ):
-                with self.subTest(status=status), mock.patch.object(
-                    operations, "load", return_value=replace(parent, status=status)
+                with (
+                    self.subTest(status=status),
+                    mock.patch.object(
+                        operations, "load", return_value=replace(parent, status=status)
+                    ),
                 ):
                     result = inspector.inspect(parent.operation_id)
                 self.assertEqual(
@@ -144,7 +152,9 @@ class OrganizationUndoIdentityEligibilityTests(unittest.TestCase):
                 mock.patch.object(operations, "list_records", return_value=(invalid,)),
             ):
                 result = inspector.inspect(parent.operation_id)
-            self.assertEqual(result.reason, IdentityUndoEligibilityReason.PARENT_INVALID)
+            self.assertEqual(
+                result.reason, IdentityUndoEligibilityReason.PARENT_INVALID
+            )
 
             newer = replace(
                 parent,
@@ -154,7 +164,9 @@ class OrganizationUndoIdentityEligibilityTests(unittest.TestCase):
             )
             operations.create(newer)
             result = inspector.inspect(parent.operation_id)
-            self.assertEqual(result.reason, IdentityUndoEligibilityReason.PARENT_SUPERSEDED)
+            self.assertEqual(
+                result.reason, IdentityUndoEligibilityReason.PARENT_SUPERSEDED
+            )
 
     def test_existing_linked_undo_rejects(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -216,7 +228,9 @@ class OrganizationUndoIdentityEligibilityTests(unittest.TestCase):
             ).inspect(parent.operation_id)
 
             self.assertEqual(result.state, IdentityUndoEligibilityState.INELIGIBLE)
-            self.assertEqual(result.reason, IdentityUndoEligibilityReason.CONTENT_CHANGED)
+            self.assertEqual(
+                result.reason, IdentityUndoEligibilityReason.CONTENT_CHANGED
+            )
             self.assertEqual(result.captures, ())
 
     def test_missing_unsafe_and_unavailable_sources_fail_closed(self) -> None:
@@ -257,7 +271,9 @@ class OrganizationUndoIdentityEligibilityTests(unittest.TestCase):
                 result.reason, IdentityUndoEligibilityReason.INSPECTION_UNAVAILABLE
             )
 
-    def test_occupied_and_unsafe_restore_targets_reject_without_modification(self) -> None:
+    def test_occupied_and_unsafe_restore_targets_reject_without_modification(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             operations, undos, parent = _stored_parent(root, (b"content",))

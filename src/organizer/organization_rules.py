@@ -1,21 +1,22 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime
 import hashlib
 import json
 import os
-from pathlib import Path, PurePosixPath
-from typing import Any
 import unicodedata
 import uuid
+from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path, PurePosixPath
+from typing import Any
 
 from organizer.json_values import is_json_version
 
-
 ORGANIZATION_RULES_VERSION = 1
 STANDARDS_CATALOG_VERSION = 2
-ORGANIZATION_RULES_RELATIVE_PATH = Path("AI_Review") / "config" / "organization_rules.json"
+ORGANIZATION_RULES_RELATIVE_PATH = (
+    Path("AI_Review") / "config" / "organization_rules.json"
+)
 ORGANIZATION_RULES_STATUS_MISSING = "missing"
 ORGANIZATION_RULES_STATUS_LOADED = "loaded"
 ORGANIZATION_RULES_STATUS_UNAVAILABLE = "unavailable"
@@ -205,8 +206,12 @@ def load_organization_rules(root: Path) -> OrganizationRulesLoadResult:
         try:
             catalog = standards_catalog_from_data(data)
         except ValueError:
-            return _unavailable_result(rules_path, "Saved Standards catalog is malformed.")
-        expected_identity = hashlib.sha256(str(resolved_root).encode("utf-8")).hexdigest()
+            return _unavailable_result(
+                rules_path, "Saved Standards catalog is malformed."
+            )
+        expected_identity = hashlib.sha256(
+            str(resolved_root).encode("utf-8")
+        ).hexdigest()
         if catalog.configured_root_identity != expected_identity:
             return _unavailable_result(
                 rules_path,
@@ -224,9 +229,13 @@ def load_organization_rules(root: Path) -> OrganizationRulesLoadResult:
             catalog=catalog,
         )
     if not is_json_version(data.get("version"), ORGANIZATION_RULES_VERSION):
-        return _unavailable_result(rules_path, "Saved Standards version is unsupported.")
+        return _unavailable_result(
+            rules_path, "Saved Standards version is unsupported."
+        )
     if set(data) - ORGANIZATION_RULES_FIELDS:
-        return _unavailable_result(rules_path, "Saved Standards contain unsupported fields.")
+        return _unavailable_result(
+            rules_path, "Saved Standards contain unsupported fields."
+        )
 
     rules, warnings = organization_rules_from_data(data)
     if warnings:
@@ -275,12 +284,16 @@ def organization_rules_from_data(data: object) -> tuple[OrganizationRules, list[
     if not isinstance(data, dict):
         return (
             default_organization_rules(),
-            ["Organization rules must be a JSON object. Using conservative built-in defaults."],
+            [
+                "Organization rules must be a JSON object. Using conservative built-in defaults."
+            ],
         )
     if not is_json_version(data.get("version"), ORGANIZATION_RULES_VERSION):
         return (
             default_organization_rules(),
-            ["Organization rules version must be 1. Using conservative built-in defaults."],
+            [
+                "Organization rules version must be 1. Using conservative built-in defaults."
+            ],
         )
 
     locked, locked_display = _string_list_to_anchor_set(
@@ -295,7 +308,9 @@ def organization_rules_from_data(data: object) -> tuple[OrganizationRules, list[
     )
     ignored = frozenset(set(DEFAULT_IGNORED_TERMS) | set(ignored))
 
-    aliases, alias_display = _aliases_from_data(data.get("anchor_aliases", {}), warnings)
+    aliases, alias_display = _aliases_from_data(
+        data.get("anchor_aliases", {}), warnings
+    )
     aliases = _reject_alias_cycles(aliases, warnings)
     aliases = _resolve_alias_chains(aliases, warnings)
     preferred_granularities = _string_list_to_plain_set(
@@ -307,9 +322,7 @@ def organization_rules_from_data(data: object) -> tuple[OrganizationRules, list[
     normalized_ignored = {_resolve_anchor(term, aliases) for term in ignored}
     normalized_locked = {_resolve_anchor(term, aliases) for term in locked}
     alias_targets_to_ignored = {
-        alias
-        for alias, target in aliases.items()
-        if target in normalized_ignored
+        alias for alias, target in aliases.items() if target in normalized_ignored
     }
     if alias_targets_to_ignored:
         for alias in sorted(alias_targets_to_ignored):
@@ -346,18 +359,6 @@ def organization_rules_from_data(data: object) -> tuple[OrganizationRules, list[
         ),
         warnings,
     )
-
-
-def organization_rules_to_data(rules: OrganizationRules) -> dict[str, Any]:
-    return {
-        "version": ORGANIZATION_RULES_VERSION,
-        "locked_anchors": sorted(rules.locked_anchors),
-        "ignored_terms": sorted(
-            term for term in rules.ignored_terms if term not in DEFAULT_IGNORED_TERMS
-        ),
-        "anchor_aliases": dict(sorted(rules.anchor_aliases.items())),
-        "preferred_granularities": sorted(rules.preferred_granularities),
-    }
 
 
 def organization_rules_from_catalog(catalog: StandardsCatalog) -> OrganizationRules:
@@ -434,14 +435,21 @@ def standards_catalog_from_data(data: object) -> StandardsCatalog:
         raise ValueError("Standards catalog fields do not match version 2")
     if not is_json_version(data["version"], STANDARDS_CATALOG_VERSION):
         raise ValueError("unsupported Standards catalog version")
-    identity = _catalog_string(data["configured_root_identity"], "configured root identity")
+    identity = _catalog_string(
+        data["configured_root_identity"], "configured root identity"
+    )
     if len(identity) != 64 or any(char not in "0123456789abcdef" for char in identity):
         raise ValueError("invalid configured root identity")
     revision = _catalog_integer(data["revision"], "catalog revision", allow_zero=True)
     raw_standards = data["standards"]
     if not isinstance(raw_standards, list):
         raise ValueError("Standards must be a list")
-    standards = tuple(sorted((_standard_record_from_data(item) for item in raw_standards), key=lambda item: item.id))
+    standards = tuple(
+        sorted(
+            (_standard_record_from_data(item) for item in raw_standards),
+            key=lambda item: item.id,
+        )
+    )
     if len({item.id for item in standards}) != len(standards):
         raise ValueError("duplicate Standard ID")
     for index, record in enumerate(standards):
@@ -501,7 +509,9 @@ def _standard_scope_from_data(data: object) -> StandardScope:
     return StandardScope("folder", normalize_standard_relative_path(relative_path))
 
 
-def _standard_parameters(standard_type: str, data: object) -> tuple[tuple[str, str], ...]:
+def _standard_parameters(
+    standard_type: str, data: object
+) -> tuple[tuple[str, str], ...]:
     if not isinstance(data, dict):
         raise ValueError("Standard parameters must be an object")
     if standard_type == STANDARD_KEEP_FOLDER_UNCHANGED:
@@ -542,7 +552,11 @@ def normalize_matcher_value(value: object) -> str:
     if not isinstance(value, str):
         raise ValueError("matcher value must be a string")
     normalized = unicodedata.normalize("NFC", " ".join(value.strip().split()))
-    if not normalized or len(normalized) > 128 or not _valid_anchor(normalize_anchor(normalized)):
+    if (
+        not normalized
+        or len(normalized) > 128
+        or not _valid_anchor(normalize_anchor(normalized))
+    ):
         raise ValueError("invalid matcher value")
     return normalized
 
@@ -659,9 +673,13 @@ def canonical_anchor(anchor: str, rules: OrganizationRules) -> str:
     return _resolve_anchor(normalize_anchor(anchor), rules.anchor_aliases)
 
 
-def display_anchor(anchor: str, rules: OrganizationRules, fallback: str | None = None) -> str:
+def display_anchor(
+    anchor: str, rules: OrganizationRules, fallback: str | None = None
+) -> str:
     canonical = canonical_anchor(anchor, rules)
-    return rules.anchor_display_names.get(canonical, fallback or _default_display_name(canonical))
+    return rules.anchor_display_names.get(
+        canonical, fallback or _default_display_name(canonical)
+    )
 
 
 def _string_list_to_anchor_set(
@@ -683,7 +701,9 @@ def _string_list_to_anchor_set(
             continue
         normalized = normalize_anchor(item)
         if not _valid_anchor(normalized):
-            warnings.append(f"{field_name}[{index}] is not a valid anchor and was ignored")
+            warnings.append(
+                f"{field_name}[{index}] is not a valid anchor and was ignored"
+            )
             continue
         anchors.add(normalized)
         display_names.setdefault(normalized, item.strip())
@@ -714,7 +734,9 @@ def _string_list_to_plain_set(
     return frozenset(items)
 
 
-def _aliases_from_data(value: object, warnings: list[str]) -> tuple[dict[str, str], dict[str, str]]:
+def _aliases_from_data(
+    value: object, warnings: list[str]
+) -> tuple[dict[str, str], dict[str, str]]:
     if value is None:
         return {}, {}
     if not isinstance(value, dict):
@@ -725,12 +747,16 @@ def _aliases_from_data(value: object, warnings: list[str]) -> tuple[dict[str, st
     display_names: dict[str, str] = {}
     for raw_alias, raw_target in value.items():
         if not isinstance(raw_alias, str) or not isinstance(raw_target, str):
-            warnings.append("anchor_aliases entries must map strings to strings and one entry was ignored")
+            warnings.append(
+                "anchor_aliases entries must map strings to strings and one entry was ignored"
+            )
             continue
         alias = normalize_anchor(raw_alias)
         target = normalize_anchor(raw_target)
         if not _valid_anchor(alias) or not _valid_anchor(target):
-            warnings.append(f"anchor_aliases entry {raw_alias!r} is invalid and was ignored")
+            warnings.append(
+                f"anchor_aliases entry {raw_alias!r} is invalid and was ignored"
+            )
             continue
         if alias == target:
             display_names.setdefault(target, raw_target.strip())
@@ -740,14 +766,18 @@ def _aliases_from_data(value: object, warnings: list[str]) -> tuple[dict[str, st
     return aliases, display_names
 
 
-def _reject_alias_cycles(aliases: dict[str, str], warnings: list[str]) -> dict[str, str]:
+def _reject_alias_cycles(
+    aliases: dict[str, str], warnings: list[str]
+) -> dict[str, str]:
     valid = dict(aliases)
     for alias in sorted(aliases):
         seen: set[str] = set()
         current = alias
         while current in aliases:
             if current in seen:
-                warnings.append(f"anchor_aliases entry {alias!r} is part of a cycle and was ignored")
+                warnings.append(
+                    f"anchor_aliases entry {alias!r} is part of a cycle and was ignored"
+                )
                 valid.pop(alias, None)
                 break
             seen.add(current)
@@ -755,7 +785,9 @@ def _reject_alias_cycles(aliases: dict[str, str], warnings: list[str]) -> dict[s
     return valid
 
 
-def _resolve_alias_chains(aliases: dict[str, str], warnings: list[str]) -> dict[str, str]:
+def _resolve_alias_chains(
+    aliases: dict[str, str], warnings: list[str]
+) -> dict[str, str]:
     resolved: dict[str, str] = {}
     for alias in sorted(aliases):
         target = aliases[alias]
@@ -764,7 +796,9 @@ def _resolve_alias_chains(aliases: dict[str, str], warnings: list[str]) -> dict[
             seen.add(target)
             target = aliases[target]
         if target in seen:
-            warnings.append(f"anchor_aliases entry {alias!r} could not be resolved and was ignored")
+            warnings.append(
+                f"anchor_aliases entry {alias!r} could not be resolved and was ignored"
+            )
             continue
         resolved[alias] = target
     return resolved
@@ -796,6 +830,8 @@ def _valid_anchor(anchor: str) -> bool:
 def _default_display_name(anchor: str) -> str:
     if anchor.upper() == anchor and any(character.isdigit() for character in anchor):
         return anchor
-    if any(character.isdigit() for character in anchor) and any(character.isalpha() for character in anchor):
+    if any(character.isdigit() for character in anchor) and any(
+        character.isalpha() for character in anchor
+    ):
         return anchor.upper()
     return anchor.replace("_", " ").title().replace(" ", "_")

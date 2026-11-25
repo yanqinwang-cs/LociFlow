@@ -1,15 +1,16 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import hashlib
 import json
 import os
-from pathlib import Path
 import re
-from typing import Any, Iterable
+from collections.abc import Iterable
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
 
 from organizer.json_values import is_json_integer, is_json_version
-from organizer.models import RuleCandidate, RuleDecision, RuleReviewResult
+from organizer.models import RuleCandidate, RuleDecision
 from organizer.organization_rules import (
     ORGANIZATION_RULES_RELATIVE_PATH,
     ORGANIZATION_RULES_VERSION,
@@ -152,7 +153,9 @@ def export_rule_candidates(
     return resolved_destination
 
 
-def load_reviewed_rule_file(path: Path, root: Path) -> tuple[dict[str, RuleCandidate], dict[str, RuleDecision]]:
+def load_reviewed_rule_file(
+    path: Path, root: Path
+) -> tuple[dict[str, RuleCandidate], dict[str, RuleDecision]]:
     resolved_path = _validate_existing_file_path(path, root.resolve())
     try:
         with resolved_path.open("r", encoding="utf-8") as file:
@@ -178,33 +181,12 @@ def load_reviewed_rule_file(path: Path, root: Path) -> tuple[dict[str, RuleCandi
     return candidates, decisions
 
 
-def summarize_rule_decisions(decisions: Iterable[RuleDecision]) -> RuleReviewResult:
-    accepted: list[RuleDecision] = []
-    rejected: list[RuleDecision] = []
-    ignored: list[RuleDecision] = []
-    undecided: list[RuleDecision] = []
-    for decision in decisions:
-        if decision.decision == DECISION_ACCEPT:
-            accepted.append(decision)
-        elif decision.decision == DECISION_REJECT:
-            rejected.append(decision)
-        elif decision.decision == DECISION_IGNORE_CANDIDATE:
-            ignored.append(decision)
-        else:
-            undecided.append(decision)
-    return RuleReviewResult(
-        accepted=tuple(accepted),
-        rejected=tuple(rejected),
-        ignored=tuple(ignored),
-        undecided=tuple(undecided),
-        warnings=(),
-    )
-
-
 def apply_rule_decisions(reviewed_path: Path, root: Path) -> Path:
     resolved_root = root.resolve()
     candidates, decisions = load_reviewed_rule_file(reviewed_path, resolved_root)
-    rules_path = validate_under_root(resolved_root / ORGANIZATION_RULES_RELATIVE_PATH, resolved_root)
+    rules_path = validate_under_root(
+        resolved_root / ORGANIZATION_RULES_RELATIVE_PATH, resolved_root
+    )
     existing_rules = _load_existing_rules_data(rules_path)
     merged_rules, result = _merge_rule_decisions(existing_rules, candidates, decisions)
 
@@ -212,7 +194,9 @@ def apply_rule_decisions(reviewed_path: Path, root: Path) -> Path:
     if result["applied"]:
         _write_json_atomic(rules_path, merged_rules)
     result_path = _collision_safe_path(resolved_root / DEFAULT_RULE_APPLY_RESULT_PATH)
-    _validate_new_output_path(result_path, resolved_root).parent.mkdir(parents=True, exist_ok=True)
+    _validate_new_output_path(result_path, resolved_root).parent.mkdir(
+        parents=True, exist_ok=True
+    )
     with result_path.open("x", encoding="utf-8") as file:
         json.dump(result, file, indent=2, sort_keys=True)
         file.write("\n")
@@ -233,7 +217,9 @@ def _candidate_to_review_file_item(candidate: RuleCandidate) -> dict[str, Any]:
     }
 
 
-def _review_file_item_to_candidate(raw_candidate: object, index: int) -> tuple[RuleCandidate, RuleDecision]:
+def _review_file_item_to_candidate(
+    raw_candidate: object, index: int
+) -> tuple[RuleCandidate, RuleDecision]:
     if not isinstance(raw_candidate, dict):
         raise ValueError(f"candidates[{index}] must be an object")
     candidate_id = raw_candidate.get("candidate_id")
@@ -252,15 +238,23 @@ def _review_file_item_to_candidate(raw_candidate: object, index: int) -> tuple[R
         raise ValueError(f"candidates[{index}] has unknown rule_type")
     _validate_rule_value(rule_type, value, f"candidates[{index}].value")
     if not is_json_integer(confidence) or not 0 <= confidence <= 100:
-        raise ValueError(f"candidates[{index}] confidence must be an integer from 0 to 100")
+        raise ValueError(
+            f"candidates[{index}] confidence must be an integer from 0 to 100"
+        )
     if not isinstance(reason, str) or not reason.strip():
         raise ValueError(f"candidates[{index}] reason must be a non-empty string")
-    if not isinstance(evidence_paths, list) or not all(isinstance(path, str) for path in evidence_paths):
-        raise ValueError(f"candidates[{index}] evidence_paths must be a list of strings")
+    if not isinstance(evidence_paths, list) or not all(
+        isinstance(path, str) for path in evidence_paths
+    ):
+        raise ValueError(
+            f"candidates[{index}] evidence_paths must be a list of strings"
+        )
     for evidence_path in evidence_paths:
         _validate_relative_evidence_path(evidence_path)
     if not isinstance(suggested_action, str) or not suggested_action.strip():
-        raise ValueError(f"candidates[{index}] suggested_action must be a non-empty string")
+        raise ValueError(
+            f"candidates[{index}] suggested_action must be a non-empty string"
+        )
     if decision not in ALLOWED_DECISIONS:
         raise ValueError(f"candidates[{index}] has unknown decision")
     if not isinstance(note, str):
@@ -285,8 +279,12 @@ def _merge_rule_decisions(
     candidates: dict[str, RuleCandidate],
     decisions: dict[str, RuleDecision],
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    locked = _list_to_display_map(existing_rules.get("locked_anchors", []), "locked_anchors")
-    ignored = _list_to_display_map(existing_rules.get("ignored_terms", []), "ignored_terms")
+    locked = _list_to_display_map(
+        existing_rules.get("locked_anchors", []), "locked_anchors"
+    )
+    ignored = _list_to_display_map(
+        existing_rules.get("ignored_terms", []), "ignored_terms"
+    )
     aliases = _aliases_to_display_map(existing_rules.get("anchor_aliases", {}))
     granularities = _list_to_display_map(
         existing_rules.get("preferred_granularities", []),
@@ -310,21 +308,31 @@ def _merge_rule_decisions(
             )
             continue
 
-        if candidate.rule_type == RULE_LOCK_ANCHOR_CANDIDATE and isinstance(candidate.value, str):
+        if candidate.rule_type == RULE_LOCK_ANCHOR_CANDIDATE and isinstance(
+            candidate.value, str
+        ):
             locked[normalize_anchor(candidate.value)] = candidate.value.strip()
             applied.append(_applied_item(candidate))
-        elif candidate.rule_type == RULE_IGNORE_TERM_CANDIDATE and isinstance(candidate.value, str):
+        elif candidate.rule_type == RULE_IGNORE_TERM_CANDIDATE and isinstance(
+            candidate.value, str
+        ):
             ignored[normalize_anchor(candidate.value)] = candidate.value.strip()
             applied.append(_applied_item(candidate))
-        elif candidate.rule_type == RULE_PREFERRED_GRANULARITY_CANDIDATE and isinstance(candidate.value, str):
+        elif candidate.rule_type == RULE_PREFERRED_GRANULARITY_CANDIDATE and isinstance(
+            candidate.value, str
+        ):
             granularities[normalize_anchor(candidate.value)] = candidate.value.strip()
             applied.append(_applied_item(candidate))
-        elif candidate.rule_type == RULE_ALIAS_CANDIDATE and isinstance(candidate.value, dict):
+        elif candidate.rule_type == RULE_ALIAS_CANDIDATE and isinstance(
+            candidate.value, dict
+        ):
             alias = candidate.value["alias"].strip()
             canonical = candidate.value["canonical"].strip()
             normalized_alias = normalize_anchor(alias)
             existing = aliases.get(normalized_alias)
-            if existing is not None and normalize_anchor(existing) != normalize_anchor(canonical):
+            if existing is not None and normalize_anchor(existing) != normalize_anchor(
+                canonical
+            ):
                 warning = (
                     f"alias {alias!r} already maps to {existing!r}; "
                     f"candidate {candidate_id} was skipped"
@@ -341,21 +349,20 @@ def _merge_rule_decisions(
             aliases[normalized_alias] = canonical
             applied.append(_applied_item(candidate))
         else:
-            raise ValueError(f"candidate {candidate_id} has invalid value for {candidate.rule_type}")
+            raise ValueError(
+                f"candidate {candidate_id} has invalid value for {candidate.rule_type}"
+            )
 
     merged = {
         "version": ORGANIZATION_RULES_VERSION,
         "locked_anchors": _sorted_display_values(locked),
         "ignored_terms": _sorted_display_values(ignored),
-        "anchor_aliases": {
-            alias: aliases[alias]
-            for alias in sorted(aliases)
-        },
+        "anchor_aliases": {alias: aliases[alias] for alias in sorted(aliases)},
         "preferred_granularities": _sorted_display_values(granularities),
     }
     result = {
         "schema_version": RULE_REVIEW_SCHEMA_VERSION,
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": datetime.now(UTC).isoformat(),
         "applied": applied,
         "skipped": skipped,
         "warnings": warnings,
@@ -383,13 +390,17 @@ def _load_existing_rules_data(rules_path: Path) -> dict[str, Any]:
         raise ValueError("organization rules must be a JSON object")
     unknown = set(data) - SUPPORTED_RULE_CONFIG_KEYS
     if unknown:
-        raise ValueError(f"organization rules contain unsupported field(s): {', '.join(sorted(unknown))}")
+        raise ValueError(
+            f"organization rules contain unsupported field(s): {', '.join(sorted(unknown))}"
+        )
     if not is_json_version(data.get("version"), ORGANIZATION_RULES_VERSION):
         raise ValueError("organization rules version must be 1")
     _list_to_display_map(data.get("locked_anchors", []), "locked_anchors")
     _list_to_display_map(data.get("ignored_terms", []), "ignored_terms")
     _aliases_to_display_map(data.get("anchor_aliases", {}))
-    _list_to_display_map(data.get("preferred_granularities", []), "preferred_granularities")
+    _list_to_display_map(
+        data.get("preferred_granularities", []), "preferred_granularities"
+    )
     return data
 
 
@@ -419,7 +430,9 @@ def _aliases_to_display_map(value: object) -> dict[str, str]:
             or not _valid_rule_string(raw_alias)
             or not _valid_rule_string(raw_canonical)
         ):
-            raise ValueError("organization rules anchor_aliases contains an invalid entry")
+            raise ValueError(
+                "organization rules anchor_aliases contains an invalid entry"
+            )
         aliases[normalize_anchor(raw_alias)] = raw_canonical.strip()
     return aliases
 
@@ -452,7 +465,9 @@ def _unique_candidate_id(
     base = _candidate_id_base(rule_type, value)
     if base not in used_ids:
         return base
-    digest = hashlib.sha256(_stable_value_text(rule_type, value).encode("utf-8")).hexdigest()[:8]
+    digest = hashlib.sha256(
+        _stable_value_text(rule_type, value).encode("utf-8")
+    ).hexdigest()[:8]
     candidate_id = f"{base}-{digest}"
     counter = 2
     while candidate_id in used_ids:

@@ -41,7 +41,9 @@ class WebDuplicateModuleTests(ConsumerWebFixture, unittest.IsolatedAsyncioTestCa
             )
         finally:
             await client.aclose()
-        path = self.root / "AI_Review" / "review_sessions" / "duplicate_reviewed_plan.json"
+        path = (
+            self.root / "AI_Review" / "review_sessions" / "duplicate_reviewed_plan.json"
+        )
         data = json.loads(path.read_text(encoding="utf-8"))
         self.assertEqual(saved.status_code, 303)
         self.assertEqual({item["category"] for item in data["items"]}, {"duplicate"})

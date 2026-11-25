@@ -1,7 +1,7 @@
-from dataclasses import FrozenInstanceError
-from pathlib import Path
 import tempfile
 import unittest
+from dataclasses import FrozenInstanceError
+from pathlib import Path
 from unittest import mock
 
 from organizer.web.config import WebAppConfig

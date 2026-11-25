@@ -1,9 +1,9 @@
-from collections.abc import Sequence
-from dataclasses import dataclass
 import os
-from pathlib import Path
 import unicodedata
 import uuid
+from collections.abc import Sequence
+from dataclasses import dataclass
+from pathlib import Path
 
 from organizer.models import FileMetadata
 from organizer.safety import validate_under_root
@@ -483,15 +483,6 @@ def is_orphan_code_candidate(
     if metadata.extension.lower() not in ORPHAN_CODE_EXTENSIONS:
         return False
     return is_actionable_plan_eligible(metadata, all_metadata)
-
-
-def is_protected_or_project_context(
-    metadata: FileMetadata,
-    all_metadata: Sequence[FileMetadata],
-) -> bool:
-    return is_protected_context_path(metadata.relative_path) or is_project_context_path(
-        metadata.relative_path, all_metadata
-    )
 
 
 def _has_web_project_context(

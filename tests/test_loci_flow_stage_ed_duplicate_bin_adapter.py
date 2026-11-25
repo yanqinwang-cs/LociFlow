@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 import shutil
 import subprocess
 import textwrap
 import unittest
+from pathlib import Path
 
 from tests.test_loci_flow_stage_b2_adapter import _payload
-
 
 ROOT = Path(__file__).resolve().parents[1]
 LOCI = ROOT / "src" / "organizer" / "web" / "static" / "loci_flow"
@@ -74,16 +73,16 @@ class LociFlowStageEDDuplicateBinAdapterTests(unittest.TestCase):
             self.skipTest("Node is unavailable")
         script = textwrap.dedent(
             f"""
-            import * as api from {json.dumps((LOCI / 'api.js').as_uri())};
+            import * as api from {json.dumps((LOCI / "api.js").as_uri())};
             import {{
               createBackendDataSource, createFixtureDataSource,
               validateDuplicateBinResponse, validateOrganizationResponse,
               validateActivityResponse, validateUndoPreview,
-            }} from {json.dumps((LOCI / 'data_source.js').as_uri())};
+            }} from {json.dumps((LOCI / "data_source.js").as_uri())};
             import {{
               buildProductionStageB1Contract, buildRouteViewModel,
-            }} from {json.dumps((LOCI / 'view_models.js').as_uri())};
-            import {{ renderRoute }} from {json.dumps((LOCI / 'views.js').as_uri())};
+            }} from {json.dumps((LOCI / "view_models.js").as_uri())};
+            import {{ renderRoute }} from {json.dumps((LOCI / "views.js").as_uri())};
             const ready={json.dumps(_ready_payload())};
             const batchId={json.dumps(BATCH_ID)};
             const itemA={json.dumps(ITEM_A)};
@@ -135,31 +134,51 @@ class LociFlowStageEDDuplicateBinAdapterTests(unittest.TestCase):
             }))));
             """
         )
-        self.assertEqual([call["url"] for call in result], [
-            "/api/duplicate-bin/move/preview",
-            "/api/duplicate-bin/move",
-            "/api/duplicate-bin",
-            "/api/duplicate-bin/restore/preview",
-            "/api/duplicate-bin/restore",
-        ])
-        self.assertEqual(result[0]["fields"], {"csrf_token": "csrf", "batch_id": BATCH_ID})
-        self.assertEqual(result[1]["fields"], {
-            "csrf_token": "csrf",
-            "confirmation_token": TOKEN,
-            "confirmation": "MOVE COPIES TO DUPLICATE BIN",
-        })
+        self.assertEqual(
+            [call["url"] for call in result],
+            [
+                "/api/duplicate-bin/move/preview",
+                "/api/duplicate-bin/move",
+                "/api/duplicate-bin",
+                "/api/duplicate-bin/restore/preview",
+                "/api/duplicate-bin/restore",
+            ],
+        )
+        self.assertEqual(
+            result[0]["fields"], {"csrf_token": "csrf", "batch_id": BATCH_ID}
+        )
+        self.assertEqual(
+            result[1]["fields"],
+            {
+                "csrf_token": "csrf",
+                "confirmation_token": TOKEN,
+                "confirmation": "MOVE COPIES TO DUPLICATE BIN",
+            },
+        )
         self.assertEqual(result[2]["method"], "GET")
-        self.assertEqual(result[3]["fields"], {
-            "csrf_token": "csrf",
-            "item_ids": json.dumps([ITEM_A, ITEM_B], separators=(",", ":")),
-        })
-        self.assertEqual(result[4]["fields"], {
-            "csrf_token": "csrf",
-            "confirmation_token": TOKEN,
-            "confirmation": "RESTORE COPIES",
-        })
+        self.assertEqual(
+            result[3]["fields"],
+            {
+                "csrf_token": "csrf",
+                "item_ids": json.dumps([ITEM_A, ITEM_B], separators=(",", ":")),
+            },
+        )
+        self.assertEqual(
+            result[4]["fields"],
+            {
+                "csrf_token": "csrf",
+                "confirmation_token": TOKEN,
+                "confirmation": "RESTORE COPIES",
+            },
+        )
         serialized = json.dumps(result).lower()
-        for forbidden in ("source", "destination", "sha256", "batch_version", "scan_generation"):
+        for forbidden in (
+            "source",
+            "destination",
+            "sha256",
+            "batch_version",
+            "scan_generation",
+        ):
             self.assertNotIn(forbidden, serialized)
 
     def test_data_source_delegates_serializes_and_keeps_fixture_inert(self) -> None:
@@ -197,17 +216,25 @@ class LociFlowStageEDDuplicateBinAdapterTests(unittest.TestCase):
         self.assertTrue(result["attentionRejected"])
         self.assertTrue(all(result["blocked"]))
         self.assertEqual(result["calls"][0], ["move-preview", BATCH_ID, "csrf"])
-        self.assertEqual(result["calls"][1][1], {
-            "confirmationToken": TOKEN,
-            "confirmation": "MOVE COPIES TO DUPLICATE BIN",
-        })
+        self.assertEqual(
+            result["calls"][1][1],
+            {
+                "confirmationToken": TOKEN,
+                "confirmation": "MOVE COPIES TO DUPLICATE BIN",
+            },
+        )
         self.assertEqual(result["calls"][3], ["restore-preview", [ITEM_A], "csrf"])
-        self.assertEqual(result["calls"][4][1], {
-            "confirmationToken": TOKEN,
-            "confirmation": "RESTORE COPIES",
-        })
+        self.assertEqual(
+            result["calls"][4][1],
+            {
+                "confirmationToken": TOKEN,
+                "confirmation": "RESTORE COPIES",
+            },
+        )
 
-    def test_duplicate_actions_are_serialized_and_restore_selection_is_literal(self) -> None:
+    def test_duplicate_actions_are_serialized_and_restore_selection_is_literal(
+        self,
+    ) -> None:
         result = self.run_node(
             """
             let releaseMove;
@@ -263,16 +290,26 @@ class LociFlowStageEDDuplicateBinAdapterTests(unittest.TestCase):
         )
         self.assertIn('data-action="preview-move"', result["organize"])
         self.assertIn('data-action="preview-duplicate-bin-move"', result["organize"])
-        self.assertEqual(result["action"]["action"]["label"], "Move copies to Duplicate Bin")
+        self.assertEqual(
+            result["action"]["action"]["label"], "Move copies to Duplicate Bin"
+        )
         self.assertIn("Previous folder", result["bin"])
         self.assertIn("This copy needs attention.", result["bin"])
         self.assertIn('data-bin-id="' + ITEM_A + '"', result["bin"])
         self.assertIn("Duplicate Bin is empty", result["empty"])
         serialized = (result["organize"] + result["bin"] + result["empty"]).lower()
-        for forbidden in ("sha256", "batch_version", "empty bin", "permanent", "safe to delete"):
+        for forbidden in (
+            "sha256",
+            "batch_version",
+            "empty bin",
+            "permanent",
+            "safe to delete",
+        ):
             self.assertNotIn(forbidden, serialized)
 
-    def test_organize_and_duplicate_bin_cover_recovered_and_empty_ordinary_states(self) -> None:
+    def test_organize_and_duplicate_bin_cover_recovered_and_empty_ordinary_states(
+        self,
+    ) -> None:
         result = self.run_node(
             """
             const make=(payload,duplicateMovement=null,duplicateBin=null)=>buildProductionStageB1Contract({
@@ -305,13 +342,17 @@ class LociFlowStageEDDuplicateBinAdapterTests(unittest.TestCase):
         )
         self.assertEqual(result["noBatch"]["stage"], "unavailable")
         self.assertEqual(result["duplicateOnly"]["stage"], "ready")
-        self.assertIn('data-action="preview-duplicate-bin-move"', result["duplicateOnlyHtml"])
+        self.assertIn(
+            'data-action="preview-duplicate-bin-move"', result["duplicateOnlyHtml"]
+        )
         self.assertNotIn('data-action="preview-move"', result["duplicateOnlyHtml"])
         self.assertEqual(result["recovered"]["stage"], "completed")
         self.assertIn("Loading Duplicate Bin", result["loading"])
         self.assertIn("Duplicate Bin could not be loaded", result["error"])
 
-    def test_duplicate_activity_undo_uses_restore_phrase_and_multiple_entries(self) -> None:
+    def test_duplicate_activity_undo_uses_restore_phrase_and_multiple_entries(
+        self,
+    ) -> None:
         result = self.run_node(
             """
             const entry=(id)=>({id,type:"duplicate_bin_move",title:"Moved 1 copy to Duplicate Bin",status:"moved",started_at:movedAt,completed_at:movedAt,files_expected:1,files_moved:1,files_restored:0,files_failed:0,files_unattempted:0,verification_status:"passed",undoable:true,related_operation_id:null,details:[{source:"Inbox",destination:"Duplicate Bin",status:"verified"}]});
@@ -334,22 +375,29 @@ class LociFlowStageEDDuplicateBinAdapterTests(unittest.TestCase):
         self.assertEqual(result["count"], 2)
         self.assertEqual(result["preview"]["copies_to_restore"], 1)
         self.assertEqual(result["preview"]["confirmation"], "RESTORE COPIES")
-        self.assertEqual(result["calls"][0], [OPERATION, TOKEN, "csrf", "RESTORE COPIES"])
+        self.assertEqual(
+            result["calls"][0], [OPERATION, TOKEN, "csrf", "RESTORE COPIES"]
+        )
 
-    def test_app_orchestration_refreshes_authoritative_owners_and_clears_confirmations(self) -> None:
+    def test_app_orchestration_refreshes_authoritative_owners_and_clears_confirmations(
+        self,
+    ) -> None:
         app = (LOCI / "app.js").read_text(encoding="utf-8")
         views = (LOCI / "views.js").read_text(encoding="utf-8")
         move = app[
-            app.index("async function confirmDuplicateBinMove"):
-            app.index("function setDuplicateBinSelection")
+            app.index("async function confirmDuplicateBinMove") : app.index(
+                "function setDuplicateBinSelection"
+            )
         ]
         restore = app[
-            app.index("async function confirmDuplicateBinRestore"):
-            app.index("async function checkFiles")
+            app.index("async function confirmDuplicateBinRestore") : app.index(
+                "async function checkFiles"
+            )
         ]
         listing = app[
-            app.index("async function loadDuplicateBin"):
-            app.index("function toggleActivity")
+            app.index("async function loadDuplicateBin") : app.index(
+                "function toggleActivity"
+            )
         ]
         self.assertEqual(app.count("dataSource.confirmDuplicateBinMove("), 1)
         self.assertEqual(app.count("dataSource.confirmDuplicateBinRestore("), 1)
@@ -357,10 +405,14 @@ class LociFlowStageEDDuplicateBinAdapterTests(unittest.TestCase):
         self.assertIn("loadDuplicateBin({ refresh: true })", move)
         self.assertIn("loadActivity({ force: true, refresh: true })", move)
         self.assertIn("isUncertainDuplicateBinError", move)
-        self.assertIn("loadDuplicateBin({ noticeMessage: message, refresh: true })", restore)
+        self.assertIn(
+            "loadDuplicateBin({ noticeMessage: message, refresh: true })", restore
+        )
         self.assertIn("loadActivity({ force: true, refresh: true })", restore)
         self.assertIn("await duplicateBinLoadPromise.catch", listing)
-        self.assertIn("return loadDuplicateBin({ noticeMessage, refresh: true })", listing)
+        self.assertIn(
+            "return loadDuplicateBin({ noticeMessage, refresh: true })", listing
+        )
         self.assertIn("discardDuplicateMovementConfirmation()", app)
         self.assertIn("discardDuplicateRestoreConfirmation()", app)
         self.assertNotIn("localStorage", app)

@@ -1,9 +1,9 @@
-from pathlib import Path
 import os
 import subprocess
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 
 from organizer.review import build_review_candidate_plan, detect_review_candidates
 from organizer.scanner import scan_directory
@@ -60,7 +60,9 @@ class ReviewDetectionTests(unittest.TestCase):
             candidates = detect_review_candidates(scan_directory(root))
 
             self.assertEqual(len(candidates), len(names))
-            self.assertEqual({candidate.category for candidate in candidates}, {"temporary"})
+            self.assertEqual(
+                {candidate.category for candidate in candidates}, {"temporary"}
+            )
             self.assertTrue(all(candidate.confidence == 95 for candidate in candidates))
 
     def test_detects_backup_copy_marker_candidates(self) -> None:
@@ -83,7 +85,9 @@ class ReviewDetectionTests(unittest.TestCase):
             candidates = detect_review_candidates(scan_directory(root))
 
             self.assertEqual(len(candidates), len(names))
-            self.assertEqual({candidate.category for candidate in candidates}, {"backup_or_copy"})
+            self.assertEqual(
+                {candidate.category for candidate in candidates}, {"backup_or_copy"}
+            )
             self.assertTrue(all(candidate.confidence == 70 for candidate in candidates))
 
     def test_does_not_match_backup_copy_tokens_inside_unrelated_words(self) -> None:
@@ -141,7 +145,9 @@ class ReviewDetectionTests(unittest.TestCase):
                 {candidate.file.name for candidate in candidates},
                 {"practice.py", "Example.java", "analysis.ipynb"},
             )
-            self.assertEqual({candidate.category for candidate in candidates}, {"orphan_code"})
+            self.assertEqual(
+                {candidate.category for candidate in candidates}, {"orphan_code"}
+            )
 
     def test_project_and_dependency_code_are_not_orphan_code_candidates(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -161,7 +167,9 @@ class ReviewDetectionTests(unittest.TestCase):
 
             self.assertEqual(candidates, [])
 
-    def test_generated_web_assets_are_not_orphan_code_or_review_candidates(self) -> None:
+    def test_generated_web_assets_are_not_orphan_code_or_review_candidates(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             paths = [
@@ -206,14 +214,20 @@ class ReviewDetectionTests(unittest.TestCase):
             for relative_path in paths:
                 path = root / relative_path
                 path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text("" if path.name == "empty.txt" else "content", encoding="utf-8")
-            (root / "project" / "pyproject.toml").write_text("[project]", encoding="utf-8")
+                path.write_text(
+                    "" if path.name == "empty.txt" else "content", encoding="utf-8"
+                )
+            (root / "project" / "pyproject.toml").write_text(
+                "[project]", encoding="utf-8"
+            )
 
             candidates = detect_review_candidates(scan_directory(root))
 
             self.assertEqual(candidates, [])
 
-    def test_user_files_outside_protected_contexts_are_still_review_candidates(self) -> None:
+    def test_user_files_outside_protected_contexts_are_still_review_candidates(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "file.tmp").write_text("temp", encoding="utf-8")
@@ -229,7 +243,9 @@ class ReviewDetectionTests(unittest.TestCase):
 
 
 class ReviewPlanTests(unittest.TestCase):
-    def test_plan_destinations_are_under_review_category_and_preserve_paths(self) -> None:
+    def test_plan_destinations_are_under_review_category_and_preserve_paths(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             nested = root / "subdir"

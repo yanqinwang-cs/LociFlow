@@ -1,4 +1,3 @@
-from pathlib import Path
 import json
 import os
 import shutil
@@ -6,6 +5,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from organizer.executor import (
@@ -14,7 +14,7 @@ from organizer.executor import (
     apply_move_plan,
     undo_operation_log,
 )
-from organizer.models import MovePlanItem, MoveResult
+from organizer.models import MovePlanItem
 
 
 def make_plan_item(source: Path, destination: Path) -> MovePlanItem:
@@ -100,7 +100,9 @@ class ExecutorApplyTests(unittest.TestCase):
             self.assertTrue(source.exists())
             self.assertFalse(destination.exists())
 
-    def test_recorder_failure_after_move_writes_legacy_log_and_stops_batch(self) -> None:
+    def test_recorder_failure_after_move_writes_legacy_log_and_stops_batch(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             first = root / "a.txt"
@@ -156,7 +158,9 @@ class ExecutorApplyTests(unittest.TestCase):
             self.assertEqual(len(operation_log.operations), 1)
             self.assertTrue(operation_log.operations[0].success)
 
-    def test_apply_creates_destination_parent_directories_only_when_applying(self) -> None:
+    def test_apply_creates_destination_parent_directories_only_when_applying(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             source = root / "nested" / "b.txt"
@@ -308,7 +312,9 @@ class ExecutorApplyTests(unittest.TestCase):
 
             self.assertEqual(keep.read_text(encoding="utf-8"), "keep")
 
-    def test_apply_returns_partial_log_when_move_fails_after_partial_execution(self) -> None:
+    def test_apply_returns_partial_log_when_move_fails_after_partial_execution(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             first = root / "first.txt"
@@ -345,7 +351,9 @@ class ExecutorApplyTests(unittest.TestCase):
 
 
 class ExecutorUndoTests(unittest.TestCase):
-    def test_optional_undo_recorder_wraps_each_restore_and_remains_compatible(self) -> None:
+    def test_optional_undo_recorder_wraps_each_restore_and_remains_compatible(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             source = root / "b.txt"
@@ -355,13 +363,21 @@ class ExecutorUndoTests(unittest.TestCase):
             events: list[str] = []
 
             class Recorder:
-                def before_batch(self, items): events.append("batch")
+                def before_batch(self, items):
+                    events.append("batch")
+
                 def before_restore(self, index, item):
                     self_test.assertTrue(destination.exists())
                     events.append("attempting")
-                def after_success(self, index, item, result): events.append("restored")
-                def after_failure(self, index, item, result): events.append("failed")
-                def after_batch(self, log): events.append("complete")
+
+                def after_success(self, index, item, result):
+                    events.append("restored")
+
+                def after_failure(self, index, item, result):
+                    events.append("failed")
+
+                def after_batch(self, log):
+                    events.append("complete")
 
             self_test = self
             undo = undo_operation_log(operation_log.log_path, root, recorder=Recorder())
@@ -377,15 +393,20 @@ class ExecutorUndoTests(unittest.TestCase):
             operation_log = apply_move_plan([make_plan_item(source, destination)], root)
 
             class Recorder:
-                def before_batch(self, items): pass
-                def before_restore(self, index, item): raise OSError("durability")
+                def before_batch(self, items):
+                    pass
+
+                def before_restore(self, index, item):
+                    raise OSError("durability")
 
             with self.assertRaises(UndoRecordingError):
                 undo_operation_log(operation_log.log_path, root, recorder=Recorder())
             self.assertFalse(source.exists())
             self.assertTrue(destination.exists())
 
-    def test_recorder_failure_after_restore_reports_recoverable_filesystem_change(self) -> None:
+    def test_recorder_failure_after_restore_reports_recoverable_filesystem_change(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             source = root / "b.txt"
@@ -394,9 +415,14 @@ class ExecutorUndoTests(unittest.TestCase):
             operation_log = apply_move_plan([make_plan_item(source, destination)], root)
 
             class Recorder:
-                def before_batch(self, items): pass
-                def before_restore(self, index, item): pass
-                def after_success(self, index, item, result): raise OSError("durability")
+                def before_batch(self, items):
+                    pass
+
+                def before_restore(self, index, item):
+                    pass
+
+                def after_success(self, index, item, result):
+                    raise OSError("durability")
 
             with self.assertRaises(UndoRecordingError) as raised:
                 undo_operation_log(operation_log.log_path, root, recorder=Recorder())
@@ -419,12 +445,21 @@ class ExecutorUndoTests(unittest.TestCase):
                     undo_operation_log(link, root)
 
             malformed = logs / "malformed.json"
-            malformed.write_text(json.dumps({"operations": [{
-                "source": str(root / "a.txt"),
-                "destination": str(root / "b.txt"),
-                "success": "true",
-                "message": "moved",
-            }]}), encoding="utf-8")
+            malformed.write_text(
+                json.dumps(
+                    {
+                        "operations": [
+                            {
+                                "source": str(root / "a.txt"),
+                                "destination": str(root / "b.txt"),
+                                "success": "true",
+                                "message": "moved",
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
             with self.assertRaisesRegex(ValueError, "boolean"):
                 undo_operation_log(malformed, root)
 

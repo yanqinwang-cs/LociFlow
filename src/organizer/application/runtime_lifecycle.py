@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from enum import StrEnum
 from threading import Condition
 
-
 APPLICATION_STOPPING_MESSAGE = "Loci Flow is closing. No new work can start."
 
 

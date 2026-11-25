@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime, timezone
 import errno
 import json
 import os
-from pathlib import Path
 import shutil
 import stat
 import sys
 import unicodedata
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import Protocol
 
 from organizer.executor_identity import (
@@ -20,15 +20,14 @@ from organizer.executor_identity import (
     validate_same_volume_identity_move_plan,
 )
 from organizer.file_identity import (
-    RequiredRegularFileIdentity,
     RegularFileStatFingerprint,
+    RequiredRegularFileIdentity,
     StableFileIdentityError,
     fingerprint_from_stat,
     open_verified_regular_file,
     verify_open_regular_file_descriptor,
 )
 from organizer.models import MovePlanItem, MoveResult, OperationLog
-
 
 _DIR_FD_FUNCTIONS = (os.open, os.mkdir, os.stat, os.link, os.unlink)
 _LINK_FUNCTION = os.link
@@ -387,7 +386,9 @@ def _execute_same_volume_identity_item(
                 source_context.__exit__(*active_exception)
             except BaseException as close_error:
                 if active_exception[0] is not None:
-                    raise active_exception[1].with_traceback(active_exception[2])
+                    # Re-raises the original exception object unchanged; chaining it to
+                    # close_error would change what the traceback reports.
+                    raise active_exception[1].with_traceback(active_exception[2])  # noqa: B904
                 if published:
                     if isinstance(close_error, (KeyboardInterrupt, SystemExit)):
                         raise StrictExecutorInterrupted() from None
@@ -416,12 +417,7 @@ def _require_strict_platform_support() -> None:
 
 
 def _open_root_directory(root: Path) -> int:
-    flags = (
-        os.O_RDONLY
-        | os.O_DIRECTORY
-        | os.O_NOFOLLOW
-        | getattr(os, "O_CLOEXEC", 0)
-    )
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
     try:
         descriptor = os.open(root, flags)
         if not stat.S_ISDIR(os.fstat(descriptor).st_mode):
@@ -472,12 +468,7 @@ def _open_directory_chain(
 ) -> tuple[int, bool]:
     current = os.dup(root_descriptor)
     created = False
-    flags = (
-        os.O_RDONLY
-        | os.O_DIRECTORY
-        | os.O_NOFOLLOW
-        | getattr(os, "O_CLOEXEC", 0)
-    )
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
     try:
         for part in parts:
             try:
@@ -545,9 +536,8 @@ def _require_source_binding(
             not stat.S_ISREG(path_stat.st_mode)
             or not stat.S_ISREG(descriptor_stat.st_mode)
             or _inode_identity(path_stat) != _inode_identity(descriptor_stat)
-            or _stable_stat_evidence(path_stat) != _stable_stat_evidence(
-                descriptor_stat
-            )
+            or _stable_stat_evidence(path_stat)
+            != _stable_stat_evidence(descriptor_stat)
             or descriptor_stat.st_nlink != expected_link_count
             or path_stat.st_nlink != expected_link_count
             or (
@@ -635,9 +625,7 @@ def _publish_hard_link(
         ) from None
     except OSError as error:
         if _leaf_exists(destination_parent_descriptor, destination_leaf):
-            raise _recovery_failure(
-                "filesystem_changed_recovery_required"
-            ) from None
+            raise _recovery_failure("filesystem_changed_recovery_required") from None
         code = (
             "cross_volume_unsupported"
             if error.errno == errno.EXDEV
@@ -811,9 +799,7 @@ def apply_move_plan(
     recorder: MovementRecorder | None = None,
 ) -> OperationLog:
     resolved_root = root.resolve()
-    validated_items = [
-        _validate_plan_item(item, resolved_root) for item in plan_items
-    ]
+    validated_items = [_validate_plan_item(item, resolved_root) for item in plan_items]
     _reject_colliding_batch_paths(validated_items)
 
     operations: list[MoveResult] = []
@@ -1154,9 +1140,7 @@ def _move_without_replacing(source: Path, destination: Path) -> None:
     only our own empty placeholder.
     """
     try:
-        descriptor = os.open(
-            destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600
-        )
+        descriptor = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     except FileExistsError:
         raise FileExistsError(f"destination already exists: {destination}") from None
     os.close(descriptor)
@@ -1232,7 +1216,7 @@ def _is_under_root(path: Path, root: Path) -> bool:
 
 def _next_log_path(root: Path, log_dir_name: str, prefix: str) -> Path:
     log_dir = root / "AI_Review" / log_dir_name
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
     candidate = log_dir / f"{prefix}_{timestamp}.json"
     counter = 1
     while candidate.exists():

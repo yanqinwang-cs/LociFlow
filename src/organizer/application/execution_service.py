@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import replace
-from datetime import datetime, timezone
 import os
-from pathlib import Path
 import uuid
+from dataclasses import replace
+from datetime import UTC, datetime
+from pathlib import Path
 
 from organizer.application.execution_coordinator import (
     OrganizationExecutionCoordinator,
@@ -14,14 +14,16 @@ from organizer.application.filesystem_operation_admission import (
     FilesystemOperationAdmission,
     FilesystemOperationInspector,
 )
-from organizer.application.runtime_lifecycle import RuntimeOperationKind
-from organizer.application.volume_admission import (
-    OrganizationVolumeAdmission,
-    VolumeAdmissionError,
-)
 from organizer.application.organization_decision_models import (
     STATUS_READY_TO_MOVE,
     ApprovedOrganizationPlan,
+)
+from organizer.application.organization_movement_preflight import (
+    OrganizationMovementPreflightError,
+    preflight_organization_movement,
+)
+from organizer.application.organization_movement_recorder import (
+    DurableOrganizationMovementRecorder as _DurableMovementRecorder,
 )
 from organizer.application.organization_operation_models import (
     AUTHORIZATION_AVAILABLE,
@@ -40,7 +42,6 @@ from organizer.application.organization_operation_models import (
     STATUS_VERIFICATION_FAILED,
     STATUS_VERIFIED,
     VERIFICATION_FAILED,
-    VERIFICATION_NOT_RUN,
     VERIFICATION_PASSED,
     MovementAuthorization,
     OrganizationExpectedMove,
@@ -52,12 +53,10 @@ from organizer.application.organization_operation_models import (
 from organizer.application.organization_operation_repository import (
     OrganizationOperationRepository,
 )
-from organizer.application.organization_movement_preflight import (
-    OrganizationMovementPreflightError,
-    preflight_organization_movement,
-)
-from organizer.application.organization_movement_recorder import (
-    DurableOrganizationMovementRecorder as _DurableMovementRecorder,
+from organizer.application.runtime_lifecycle import RuntimeOperationKind
+from organizer.application.volume_admission import (
+    OrganizationVolumeAdmission,
+    VolumeAdmissionError,
 )
 from organizer.executor import MovementRecordingError, apply_move_plan
 from organizer.models import OperationLog
@@ -66,7 +65,6 @@ from organizer.organization_verify import (
     verify_organization_operation,
 )
 from organizer.safety import validate_under_root
-
 
 CONFIRM_MOVE_APPROVED_FILES = "MOVE APPROVED FILES"
 
@@ -376,8 +374,7 @@ def _validate_approved_plan(
         or current_authorization.approved_at != authorization.approved_at
         or current_authorization.approved_plan_identity
         != authorization.approved_plan_identity
-        or current_authorization.browser_session_id
-        != authorization.browser_session_id
+        or current_authorization.browser_session_id != authorization.browser_session_id
         or current_authorization.configured_root_identity
         != authorization.configured_root_identity
         or current_authorization.issued_at != authorization.issued_at
@@ -460,7 +457,9 @@ def _verify_and_finish(
         )
     else:
         operation_verification = OrganizationOperationVerification(
-            status=(VERIFICATION_PASSED if verification.passed else VERIFICATION_FAILED),
+            status=(
+                VERIFICATION_PASSED if verification.passed else VERIFICATION_FAILED
+            ),
             verified_count=verification.verified_count,
             mismatch_codes=verification.mismatch_codes,
         )
@@ -585,8 +584,12 @@ def _frozen_moves_match(
 
 
 def _relative(path: Path, root: Path) -> str:
-    return validate_under_root(path.resolve(strict=False), root).relative_to(root).as_posix()
+    return (
+        validate_under_root(path.resolve(strict=False), root)
+        .relative_to(root)
+        .as_posix()
+    )
 
 
 def _utc_timestamp() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()

@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime, timezone
-from enum import Enum
-from typing import Callable
 import uuid
+from collections.abc import Callable
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from enum import Enum
 
 from organizer.application.organization_operation_repository import (
     OrganizationOperationRepository,
@@ -37,7 +37,6 @@ from organizer.application.undo_identity_verification_publication import (
     IdentityUndoVerificationPublicationState,
     OrganizationUndoIdentityVerificationPublicationService,
 )
-
 
 UNDO_FILE_MOVE_CONFIRMATION = "UNDO FILE MOVE"
 
@@ -146,7 +145,7 @@ class OrganizationIdentityUndoOrchestrationService:
                 operation_repository, undo_repository
             )
         )
-        self._now = now or (lambda: datetime.now(timezone.utc))
+        self._now = now or (lambda: datetime.now(UTC))
         self._id_source = id_source or (lambda: str(uuid.uuid4()))
         self._executor = executor
         self._refresh_recovery_status = refresh_recovery_status
@@ -169,18 +168,12 @@ class OrganizationIdentityUndoOrchestrationService:
                 reason=eligibility.reason,
             )
         if eligibility.parent is None:
-            return IdentityUndoPreviewResult(
-                IdentityUndoPreviewState.UNAVAILABLE, 0
-            )
+            return IdentityUndoPreviewResult(IdentityUndoPreviewState.UNAVAILABLE, 0)
         authorization = self.authorization_store.issue(
             browser_session_id=browser_session_id,
             parent_operation_id=parent_operation_id,
-            parent_record_digest=canonical_parent_record_digest(
-                eligibility.parent
-            ),
-            reverse_evidence_digest=canonical_reverse_evidence_digest(
-                eligibility
-            ),
+            parent_record_digest=canonical_parent_record_digest(eligibility.parent),
+            reverse_evidence_digest=canonical_reverse_evidence_digest(eligibility),
         )
         return IdentityUndoPreviewResult(
             state=IdentityUndoPreviewState.READY,
@@ -200,9 +193,7 @@ class OrganizationIdentityUndoOrchestrationService:
         confirmation: str,
     ) -> IdentityUndoConfirmationResult:
         if confirmation != UNDO_FILE_MOVE_CONFIRMATION:
-            raise OrganizationIdentityUndoOrchestrationError(
-                "invalid_confirmation"
-            )
+            raise OrganizationIdentityUndoOrchestrationError("invalid_confirmation")
         try:
             authorization = self.authorization_store.require_available(
                 authorization_id,
@@ -291,9 +282,7 @@ class OrganizationIdentityUndoOrchestrationService:
             return self._execution_result(execution)
         if execution.state is IdentityUndoExecutionState.RESTORED_UNVERIFIED:
             try:
-                publication = self.verification_publisher.publish(
-                    execution.undo_id
-                )
+                publication = self.verification_publisher.publish(execution.undo_id)
             finally:
                 self._refresh_status()
             if (
@@ -303,8 +292,7 @@ class OrganizationIdentityUndoOrchestrationService:
                 state = IdentityUndoConfirmationState.RESTORED
             elif (
                 publication.state
-                is IdentityUndoVerificationPublicationState
-                .PUBLISHED_VERIFICATION_FAILED
+                is IdentityUndoVerificationPublicationState.PUBLISHED_VERIFICATION_FAILED
             ):
                 state = IdentityUndoConfirmationState.UNDO_VERIFICATION_FAILED
             else:
@@ -354,4 +342,4 @@ class OrganizationIdentityUndoOrchestrationService:
         value = self._now()
         if not isinstance(value, datetime) or value.tzinfo is None:
             raise ValueError("identity Undo orchestration clock is invalid")
-        return value.astimezone(timezone.utc).isoformat()
+        return value.astimezone(UTC).isoformat()

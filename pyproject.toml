@@ -1,5 +1,5 @@
 [project]
-name = "bootai"
+name = "loci-flow"
 version = "0.1.0"
 description = "A cautious local file organizer with review-first, reversible workflows"
 readme = "README.md"
@@ -45,3 +45,26 @@ where = ["src"]
     "static/vendor/*.css",
     "static/vendor/*.js",
 ]
+
+[dependency-groups]
+dev = [
+    "ruff==0.17.6",
+]
+
+[tool.ruff]
+line-length = 88
+target-version = "py313"
+# These two test files pin their own SHA-256 in the prototype contract tests,
+# so lint and format must leave them byte-identical.
+extend-exclude = ["tests/test_loci_flow_prototype.py", "tests/test_loci_flow_focused_prototype.py"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+# E501: ruff format owns line wrapping; long string literals are left as written.
+# B905: strict= on zip changes error behaviour, so it is a separate decision.
+# UP042: StrEnum changes str() output of existing enums.
+ignore = ["E501", "B905", "UP042"]
+
+[tool.ruff.lint.per-file-ignores]
+# Test closures are created and used inside the same loop iteration.
+"tests/**" = ["B023"]

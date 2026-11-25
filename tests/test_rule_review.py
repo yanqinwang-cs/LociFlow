@@ -1,22 +1,22 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 import os
 import subprocess
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 
 from organizer.models import RuleCandidate
 from organizer.organization_rules import ORGANIZATION_RULES_RELATIVE_PATH
-from organizer.reports import build_scan_report, write_report
 from organizer.pattern_inference import RULE_LOCK_ANCHOR_CANDIDATE
+from organizer.reports import build_scan_report, write_report
 from organizer.rule_review import (
-    _review_file_item_to_candidate,
     DECISION_ACCEPT,
     DECISION_REJECT,
     RULE_REVIEW_DIR,
+    _review_file_item_to_candidate,
     apply_rule_decisions,
     export_rule_candidates,
     load_reviewed_rule_file,
@@ -25,13 +25,17 @@ from organizer.rule_review import (
 
 
 class RuleReviewTests(unittest.TestCase):
-    def test_export_rule_candidates_uses_deterministic_ids_and_no_rules_file(self) -> None:
+    def test_export_rule_candidates_uses_deterministic_ids_and_no_rules_file(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             folder = root / "cs1010x finals"
             folder.mkdir()
             (folder / "cs1010x-final-jun21.pdf").write_text("x", encoding="utf-8")
-            (folder / "cs1010x-final-solutions-jun21.pdf").write_text("x", encoding="utf-8")
+            (folder / "cs1010x-final-solutions-jun21.pdf").write_text(
+                "x", encoding="utf-8"
+            )
 
             candidates = rule_candidates_from_report(build_scan_report(root))
             output = export_rule_candidates(candidates, root)
@@ -40,9 +44,7 @@ class RuleReviewTests(unittest.TestCase):
             self.assertTrue(output.exists())
             self.assertFalse((root / ORGANIZATION_RULES_RELATIVE_PATH).exists())
             self.assertTrue(data["candidates"])
-            self.assertTrue(
-                all(item["candidate_id"] for item in data["candidates"])
-            )
+            self.assertTrue(all(item["candidate_id"] for item in data["candidates"]))
             self.assertTrue(
                 all(item["decision"] == "undecided" for item in data["candidates"])
             )
@@ -190,7 +192,9 @@ class RuleReviewTests(unittest.TestCase):
             folder = root / "cs1010x finals"
             folder.mkdir()
             (folder / "cs1010x-final-jun21.pdf").write_text("x", encoding="utf-8")
-            (folder / "cs1010x-final-solutions-jun21.pdf").write_text("x", encoding="utf-8")
+            (folder / "cs1010x-final-solutions-jun21.pdf").write_text(
+                "x", encoding="utf-8"
+            )
             env = dict(os.environ)
             env["PYTHONPATH"] = "src"
 
@@ -210,11 +214,15 @@ class RuleReviewTests(unittest.TestCase):
             )
 
             self.assertEqual(export.returncode, 0, export.stderr)
-            candidate_path = root / RULE_REVIEW_DIR / "organization_rule_candidates.json"
+            candidate_path = (
+                root / RULE_REVIEW_DIR / "organization_rule_candidates.json"
+            )
             self.assertTrue(candidate_path.exists())
             data = json.loads(candidate_path.read_text(encoding="utf-8"))
             data["candidates"][0]["decision"] = "accept"
-            reviewed_path = root / RULE_REVIEW_DIR / "organization_rule_candidates.reviewed.json"
+            reviewed_path = (
+                root / RULE_REVIEW_DIR / "organization_rule_candidates.reviewed.json"
+            )
             reviewed_path.write_text(json.dumps(data), encoding="utf-8")
 
             apply = subprocess.run(
@@ -248,11 +256,15 @@ class RuleReviewTests(unittest.TestCase):
             )
 
             result_path = apply_rule_decisions(path, root)
-            rules = json.loads((root / ORGANIZATION_RULES_RELATIVE_PATH).read_text(encoding="utf-8"))
+            rules = json.loads(
+                (root / ORGANIZATION_RULES_RELATIVE_PATH).read_text(encoding="utf-8")
+            )
             result = json.loads(result_path.read_text(encoding="utf-8"))
 
             self.assertEqual(rules["locked_anchors"], ["CS1010X"])
-            self.assertEqual(result["applied"][0]["candidate_id"], "lock-anchor-cs1010x")
+            self.assertEqual(
+                result["applied"][0]["candidate_id"], "lock-anchor-cs1010x"
+            )
             self.assertFalse(hasattr(result, "plan_items"))
 
     def test_apply_ignored_term_alias_and_preferred_granularity(self) -> None:
@@ -266,7 +278,9 @@ class RuleReviewTests(unittest.TestCase):
                         "rule_type": "ignore_term_candidate",
                     },
                     {
-                        **self._candidate("alias-cs1010x-programming-methodology", "unused"),
+                        **self._candidate(
+                            "alias-cs1010x-programming-methodology", "unused"
+                        ),
                         "rule_type": "alias_candidate",
                         "value": {
                             "alias": "programming methodology",
@@ -274,14 +288,18 @@ class RuleReviewTests(unittest.TestCase):
                         },
                     },
                     {
-                        **self._candidate("preferred-granularity-course-code", "course_code"),
+                        **self._candidate(
+                            "preferred-granularity-course-code", "course_code"
+                        ),
                         "rule_type": "preferred_granularity_candidate",
                     },
                 ],
             )
 
             apply_rule_decisions(path, root)
-            rules = json.loads((root / ORGANIZATION_RULES_RELATIVE_PATH).read_text(encoding="utf-8"))
+            rules = json.loads(
+                (root / ORGANIZATION_RULES_RELATIVE_PATH).read_text(encoding="utf-8")
+            )
 
             self.assertEqual(rules["ignored_terms"], ["Python"])
             self.assertEqual(
@@ -373,15 +391,21 @@ class RuleReviewTests(unittest.TestCase):
             folder = root / "EvoSim images"
             folder.mkdir()
             (folder / "EvoSim_project_slides.pptx").write_text("x", encoding="utf-8")
-            (folder / "EvoSim_fixed_google_slides.pptx").write_text("x", encoding="utf-8")
+            (folder / "EvoSim_fixed_google_slides.pptx").write_text(
+                "x", encoding="utf-8"
+            )
 
             report = build_scan_report(root)
             write_report(report, root)
 
             self.assertFalse((root / ORGANIZATION_RULES_RELATIVE_PATH).exists())
 
-    def test_rule_review_module_does_not_import_executor_or_move_plan_items(self) -> None:
-        module_path = Path(__file__).resolve().parents[1] / "src" / "organizer" / "rule_review.py"
+    def test_rule_review_module_does_not_import_executor_or_move_plan_items(
+        self,
+    ) -> None:
+        module_path = (
+            Path(__file__).resolve().parents[1] / "src" / "organizer" / "rule_review.py"
+        )
         source = module_path.read_text(encoding="utf-8")
 
         self.assertNotIn("executor", source)

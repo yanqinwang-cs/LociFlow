@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from enum import Enum
 import errno
 import hashlib
 import math
 import os
-from pathlib import Path
 import stat
 import uuid
+from dataclasses import dataclass
+from enum import Enum
+from pathlib import Path
 
 from organizer.application.content_identity import (
     REGULAR_FILE_IDENTITY_KIND,
@@ -323,9 +323,7 @@ def _verify_destination(
         if not stat.S_ISREG(initial_descriptor_stat.st_mode):
             raise _Mismatch(IdentityMismatchCategory.DESTINATION_NOT_REGULAR)
         if not _same_path_object(initial_path_stat, initial_descriptor_stat):
-            raise _Mismatch(
-                IdentityMismatchCategory.DESTINATION_IDENTITY_MISMATCH
-            )
+            raise _Mismatch(IdentityMismatchCategory.DESTINATION_IDENTITY_MISMATCH)
 
         digest = _hash_descriptor(descriptor, chunk_size)
         final_descriptor_stat = os.fstat(descriptor)
@@ -337,9 +335,7 @@ def _verify_destination(
         if not _same_path_object(final_path_stat, final_descriptor_stat):
             raise _InspectionUnavailable()
         if digest != expected_digest:
-            raise _Mismatch(
-                IdentityMismatchCategory.DESTINATION_IDENTITY_MISMATCH
-            )
+            raise _Mismatch(IdentityMismatchCategory.DESTINATION_IDENTITY_MISMATCH)
     except (KeyboardInterrupt, SystemExit):
         raise
     except _Mismatch:

@@ -1,17 +1,16 @@
 from __future__ import annotations
 
-from pathlib import Path
 import re
 import subprocess
-import textwrap
 import tempfile
+import textwrap
 import unittest
+from pathlib import Path
 
 import httpx
 
 from organizer.web.app import create_app
 from organizer.web.config import WebAppConfig
-
 
 ROOT = Path(__file__).resolve().parents[1]
 WEB = ROOT / "src" / "organizer" / "web"
@@ -19,12 +18,16 @@ LOCI = WEB / "static" / "loci_flow"
 
 
 class WebLociFlowDecisionTests(unittest.IsolatedAsyncioTestCase):
-    async def test_shell_renders_existing_csrf_token_without_inline_script(self) -> None:
+    async def test_shell_renders_existing_csrf_token_without_inline_script(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             token = "l" * 32
             app = create_app(
-                WebAppConfig(root, session_secret="s" * 32, launch_token=token, testing=True)
+                WebAppConfig(
+                    root, session_secret="s" * 32, launch_token=token, testing=True
+                )
             )
             async with _client(app) as client:
                 await client.get(f"/launch/{token}", follow_redirects=False)
@@ -43,7 +46,7 @@ class WebLociFlowDecisionTests(unittest.IsolatedAsyncioTestCase):
             f"""
             import fs from 'node:fs';
             import assert from 'node:assert/strict';
-            const source = fs.readFileSync({str(LOCI / 'api.js')!r}, 'utf8');
+            const source = fs.readFileSync({str(LOCI / "api.js")!r}, 'utf8');
             const api = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
             const requests = [];
             const reject = async (url, options) => {{
@@ -87,7 +90,9 @@ class WebLociFlowDecisionTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
 
-    def test_frontend_contains_decision_approval_and_ready_states_without_persistence(self) -> None:
+    def test_frontend_contains_decision_approval_and_ready_states_without_persistence(
+        self,
+    ) -> None:
         app = (LOCI / "app.js").read_text(encoding="utf-8")
         data_source = (LOCI / "data_source.js").read_text(encoding="utf-8")
         view_models = (LOCI / "view_models.js").read_text(encoding="utf-8")

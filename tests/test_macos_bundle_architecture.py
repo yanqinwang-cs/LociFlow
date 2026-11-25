@@ -1,17 +1,14 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 import plistlib
 import subprocess
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 
-
-PACKAGING_ROOT = (
-    Path(__file__).resolve().parents[1] / "packaging" / "macos"
-)
+PACKAGING_ROOT = Path(__file__).resolve().parents[1] / "packaging" / "macos"
 sys.path.insert(0, str(PACKAGING_ROOT))
 
 from validate_app_bundle import (  # noqa: E402
@@ -303,12 +300,7 @@ def _create_bundle(parent: Path) -> Path:
         target = resources / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text("resource", encoding="utf-8")
-    identity = (
-        resources
-        / "organizer"
-        / "macos_launcher"
-        / "release_identity.json"
-    )
+    identity = resources / "organizer" / "macos_launcher" / "release_identity.json"
     identity.parent.mkdir(parents=True, exist_ok=True)
     identity.write_text(
         '{"application_version":"0.1.0-beta.1","build_number":1}',
@@ -319,15 +311,15 @@ def _create_bundle(parent: Path) -> Path:
 
 def _bundle_runner(command, **_kwargs):
     if command[0] == "file":
-        content = Path(command[-1]).read_bytes().decode(
-            "ascii",
-            errors="ignore",
+        content = (
+            Path(command[-1])
+            .read_bytes()
+            .decode(
+                "ascii",
+                errors="ignore",
+            )
         )
-        description = (
-            "Mach-O 64-bit binary"
-            if content.startswith("MACHO:")
-            else "data"
-        )
+        description = "Mach-O 64-bit binary" if content.startswith("MACHO:") else "data"
         return subprocess.CompletedProcess(command, 0, description, "")
     if command[0] == "lipo":
         content = Path(command[-1]).read_text(encoding="ascii")

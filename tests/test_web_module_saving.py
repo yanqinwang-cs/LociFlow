@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import json
-from unittest import mock
 import unittest
+from unittest import mock
 
 from tests.web_consumer_support import ConsumerWebFixture
 
@@ -90,10 +90,20 @@ class WebModuleSavingTests(ConsumerWebFixture, unittest.IsolatedAsyncioTestCase)
         self.assertEqual(full_save.status_code, 303)
         plans = self.root / "AI_Review" / "review_sessions"
         duplicate = json.loads((plans / "duplicate_reviewed_plan.json").read_text())
-        organization = json.loads((plans / "organization_reviewed_plan.json").read_text())
+        organization = json.loads(
+            (plans / "organization_reviewed_plan.json").read_text()
+        )
         self.assertEqual({row["category"] for row in duplicate["items"]}, {"duplicate"})
-        self.assertEqual({row["category"] for row in organization["items"]}, {"organization"})
-        self.assertTrue(any(path.name.endswith("_reviewed_plan.json") for path in plans.glob("*.json") if path.name[0].isdigit()))
+        self.assertEqual(
+            {row["category"] for row in organization["items"]}, {"organization"}
+        )
+        self.assertTrue(
+            any(
+                path.name.endswith("_reviewed_plan.json")
+                for path in plans.glob("*.json")
+                if path.name[0].isdigit()
+            )
+        )
         self.assertFalse(self.session().dirty)
 
     async def test_module_forms_reject_browser_paths_and_bad_security(self) -> None:

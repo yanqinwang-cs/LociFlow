@@ -1,23 +1,28 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
-from datetime import datetime, timezone
 import json
 import os
+from dataclasses import dataclass, replace
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from organizer.json_values import is_json_integer, is_json_version
 from organizer.duplicates import find_exact_duplicates
 from organizer.grouping import build_organization_suggestions, find_project_groups
-from organizer.models import FileMetadata, MovePlanItem, OrganizationSuggestion, ReviewedPlanItem
+from organizer.json_values import is_json_integer, is_json_version
+from organizer.models import (
+    FileMetadata,
+    MovePlanItem,
+    OrganizationSuggestion,
+    ReviewedPlanItem,
+)
 from organizer.organization_rules import OrganizationRules
 from organizer.planner import build_duplicate_review_plan
+from organizer.reports import validate_report_data
 from organizer.review import build_review_candidate_plan, detect_review_candidates
 from organizer.safety import validate_under_root
 from organizer.scanner import scan_directory
 from organizer.scope import is_actionable_destination_path, is_actionable_source_path
-from organizer.reports import validate_report_data
 
 REVIEW_SESSION_SCHEMA_VERSION = 1
 REVIEW_PLAN_TYPE = "batch_review"
@@ -124,9 +129,7 @@ def preview_page_decision_change(
         raise ValueError(f"unsupported review decision: {decision}")
     view = build_review_view(items, state, root)
     target_ids = tuple(item.id for item in view.rows)
-    change_ids = tuple(
-        item.id for item in view.rows if item.decision != decision
-    )
+    change_ids = tuple(item.id for item in view.rows if item.decision != decision)
     return PageDecisionPreview(
         decision=decision,
         action=PAGE_DECISION_ACTIONS[decision],
@@ -213,14 +216,11 @@ def set_review_sort(
     normalized_direction = direction.strip().lower()
     if normalized_field not in REVIEW_SORT_FIELDS:
         supported = ", ".join(sorted(REVIEW_SORT_FIELDS))
-        raise ValueError(
-            f"Unknown sort field: {field}. Supported fields: {supported}."
-        )
+        raise ValueError(f"Unknown sort field: {field}. Supported fields: {supported}.")
     if normalized_direction not in REVIEW_SORT_DIRECTIONS:
         supported = ", ".join(sorted(REVIEW_SORT_DIRECTIONS))
         raise ValueError(
-            f"Invalid sort direction: {direction}. "
-            f"Supported directions: {supported}."
+            f"Invalid sort direction: {direction}. Supported directions: {supported}."
         )
     return replace(
         state,
@@ -598,9 +598,7 @@ def summarize_review_items(
     )
     conflicts = find_approved_move_conflicts(items, root) if root is not None else []
     source_conflicts = [
-        conflict
-        for conflict in conflicts
-        if conflict.conflict_type == CONFLICT_SOURCE
+        conflict for conflict in conflicts if conflict.conflict_type == CONFLICT_SOURCE
     ]
     destination_conflicts = [
         conflict
@@ -609,14 +607,10 @@ def summarize_review_items(
     ]
     return {
         "approved_move_count": (
-            duplicate_approved
-            + organization_approved
-            + review_candidate_approved
+            duplicate_approved + organization_approved + review_candidate_approved
         ),
         "rejected_move_count": (
-            duplicate_rejected
-            + organization_rejected
-            + review_candidate_rejected
+            duplicate_rejected + organization_rejected + review_candidate_rejected
         ),
         "duplicate_approved_move_count": duplicate_approved,
         "duplicate_rejected_move_count": duplicate_rejected,
@@ -628,9 +622,7 @@ def summarize_review_items(
         "organization_undecided_move_count": organization_undecided,
         "review_candidate_undecided_move_count": review_candidate_undecided,
         "undecided_move_count": (
-            duplicate_undecided
-            + organization_undecided
-            + review_candidate_undecided
+            duplicate_undecided + organization_undecided + review_candidate_undecided
         ),
         "approved_source_conflict_count": len(source_conflicts),
         "approved_destination_conflict_count": len(destination_conflicts),
@@ -643,11 +635,7 @@ def summarize_review_items(
 
 
 def approved_plan_items(items: list[ReviewedPlanItem]) -> list[MovePlanItem]:
-    return [
-        item.plan_item
-        for item in items
-        if item.decision == DECISION_APPROVED
-    ]
+    return [item.plan_item for item in items if item.decision == DECISION_APPROVED]
 
 
 def find_approved_move_conflicts(
@@ -792,9 +780,7 @@ def reviewed_plan_data_to_move_items(
     items = _validated_reviewed_plan_items(data)
 
     metadata_context = (
-        all_metadata
-        if all_metadata is not None
-        else _metadata_context_for_root(root)
+        all_metadata if all_metadata is not None else _metadata_context_for_root(root)
     )
     reviewed_items: list[ReviewedPlanItem] = []
     for index, item in enumerate(items, start=1):
@@ -805,7 +791,9 @@ def reviewed_plan_data_to_move_items(
             continue
 
         source = _validated_relative_path(item.get("source"), "source", index)
-        destination = _validated_relative_path(item.get("destination"), "destination", index)
+        destination = _validated_relative_path(
+            item.get("destination"), "destination", index
+        )
         source_path = root / source
         destination_path = root / destination
         validate_under_root(source_path.resolve(strict=False), root)
@@ -821,7 +809,9 @@ def reviewed_plan_data_to_move_items(
                 plan_item=MovePlanItem(
                     source=source_path,
                     destination=destination_path,
-                    reason=_optional_string(item.get("reason"), "Approved reviewed plan item."),
+                    reason=_optional_string(
+                        item.get("reason"), "Approved reviewed plan item."
+                    ),
                     confidence=_optional_confidence(item.get("confidence")),
                     operation=_optional_string(item.get("operation"), "dry-run move"),
                     overwrite_risk=_optional_bool(
@@ -848,9 +838,7 @@ def _validate_saved_actionable_paths(
     index: int,
 ) -> None:
     if not is_actionable_source_path(source, all_metadata):
-        raise ValueError(
-            f"reviewed plan item {index} source is in a protected context"
-        )
+        raise ValueError(f"reviewed plan item {index} source is in a protected context")
     if not is_actionable_destination_path(destination, all_metadata):
         raise ValueError(
             f"reviewed plan item {index} destination is in a protected context"
@@ -864,7 +852,7 @@ def reviewed_plan_to_json_data(
     resolved_root = root.resolve()
     return {
         "schema_version": REVIEW_SESSION_SCHEMA_VERSION,
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
         "scan_root": ".",
         "plan_type": REVIEW_PLAN_TYPE,
         "summary": summarize_review_items(items, resolved_root),
@@ -893,7 +881,12 @@ def save_reviewed_plan(
     resolved_destination = _validate_new_output_path(destination, resolved_root)
     resolved_destination.parent.mkdir(parents=True, exist_ok=True)
     with resolved_destination.open("x", encoding="utf-8") as file:
-        json.dump(reviewed_plan_to_json_data(items, resolved_root), file, indent=2, sort_keys=True)
+        json.dump(
+            reviewed_plan_to_json_data(items, resolved_root),
+            file,
+            indent=2,
+            sort_keys=True,
+        )
         file.write("\n")
     return resolved_destination
 
@@ -960,11 +953,7 @@ def _items_for_review_candidate_plan(
 def _flatten_plan_items(
     suggestions: list[OrganizationSuggestion],
 ) -> list[MovePlanItem]:
-    return [
-        item
-        for suggestion in suggestions
-        for item in suggestion.plan_items
-    ]
+    return [item for suggestion in suggestions for item in suggestion.plan_items]
 
 
 def _set_decision(
@@ -977,8 +966,7 @@ def _set_decision(
     unknown_ids = [item_id for item_id in normalized_ids if item_id not in known_ids]
     if unknown_ids:
         raise ValueError(
-            f"Row ID not found: {unknown_ids[0]}. "
-            "No review decisions were changed."
+            f"Row ID not found: {unknown_ids[0]}. No review decisions were changed."
         )
 
     ids_to_update = set(normalized_ids)
@@ -1067,7 +1055,9 @@ def _validated_relative_path(
     index: int,
 ) -> Path:
     if not isinstance(value, str) or not value.strip():
-        raise ValueError(f"reviewed plan item {index} {field_name} must be a relative path string")
+        raise ValueError(
+            f"reviewed plan item {index} {field_name} must be a relative path string"
+        )
     if "\\" in value:
         raise ValueError(
             f"reviewed plan item {index} {field_name} must not contain backslashes"
@@ -1080,7 +1070,9 @@ def _validated_relative_path(
             f"reviewed plan item {index} {field_name} must identify a path"
         )
     if any(part == ".." for part in path.parts):
-        raise ValueError(f"reviewed plan item {index} {field_name} must not contain path traversal")
+        raise ValueError(
+            f"reviewed plan item {index} {field_name} must not contain path traversal"
+        )
     return path
 
 
@@ -1133,9 +1125,7 @@ def _count(
     decision: str,
 ) -> int:
     return sum(
-        1
-        for item in items
-        if item.category == category and item.decision == decision
+        1 for item in items if item.category == category and item.decision == decision
     )
 
 
@@ -1143,11 +1133,7 @@ def _memory_count(
     items: list[ReviewedPlanItem],
     memory_status: str,
 ) -> int:
-    return sum(
-        1
-        for item in items
-        if item.memory_status == memory_status
-    )
+    return sum(1 for item in items if item.memory_status == memory_status)
 
 
 def _item_to_json(
@@ -1179,7 +1165,7 @@ def _relative_path(path: Path, root: Path) -> str:
 
 
 def _next_reviewed_plan_path(log_dir: Path) -> Path:
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
     candidate = log_dir / f"{timestamp}_reviewed_plan.json"
     counter = 1
     while os.path.lexists(candidate):

@@ -1,9 +1,14 @@
 import json
 from pathlib import Path
 
-from organizer.json_values import is_json_integer
 from organizer.grouping import infer_subfolder
-from organizer.models import LLMRefinement, MovePlanItem, OrganizationSuggestion, ProjectGroup
+from organizer.json_values import is_json_integer
+from organizer.models import (
+    LLMRefinement,
+    MovePlanItem,
+    OrganizationSuggestion,
+    ProjectGroup,
+)
 
 ALLOWED_SUBFOLDERS = {
     "papers",
@@ -40,7 +45,9 @@ def build_group_refinement_payload(group: ProjectGroup) -> dict:
                 "extension": file.extension,
                 "deterministic_subfolder": infer_subfolder(file),
             }
-            for file in sorted(group.files, key=lambda item: item.relative_path.as_posix())
+            for file in sorted(
+                group.files, key=lambda item: item.relative_path.as_posix()
+            )
         ],
     }
 
@@ -164,7 +171,9 @@ def build_refined_organization_suggestion(
         relative_path = file.relative_path.as_posix()
         subfolder = refinement.subfolders[relative_path]
         destination = suggested_root / subfolder / file.name
-        destination = _avoid_destination_collision(destination, file.relative_path, used_destinations)
+        destination = _avoid_destination_collision(
+            destination, file.relative_path, used_destinations
+        )
         used_destinations.add(destination)
         plan_items.append(
             MovePlanItem(

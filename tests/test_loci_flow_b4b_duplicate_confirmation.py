@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 import shutil
 import subprocess
 import textwrap
 import unittest
+from pathlib import Path
 
 from tests.test_loci_flow_stage_b2_adapter import _payload
-
 
 ROOT = Path(__file__).resolve().parents[1]
 LOCI = ROOT / "src" / "organizer" / "web" / "static" / "loci_flow"
@@ -23,10 +22,10 @@ class LociFlowB4BDuplicateConfirmationTests(unittest.TestCase):
         script = textwrap.dedent(
             f"""
             import assert from "node:assert/strict";
-            import {{ validateOrganizationResponse }} from {json.dumps((LOCI / 'data_source.js').as_uri())};
-            import {{ buildProductionStageB1Contract }} from {json.dumps((LOCI / 'view_models.js').as_uri())};
+            import {{ validateOrganizationResponse }} from {json.dumps((LOCI / "data_source.js").as_uri())};
+            import {{ buildProductionStageB1Contract }} from {json.dumps((LOCI / "view_models.js").as_uri())};
 
-            const appSource={json.dumps((LOCI / 'app.js').read_text(encoding='utf-8'))};
+            const appSource={json.dumps((LOCI / "app.js").read_text(encoding="utf-8"))};
             const resolver=appSource.slice(
               appSource.indexOf("function currentDuplicateChoice"),
               appSource.indexOf("let dialogPayload"),
@@ -54,7 +53,9 @@ class LociFlowB4BDuplicateConfirmationTests(unittest.TestCase):
         self.assertEqual(completed.returncode, 0, completed.stderr)
         return json.loads(completed.stdout)
 
-    def test_production_duplicate_confirmation_uses_the_rendered_choice_once(self) -> None:
+    def test_production_duplicate_confirmation_uses_the_rendered_choice_once(
+        self,
+    ) -> None:
         result = self.run_node(
             """
             const selectedCopyId=payload.choices_needed[1].copies[0].id;
@@ -110,7 +111,9 @@ class LociFlowB4BDuplicateConfirmationTests(unittest.TestCase):
         )
         self.assertTrue(result["events"][0][2]["close"])
 
-    def test_missing_rendered_choice_closes_announces_and_reloads_without_retry(self) -> None:
+    def test_missing_rendered_choice_closes_announces_and_reloads_without_retry(
+        self,
+    ) -> None:
         result = self.run_node(
             """
             const selectedCopyId=payload.choices_needed[1].copies[0].id;
@@ -152,16 +155,24 @@ class LociFlowB4BDuplicateConfirmationTests(unittest.TestCase):
         self.assertFalse(result["events"][0][1]["restoreFocus"])
         self.assertIn("no longer available", result["events"][1][1])
 
-    def test_duplicate_confirmation_does_not_add_execution_or_change_other_confirmations(self) -> None:
+    def test_duplicate_confirmation_does_not_add_execution_or_change_other_confirmations(
+        self,
+    ) -> None:
         app = (LOCI / "app.js").read_text(encoding="utf-8")
         duplicate = app[
-            app.index("function confirmDuplicate(target)"):app.index("function actionFor")
+            app.index("function confirmDuplicate(target)") : app.index(
+                "function actionFor"
+            )
         ]
         destination = app[
-            app.index("function confirmDestination"):app.index("function duplicateDraft")
+            app.index("function confirmDestination") : app.index(
+                "function duplicateDraft"
+            )
         ]
         movement = app[
-            app.index("async function confirmMove"):app.index("async function checkFiles")
+            app.index("async function confirmMove") : app.index(
+                "async function checkFiles"
+            )
         ]
         self.assertIn("currentDuplicateChoice(choiceId)", duplicate)
         self.assertIn("dataSource.decideChoice(", duplicate)
@@ -169,7 +180,9 @@ class LociFlowB4BDuplicateConfirmationTests(unittest.TestCase):
         self.assertNotIn("Duplicate Bin", duplicate)
         self.assertIn("dataSource.decideChoice(choiceId, optionId)", destination)
         self.assertIn("await dataSource.confirmMovement(", movement)
-        self.assertIn("state.movement.confirmationText !== preview.confirmation", movement)
+        self.assertIn(
+            "state.movement.confirmationText !== preview.confirmation", movement
+        )
 
     def test_shared_dialog_clears_inert_before_reuse_for_approval(self) -> None:
         result = self.run_node(

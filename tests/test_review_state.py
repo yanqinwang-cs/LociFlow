@@ -1,8 +1,8 @@
-from dataclasses import replace
 import json
-from pathlib import Path
 import tempfile
 import unittest
+from dataclasses import replace
+from pathlib import Path
 
 from organizer.models import MovePlanItem, ReviewedPlanItem
 from organizer.review_state import (
@@ -125,17 +125,29 @@ class ReviewStateLoadSaveTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     review_state_from_json_data(data)
 
-    def test_save_writes_under_review_state_and_does_not_create_operation_logs(self) -> None:
+    def test_save_writes_under_review_state_and_does_not_create_operation_logs(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "a.txt").write_text("same", encoding="utf-8")
-            item = make_item(root, "D1", "duplicate", "a.txt", "AI_Review/duplicates/a.txt", "rejected")
+            item = make_item(
+                root,
+                "D1",
+                "duplicate",
+                "a.txt",
+                "AI_Review/duplicates/a.txt",
+                "rejected",
+            )
             state = update_review_state_from_items(ReviewState([]), [item], root)
 
             path = save_review_state(state, root)
             data = json.loads(path.read_text(encoding="utf-8"))
 
-            self.assertEqual(path, root.resolve() / "AI_Review" / "review_state" / "review_decisions.json")
+            self.assertEqual(
+                path,
+                root.resolve() / "AI_Review" / "review_state" / "review_decisions.json",
+            )
             self.assertEqual(data["schema_version"], 2)
             self.assertEqual(len(data["decisions"]), 1)
             self.assertTrue(path.read_text(encoding="utf-8").endswith("\n"))
@@ -148,7 +160,14 @@ class ReviewStateMatchingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "a.txt").write_text("same", encoding="utf-8")
-            item = make_item(root, "D1", "duplicate", "a.txt", "AI_Review/duplicates/a.txt", "approved")
+            item = make_item(
+                root,
+                "D1",
+                "duplicate",
+                "a.txt",
+                "AI_Review/duplicates/a.txt",
+                "approved",
+            )
             state = update_review_state_from_items(
                 ReviewState([]),
                 [replace(item, decision="rejected")],
@@ -175,7 +194,9 @@ class ReviewStateMatchingTests(unittest.TestCase):
             )
             state = update_review_state_from_items(ReviewState([]), [item], root)
 
-            remembered = apply_review_state_to_items([replace(item, decision="rejected")], state, root)
+            remembered = apply_review_state_to_items(
+                [replace(item, decision="rejected")], state, root
+            )
 
             self.assertEqual(remembered[0].decision, "approved")
             self.assertEqual(remembered[0].memory_status, "approved_remembered")
@@ -184,7 +205,14 @@ class ReviewStateMatchingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "a.txt").write_text("same", encoding="utf-8")
-            item = make_item(root, "D1", "duplicate", "a.txt", "AI_Review/duplicates/a.txt", "approved")
+            item = make_item(
+                root,
+                "D1",
+                "duplicate",
+                "a.txt",
+                "AI_Review/duplicates/a.txt",
+                "approved",
+            )
 
             state = update_review_state_from_items(ReviewState([]), [item], root)
 
@@ -212,7 +240,9 @@ class ReviewStateMatchingTests(unittest.TestCase):
             self.assertEqual(remembered[0].memory_status, "new_suggestion")
 
     def test_review_state_accepts_orphan_code_review_category(self) -> None:
-        data = valid_state_data(category="review_candidate", review_category="orphan_code")
+        data = valid_state_data(
+            category="review_candidate", review_category="orphan_code"
+        )
 
         state = review_state_from_json_data(data)
 
@@ -222,9 +252,18 @@ class ReviewStateMatchingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "a.txt").write_text("same", encoding="utf-8")
-            item = make_item(root, "D1", "duplicate", "a.txt", "AI_Review/duplicates/a.txt", "rejected")
+            item = make_item(
+                root,
+                "D1",
+                "duplicate",
+                "a.txt",
+                "AI_Review/duplicates/a.txt",
+                "rejected",
+            )
             state = update_review_state_from_items(ReviewState([]), [item], root)
-            changed_destination = make_item(root, "D1", "duplicate", "a.txt", "AI_Review/other/a.txt", "approved")
+            changed_destination = make_item(
+                root, "D1", "duplicate", "a.txt", "AI_Review/other/a.txt", "approved"
+            )
 
             remembered = apply_review_state_to_items([changed_destination], state, root)
 
@@ -236,11 +275,20 @@ class ReviewStateMatchingTests(unittest.TestCase):
             root = Path(directory)
             source = root / "a.txt"
             source.write_text("same", encoding="utf-8")
-            item = make_item(root, "D1", "duplicate", "a.txt", "AI_Review/duplicates/a.txt", "rejected")
+            item = make_item(
+                root,
+                "D1",
+                "duplicate",
+                "a.txt",
+                "AI_Review/duplicates/a.txt",
+                "rejected",
+            )
             state = update_review_state_from_items(ReviewState([]), [item], root)
             source.write_text("changed", encoding="utf-8")
 
-            remembered = apply_review_state_to_items([replace(item, decision="approved")], state, root)
+            remembered = apply_review_state_to_items(
+                [replace(item, decision="approved")], state, root
+            )
 
             self.assertEqual(remembered[0].decision, "approved")
             self.assertEqual(remembered[0].memory_status, "stale_prior_decision")
@@ -267,10 +315,19 @@ class ReviewStateMatchingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "a.txt").write_text("same", encoding="utf-8")
-            item = make_item(root, "D1", "duplicate", "a.txt", "AI_Review/duplicates/a.txt", "approved")
+            item = make_item(
+                root,
+                "D1",
+                "duplicate",
+                "a.txt",
+                "AI_Review/duplicates/a.txt",
+                "approved",
+            )
 
             remembered = apply_review_state_to_items([item], state, root)
-            updated = update_review_state_from_items(state, [replace(item, decision="rejected")], root)
+            updated = update_review_state_from_items(
+                state, [replace(item, decision="rejected")], root
+            )
 
             self.assertEqual(remembered[0].memory_status, "new_suggestion")
             self.assertEqual(len(updated.decisions), 2)

@@ -1,11 +1,11 @@
 from __future__ import annotations
 
+import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, replace
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
-from typing import Callable
-import uuid
 
 from organizer.application.execution_coordinator import approved_plan_identity
 from organizer.application.file_identity_capture import (
@@ -65,7 +65,6 @@ from organizer.executor_identity import (
     validate_same_volume_identity_move_plan,
 )
 from organizer.models import MovePlanItem, OperationLog
-
 
 _SAFE_MESSAGE = (
     "The approved files could not be moved safely. Check the folder and try again."
@@ -143,9 +142,7 @@ class OrganizationIdentityExecutionService:
         capture: Callable[[Path, Path], CapturedRegularFileIdentity] = (
             capture_regular_file_identity
         ),
-        executor: Callable[..., OperationLog] = (
-            apply_same_volume_identity_move_plan
-        ),
+        executor: Callable[..., OperationLog] = (apply_same_volume_identity_move_plan),
         publish_verification: (
             Callable[[str], IdentityVerificationPublicationResult] | None
         ) = None,
@@ -163,10 +160,8 @@ class OrganizationIdentityExecutionService:
         self._volume_admission = volume
         self._capture = capture
         self._executor = executor
-        self._operation_id_factory = operation_id_factory or (
-            lambda: str(uuid.uuid4())
-        )
-        self._clock = clock or (lambda: datetime.now(timezone.utc))
+        self._operation_id_factory = operation_id_factory or (lambda: str(uuid.uuid4()))
+        self._clock = clock or (lambda: datetime.now(UTC))
         self._publish_verification = publish_verification or (
             OrganizationIdentityVerificationPublicationService(
                 operation_repository,
@@ -195,9 +190,7 @@ class OrganizationIdentityExecutionService:
         except (KeyboardInterrupt, SystemExit):
             raise
         except Exception as error:
-            raise OrganizationIdentityExecutionError(
-                "approved_plan_stale"
-            ) from error
+            raise OrganizationIdentityExecutionError("approved_plan_stale") from error
 
         captures: dict[str, CapturedRegularFileIdentity] = {}
         try:
@@ -238,23 +231,17 @@ class OrganizationIdentityExecutionService:
         try:
             validate_same_volume_identity_move_plan(strict_plan, self.root)
         except StrictExecutorError as error:
-            raise OrganizationIdentityExecutionError(
-                "strict_plan_invalid"
-            ) from error
+            raise OrganizationIdentityExecutionError("strict_plan_invalid") from error
 
         try:
             self.operation_repository.create(intent.record)
         except Exception as error:
-            raise OrganizationIdentityExecutionError(
-                "durable_intent_failed"
-            ) from error
+            raise OrganizationIdentityExecutionError("durable_intent_failed") from error
         self._refresh_status()
 
         try:
             try:
-                consumed = self._consume_authorization(
-                    authorization.authorization_id
-                )
+                consumed = self._consume_authorization(authorization.authorization_id)
             except Exception:
                 consumed = False
             if consumed is not True:
@@ -288,9 +275,7 @@ class OrganizationIdentityExecutionService:
                 self._refresh_status()
 
             try:
-                executed = self.operation_repository.load(
-                    intent.record.operation_id
-                )
+                executed = self.operation_repository.load(intent.record.operation_id)
             except Exception:
                 return self._interrupted_result(intent.record)
             if executed.status != STATUS_MOVED_UNVERIFIED:
@@ -333,8 +318,7 @@ class OrganizationIdentityExecutionService:
             or authorization.status != AUTHORIZATION_AVAILABLE
             or authorization.consumed_at is not None
             or authorization.scan_generation != approved_plan.scan_generation
-            or authorization.decision_revision
-            != approved_plan.decision_revision
+            or authorization.decision_revision != approved_plan.decision_revision
             or authorization.approved_at != approved_plan.approved_at
             or authorization.approved_plan_identity
             != approved_plan_identity(approved_plan)
@@ -348,9 +332,7 @@ class OrganizationIdentityExecutionService:
         intent: V2OrganizationIdentityIntent,
     ) -> tuple[IdentityMovePlanItem, ...]:
         try:
-            evidence = {
-                item.change_id: item for item in intent.executor_evidence
-            }
+            evidence = {item.change_id: item for item in intent.executor_evidence}
             if len(evidence) != len(intent.record.expected_moves):
                 raise ValueError
             items: list[IdentityMovePlanItem] = []
@@ -369,16 +351,12 @@ class OrganizationIdentityExecutionService:
                         ),
                         change_id=move.change_id,
                         expected_digest=move.content_identity.digest,
-                        captured_stat=evidence[
-                            move.change_id
-                        ].stat_fingerprint,
+                        captured_stat=evidence[move.change_id].stat_fingerprint,
                     )
                 )
             return tuple(items)
         except (AttributeError, KeyError, StrictExecutorError, ValueError) as error:
-            raise OrganizationIdentityExecutionError(
-                "strict_plan_invalid"
-            ) from error
+            raise OrganizationIdentityExecutionError("strict_plan_invalid") from error
 
     def _failed_result(
         self,
@@ -460,7 +438,7 @@ class OrganizationIdentityExecutionService:
             raise ValueError("identity movement clock is invalid")
         if value.tzinfo is None:
             raise ValueError("identity movement clock is invalid")
-        return value.astimezone(timezone.utc).isoformat()
+        return value.astimezone(UTC).isoformat()
 
 
 def _result(

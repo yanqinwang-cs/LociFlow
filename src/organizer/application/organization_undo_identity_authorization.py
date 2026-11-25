@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, replace
-from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import re
-from threading import Lock
-from typing import Callable
 import uuid
+from collections.abc import Callable
+from dataclasses import asdict, dataclass, replace
+from datetime import UTC, datetime, timedelta
+from threading import Lock
 
 from organizer.application.organization_operation_models import (
     OrganizationOperationRecord,
@@ -15,7 +15,6 @@ from organizer.application.organization_operation_models import (
 from organizer.application.organization_undo_identity_eligibility import (
     IdentityUndoEligibility,
 )
-
 
 IDENTITY_V2_UNDO_MODE = "identity_v2"
 V2_UNDO_AUTHORIZATION_AVAILABLE = "available"
@@ -111,7 +110,7 @@ class V2UndoAuthorizationStore:
         if isinstance(capacity, bool) or not isinstance(capacity, int) or capacity < 1:
             raise ValueError("v2 Undo authorization capacity is invalid")
         self.configured_root_identity = configured_root_identity
-        self._now = now or (lambda: datetime.now(timezone.utc))
+        self._now = now or (lambda: datetime.now(UTC))
         self._id_source = id_source or (lambda: str(uuid.uuid4()))
         self._lifetime = lifetime
         self._capacity = capacity
@@ -240,9 +239,7 @@ def canonical_reverse_evidence_digest(
     payload = {
         "state": eligibility.state.value,
         "reason": None if eligibility.reason is None else eligibility.reason.value,
-        "volume_admission": (
-            "same_volume" if eligibility.eligible else "not_admitted"
-        ),
+        "volume_admission": ("same_volume" if eligibility.eligible else "not_admitted"),
         "pairs": [
             {
                 "source": str(pair.source_relative_path),
@@ -287,7 +284,7 @@ def _uuid(value: object) -> str:
 def _aware(value: datetime) -> datetime:
     if not isinstance(value, datetime) or value.tzinfo is None:
         raise ValueError("v2 Undo authorization clock is invalid")
-    return value.astimezone(timezone.utc)
+    return value.astimezone(UTC)
 
 
 def _timestamp(value: str) -> datetime:

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from html.parser import HTMLParser
-from pathlib import Path
 import tempfile
 import unittest
+from html.parser import HTMLParser
+from pathlib import Path
 
 import httpx
 
@@ -118,7 +118,9 @@ class WebLociFlowPrototypeFirstTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("http://", shell.text)
         self.assertNotIn("https://", shell.text)
 
-    async def test_frontend_connects_to_movement_without_changing_fixture_scenarios(self) -> None:
+    async def test_frontend_connects_to_movement_without_changing_fixture_scenarios(
+        self,
+    ) -> None:
         methods_by_path = {
             route.path: set(route.methods or set())
             for route in _application_routes(self.app.routes)
@@ -137,7 +139,13 @@ class WebLociFlowPrototypeFirstTests(unittest.IsolatedAsyncioTestCase):
         )
         production_assets = "\n".join(
             (loci / name).read_text(encoding="utf-8")
-            for name in ("api.js", "data_source.js", "view_models.js", "app.js", "views.js")
+            for name in (
+                "api.js",
+                "data_source.js",
+                "view_models.js",
+                "app.js",
+                "views.js",
+            )
         )
         fixture_assets = "\n".join(
             (loci / name).read_text(encoding="utf-8")

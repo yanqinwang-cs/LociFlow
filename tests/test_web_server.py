@@ -1,28 +1,28 @@
 from __future__ import annotations
 
-from contextlib import redirect_stderr, redirect_stdout
 import errno
-from io import StringIO
 import os
-from pathlib import Path
 import signal
 import socket
 import subprocess
 import sys
 import tempfile
-from threading import Event
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
+from io import StringIO
+from pathlib import Path
+from threading import Event
 from unittest.mock import Mock, patch
 
-from organizer.macos_launcher.application_paths import MacOSApplicationPaths
-from organizer.macos_launcher.process_lease import acquire_root_process_lease
-from organizer.web.config import WebAppConfig
 from organizer.application.runtime_lifecycle import (
     RuntimeLifecycle,
     RuntimeOperationKind,
 )
-from organizer.web.launcher import LaunchPhase, LaunchResult
+from organizer.macos_launcher.application_paths import MacOSApplicationPaths
+from organizer.macos_launcher.process_lease import acquire_root_process_lease
 from organizer.web import server
+from organizer.web.config import WebAppConfig
+from organizer.web.launcher import LaunchPhase, LaunchResult
 
 
 class _HealthyResponse:
@@ -173,10 +173,7 @@ class WebServerTests(unittest.TestCase):
                 [
                     sys.executable,
                     "-c",
-                    (
-                        "from organizer.web.server import main; "
-                        "raise SystemExit(main())"
-                    ),
+                    ("from organizer.web.server import main; raise SystemExit(main())"),
                     "--root",
                     str(self.root),
                     "--no-browser",
@@ -230,9 +227,7 @@ class WebServerTests(unittest.TestCase):
 
     def test_dynamic_address_collision_retries_with_three_fresh_sockets(self) -> None:
         collisions = [
-            _FakeBindingSocket(
-                bind_error=OSError(errno.EADDRINUSE, "address in use")
-            )
+            _FakeBindingSocket(bind_error=OSError(errno.EADDRINUSE, "address in use"))
             for _ in range(server._MAX_DYNAMIC_BIND_ATTEMPTS)
         ]
         socket_constructor = Mock(side_effect=collisions)

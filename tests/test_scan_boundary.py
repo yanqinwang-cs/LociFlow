@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
 import organizer.duplicates as duplicates
@@ -91,7 +91,9 @@ class ScanBoundaryTests(unittest.TestCase):
             self.assertEqual(inspected, [root.resolve(), boundary.resolve()])
             self.assertNotIn(hidden, inspected)
 
-    def test_same_device_sibling_remains_scannable_while_boundary_is_pruned(self) -> None:
+    def test_same_device_sibling_remains_scannable_while_boundary_is_pruned(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             local = root / "local"
@@ -103,13 +105,9 @@ class ScanBoundaryTests(unittest.TestCase):
 
             result = scan_directory_with_boundaries(
                 root,
-                directory_device=(
-                    lambda path: 2 if path == external.resolve() else 1
-                ),
+                directory_device=(lambda path: 2 if path == external.resolve() else 1),
             )
-            paths = {
-                item.relative_path.as_posix() for item in result.metadata_items
-            }
+            paths = {item.relative_path.as_posix() for item in result.metadata_items}
 
             self.assertIn("local/keep.txt", paths)
             self.assertNotIn("external", paths)
@@ -192,7 +190,9 @@ class ScanBoundaryTests(unittest.TestCase):
             )
 
             self.assertEqual(
-                tuple(boundary.relative_path.as_posix() for boundary in result.boundaries),
+                tuple(
+                    boundary.relative_path.as_posix() for boundary in result.boundaries
+                ),
                 ("alpha", "zeta"),
             )
             self.assertEqual(
@@ -220,12 +220,15 @@ class ScanBoundaryTests(unittest.TestCase):
             )
 
             self.assertNotIn(link, inspected)
-            self.assertNotIn("link", {
-                item.relative_path.as_posix() for item in result.metadata_items
-            })
+            self.assertNotIn(
+                "link",
+                {item.relative_path.as_posix() for item in result.metadata_items},
+            )
             self.assertEqual(result.boundaries, ())
 
-    def test_application_result_excludes_boundary_from_hashing_and_planning(self) -> None:
+    def test_application_result_excludes_boundary_from_hashing_and_planning(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             local = root / "local.txt"
@@ -237,11 +240,7 @@ class ScanBoundaryTests(unittest.TestCase):
             root_device = scanner._directory_device(root.resolve())
 
             def device(path: Path) -> int:
-                return (
-                    root_device + 1
-                    if path == external.resolve()
-                    else root_device
-                )
+                return root_device + 1 if path == external.resolve() else root_device
 
             with (
                 mock.patch("organizer.scanner._directory_device", side_effect=device),

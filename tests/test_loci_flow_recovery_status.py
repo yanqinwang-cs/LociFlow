@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 import shutil
 import subprocess
 import textwrap
 import unittest
-
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 LOCI = ROOT / "src" / "organizer" / "web" / "static" / "loci_flow"
@@ -29,8 +28,8 @@ class LociFlowRecoveryStatusTests(unittest.TestCase):
     def test_home_only_override_and_read_only_dialog(self) -> None:
         result = self.run_node(
             f"""
-            import {{buildProductionStageB1Contract,buildHomeViewModel,buildOrganizeViewModel,buildRecoveryDialogViewModel}} from {json.dumps((LOCI / 'view_models.js').as_uri())};
-            import {{renderRoute}} from {json.dumps((LOCI / 'views.js').as_uri())};
+            import {{buildProductionStageB1Contract,buildHomeViewModel,buildOrganizeViewModel,buildRecoveryDialogViewModel}} from {json.dumps((LOCI / "view_models.js").as_uri())};
+            import {{renderRoute}} from {json.dumps((LOCI / "views.js").as_uri())};
             const contract=buildProductionStageB1Contract({{
               snapshot:{{status:"not_checked",backendState:null}},recoveryAttention:true,
             }});
@@ -52,7 +51,9 @@ class LociFlowRecoveryStatusTests(unittest.TestCase):
         )
         self.assertEqual(result["home"]["status"], "File changes need attention.")
         self.assertEqual(result["home"]["primaryAction"]["action"], "review-recovery")
-        self.assertEqual(result["organize"]["status"], "Files have not been checked yet")
+        self.assertEqual(
+            result["organize"]["status"], "Files have not been checked yet"
+        )
         self.assertIn("Review unfinished file work", result["homeHtml"])
         self.assertNotIn("Review unfinished file work", result["organizeHtml"])
         self.assertEqual(result["dialog"]["eyebrow"], "Needs attention")
@@ -66,8 +67,8 @@ class LociFlowRecoveryStatusTests(unittest.TestCase):
     def test_api_and_data_source_validate_exact_five_field_contract(self) -> None:
         result = self.run_node(
             f"""
-            import {{getCurrentRecovery}} from {json.dumps((LOCI / 'api.js').as_uri())};
-            import {{createBackendDataSource,validateRecoveryResponse}} from {json.dumps((LOCI / 'data_source.js').as_uri())};
+            import {{getCurrentRecovery}} from {json.dumps((LOCI / "api.js").as_uri())};
+            import {{createBackendDataSource,validateRecoveryResponse}} from {json.dumps((LOCI / "data_source.js").as_uri())};
             const payload={{state:"needs_attention",title:"File changes need attention.",message:"Review what happened before continuing.",affected_items:1,can_check_result:true}};
             const calls=[];
             const fetcher=async(url,options)=>{{calls.push([url,options.method]);return {{ok:true,status:200,json:async()=>payload}};}};
@@ -93,7 +94,9 @@ class LociFlowRecoveryStatusTests(unittest.TestCase):
         self.assertTrue(result["missingRejected"])
         self.assertTrue(result["typeRejected"])
 
-    def test_explicit_opening_deduplicates_and_reopening_fetches_fresh_data(self) -> None:
+    def test_explicit_opening_deduplicates_and_reopening_fetches_fresh_data(
+        self,
+    ) -> None:
         app = (LOCI / "app.js").read_text(encoding="utf-8")
         start = app.index("async function reviewRecovery")
         end = app.index("function openRecoveryDialog", start)
@@ -137,8 +140,8 @@ class LociFlowRecoveryStatusTests(unittest.TestCase):
     def test_check_adapters_validate_exact_context_and_result_contracts(self) -> None:
         result = self.run_node(
             f"""
-            import {{createLociFlowApiClient}} from {json.dumps((LOCI / 'api.js').as_uri())};
-            import {{createBackendDataSource,validateRecoveryCheckContext,validateRecoveryCheckResult}} from {json.dumps((LOCI / 'data_source.js').as_uri())};
+            import {{createLociFlowApiClient}} from {json.dumps((LOCI / "api.js").as_uri())};
+            import {{createBackendDataSource,validateRecoveryCheckContext,validateRecoveryCheckResult}} from {json.dumps((LOCI / "data_source.js").as_uri())};
             const context={{case_id:"11111111-1111-4111-8111-111111111111",action_id:"22222222-2222-4222-8222-222222222222",expires_at:"2026-07-27T10:00:00Z",label:"Check result"}};
             const checked={{state:"confirmed",title:"Check complete",message:"The file move was confirmed.",recovery_attention:false}};
             const calls=[];
@@ -282,7 +285,9 @@ class LociFlowRecoveryStatusTests(unittest.TestCase):
         )
         self.assertEqual(result["failedResultCalls"], 0)
         self.assertEqual(result["failedRefreshes"], 1)
-        self.assertEqual(result["failedOpened"][0][0]["title"], "The recovery details changed.")
+        self.assertEqual(
+            result["failedOpened"][0][0]["title"], "The recovery details changed."
+        )
         self.assertNotIn("private", json.dumps(result["failedOpened"]))
         self.assertEqual(result["lateResultCalls"], 0)
         self.assertEqual(result["lateRefreshes"], 0)
@@ -290,7 +295,9 @@ class LociFlowRecoveryStatusTests(unittest.TestCase):
         self.assertFalse(result["lateSnapshot"]["recoveryCheckPending"])
         self.assertIsNone(result["lateSnapshot"]["recoveryCheckContext"])
 
-    def test_startup_does_not_call_recovery_api_and_route_change_clears_dialog(self) -> None:
+    def test_startup_does_not_call_recovery_api_and_route_change_clears_dialog(
+        self,
+    ) -> None:
         app = (LOCI / "app.js").read_text(encoding="utf-8")
         startup = app.rsplit("state.route = routeFromHash();", 1)[1]
         self.assertNotIn("loadRecoveryProjection", startup)

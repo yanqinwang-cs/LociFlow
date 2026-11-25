@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from pathlib import Path
 import re
 import tempfile
+from pathlib import Path
 
 import httpx
 
@@ -36,9 +36,7 @@ class WebReviewFixture:
         self.controller = ScanJobController(
             self.root,
             scan=lambda _: self.result,
-            write_report=lambda _: (
-                self.root / "AI_Review" / "reports" / "scan.json"
-            ),
+            write_report=lambda _: self.root / "AI_Review" / "reports" / "scan.json",
         )
         self.controller._snapshot = ScanJobSnapshot(
             status="completed",

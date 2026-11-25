@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime, timezone
 import json
 import os
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -20,13 +20,9 @@ from organizer.scope import is_actionable_source_path
 
 CONFIRM_APPLY_ORGANIZATION_REVIEW = "APPLY ORGANIZATION REVIEW"
 ORGANIZATION_REVIEW_APPLY_SCHEMA_VERSION = 1
-ORGANIZATION_REVIEW_APPLY_SOURCE = (
-    "bootAI Stage 10.9 organization review apply result"
-)
+ORGANIZATION_REVIEW_APPLY_SOURCE = "bootAI Stage 10.9 organization review apply result"
 DEFAULT_ORGANIZATION_REVIEW_APPLY_RESULT_PATH = (
-    Path("AI_Review")
-    / "reviews"
-    / "organization_review_apply_result.json"
+    Path("AI_Review") / "reviews" / "organization_review_apply_result.json"
 )
 
 
@@ -138,9 +134,7 @@ def _validate_approved_conflicts(
         source_ids.setdefault(source, []).append(review_id)
         destination_ids.setdefault(destination, []).append(review_id)
 
-    source_conflicts = {
-        path: ids for path, ids in source_ids.items() if len(ids) > 1
-    }
+    source_conflicts = {path: ids for path, ids in source_ids.items() if len(ids) > 1}
     if source_conflicts:
         path, ids = sorted(source_conflicts.items())[0]
         raise ValueError(
@@ -214,7 +208,7 @@ def _build_apply_result(
     return {
         "schema_version": ORGANIZATION_REVIEW_APPLY_SCHEMA_VERSION,
         "source": ORGANIZATION_REVIEW_APPLY_SOURCE,
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": datetime.now(UTC).isoformat(),
         "review_file": _relative_path(review_file, root),
         "confirmation": CONFIRM_APPLY_ORGANIZATION_REVIEW,
         "approved_count": len(approved_rows),

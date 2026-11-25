@@ -15,12 +15,11 @@ from organizer.organization_rules import (
     ORGANIZATION_RULES_STATUS_LOADED,
     ORGANIZATION_RULES_UNAVAILABLE_CODE,
     ORGANIZATION_RULES_UNAVAILABLE_MESSAGE,
-    OrganizationRules,
-    OrganizationRulesLoadResult,
     STANDARD_KEEP_FOLDER_UNCHANGED,
     STANDARD_KEEP_MATCHING_FILES_TOGETHER,
-    STANDARD_LEGACY_ALIAS,
     STANDARD_LEGACY_IGNORED_TERM,
+    OrganizationRules,
+    OrganizationRulesLoadResult,
     StandardRecord,
     canonical_anchor,
     display_anchor,
@@ -31,7 +30,6 @@ from organizer.scope import (
     SHARED_PROTECTION_STANDARD_ID,
     SUBMISSION_PROTECTION_STANDARD_ID,
 )
-
 
 EXISTING_FOLDER_POLICY_STANDARD_ID = "builtin-use-existing-folders-only"
 _READ_ID_NAMESPACE = uuid.UUID("66378439-bc92-4ea5-a710-dbb8b7ad3103")
@@ -56,13 +54,17 @@ def build_standards_read_projection(
     if load_result.catalog is not None:
         revision = load_result.catalog.revision
         items.extend(
-            _catalog_items(load_result.catalog.standards, anchor_decisions, metadata_items)
+            _catalog_items(
+                load_result.catalog.standards, anchor_decisions, metadata_items
+            )
         )
     elif load_result.status == ORGANIZATION_RULES_STATUS_LOADED:
         items.extend(_legacy_rule_items(rules, anchor_decisions))
     return StandardsReadProjection(
         status="available",
-        items=tuple(sorted(items, key=lambda item: (item.preset_type, item.name, item.id))),
+        items=tuple(
+            sorted(items, key=lambda item: (item.preset_type, item.name, item.id))
+        ),
         revision=revision,
     )
 
@@ -227,14 +229,17 @@ def _catalog_item(
             sorted(
                 item.relative_path.as_posix()
                 for item in metadata_items
-                if not item.is_dir and _record_applies_to_path(record, item.relative_path)
+                if not item.is_dir
+                and _record_applies_to_path(record, item.relative_path)
             )
         )
     elif record.type == STANDARD_KEEP_MATCHING_FILES_TOGETHER:
         value = record.parameter("matcher_value") or "matching"
         name = f"Keep matching {value} files together"
         description = f"Matching {value} files may be grouped together."
-        effect = "The matcher shapes deterministic grouping before suggestions are created."
+        effect = (
+            "The matcher shapes deterministic grouping before suggestions are created."
+        )
         canonical = normalize_anchor(value)
         matched_paths = tuple(
             sorted(
@@ -251,7 +256,9 @@ def _catalog_item(
         value = record.parameter("term") or "matching"
         name = f"Do not organize by {value}"
         description = f"The label {value} is not used to group files."
-        effect = "Matching grouping suggestions are suppressed before a plan is created."
+        effect = (
+            "Matching grouping suggestions are suppressed before a plan is created."
+        )
         matched_paths = tuple(
             sorted(
                 {
@@ -278,7 +285,9 @@ def _catalog_item(
         scope_label=scope_label,
         effect_summary=effect,
         preset_type=record.type,
-        attention_message=("Archived Standard" if record.archived_at is not None else None),
+        attention_message=(
+            "Archived Standard" if record.archived_at is not None else None
+        ),
         matched_relative_paths=matched_paths,
     )
 
@@ -298,4 +307,7 @@ def _record_applies_to_path(record: StandardRecord, relative_path: Path) -> bool
 
 def _display_token(value: str) -> str:
     pieces = [piece for piece in re.split(r"[_\s]+", value.strip()) if piece]
-    return " ".join(piece.upper() if any(char.isdigit() for char in piece) else piece.title() for piece in pieces)
+    return " ".join(
+        piece.upper() if any(char.isdigit() for char in piece) else piece.title()
+        for piece in pieces
+    )

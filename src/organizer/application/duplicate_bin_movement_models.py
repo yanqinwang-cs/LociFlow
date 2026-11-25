@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-
 DUPLICATE_BIN_MOVEMENT_SCHEMA_VERSION = 1
 AUTHORIZATION_RECORD_TYPE = "loci_duplicate_bin_movement_authorization"
 OPERATION_RECORD_TYPE = "loci_duplicate_bin_movement_operation"

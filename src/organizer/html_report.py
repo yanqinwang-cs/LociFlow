@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import html
 from pathlib import Path
-from typing import Any
 
 from organizer.reports import default_report_path, validate_report_output_path
 
@@ -22,7 +21,7 @@ def render_html_report(report: dict[str, object]) -> str:
             "<body>",
             "  <main>",
             "    <h1>bootAI Report</h1>",
-            "    <p class=\"lede\">Read-only report. Suggested moves are dry-run plan items and are not approved or applied by this HTML file.</p>",
+            '    <p class="lede">Read-only report. Suggested moves are dry-run plan items and are not approved or applied by this HTML file.</p>',
             _metadata_section(report),
             _summary_section(report.get("summary")),
             _organization_rules_section(report.get("organization_rules")),
@@ -106,10 +105,7 @@ def _metadata_section(report: dict[str, object]) -> str:
 def _summary_section(summary: object) -> str:
     if not isinstance(summary, dict) or not summary:
         return _section("Summary", _empty_message())
-    rows = [
-        [key, _format_value(summary[key])]
-        for key in sorted(summary)
-    ]
+    rows = [[key, _format_value(summary[key])] for key in sorted(summary)]
     return _section("Summary", _table(["Metric", "Value"], rows))
 
 
@@ -117,14 +113,18 @@ def _warnings_section(warnings: object) -> str:
     if not isinstance(warnings, list) or not warnings:
         return _section("Warnings", _empty_message())
     items = "".join(f"<li>{_escape(warning)}</li>" for warning in warnings)
-    return _section("Warnings", f"<ul class=\"warnings\">{items}</ul>")
+    return _section("Warnings", f'<ul class="warnings">{items}</ul>')
 
 
 def _organization_rules_section(rules: object) -> str:
     if not isinstance(rules, dict) or not rules:
         return _section("Organization rules", _empty_message())
     locked_anchors = rules.get("locked_anchors", [])
-    locked_text = ", ".join(str(anchor) for anchor in locked_anchors) if isinstance(locked_anchors, list) and locked_anchors else "None"
+    locked_text = (
+        ", ".join(str(anchor) for anchor in locked_anchors)
+        if isinstance(locked_anchors, list) and locked_anchors
+        else "None"
+    )
     rows = [
         ["Status", rules.get("status", "")],
         ["Path", rules.get("path", "") or "(built-in defaults)"],
@@ -187,22 +187,19 @@ def _rule_effect_table(effects: object) -> str:
         )
     if not rows:
         return "<h3>Rule effects</h3>" + _empty_message()
-    return (
-        "<h3>Rule effects</h3>"
-        + _table(
-            [
-                "Rule type",
-                "Value",
-                "Matched files",
-                "Affected anchors",
-                "Before",
-                "After",
-                "Risk",
-                "Warning",
-                "Effect",
-            ],
-            rows,
-        )
+    return "<h3>Rule effects</h3>" + _table(
+        [
+            "Rule type",
+            "Value",
+            "Matched files",
+            "Affected anchors",
+            "Before",
+            "After",
+            "Risk",
+            "Warning",
+            "Effect",
+        ],
+        rows,
     )
 
 
@@ -210,7 +207,7 @@ def _rule_audit_warnings(warnings: object) -> str:
     if not isinstance(warnings, list) or not warnings:
         return "<h3>Audit warnings</h3>" + _empty_message()
     items = "".join(f"<li>{_escape(warning)}</li>" for warning in warnings)
-    return f"<h3>Audit warnings</h3><ul class=\"warnings\">{items}</ul>"
+    return f'<h3>Audit warnings</h3><ul class="warnings">{items}</ul>'
 
 
 def _anchor_decisions_section(anchor_decisions: object) -> str:
@@ -222,8 +219,12 @@ def _anchor_decisions_section(anchor_decisions: object) -> str:
             "in dry-run mode. Needs decision contains broader patterns that may "
             "depend on your personal organization preference.</p>"
         ),
-        _anchor_decision_table("Suggested groups", anchor_decisions.get("suggested_groups")),
-        _anchor_decision_table("Needs decision", anchor_decisions.get("needs_decision")),
+        _anchor_decision_table(
+            "Suggested groups", anchor_decisions.get("suggested_groups")
+        ),
+        _anchor_decision_table(
+            "Needs decision", anchor_decisions.get("needs_decision")
+        ),
         _anchor_decision_table("Ignored terms", anchor_decisions.get("ignored_terms")),
     ]
     return _section("Anchor decisions", "".join(blocks))
@@ -244,14 +245,15 @@ def _anchor_decision_table(title: str, decisions: object) -> str:
                 decision.get("evidence", ""),
                 _pattern_evidence_summary(decision.get("pattern_evidence")),
                 decision.get("reason", ""),
-                ", ".join(str(example) for example in examples) if isinstance(examples, list) else "",
+                ", ".join(str(example) for example in examples)
+                if isinstance(examples, list)
+                else "",
             ]
         )
     if not rows:
         return f"<h3>{_escape(title)}</h3>{_empty_message()}"
-    return (
-        f"<h3>{_escape(title)}</h3>"
-        + _table(["Anchor", "Files", "Evidence", "Pattern evidence", "Reason", "Examples"], rows)
+    return f"<h3>{_escape(title)}</h3>" + _table(
+        ["Anchor", "Files", "Evidence", "Pattern evidence", "Reason", "Examples"], rows
     )
 
 
@@ -290,12 +292,9 @@ def _pattern_table(patterns: object) -> str:
         )
     if not rows:
         return "<h3>Patterns</h3>" + _empty_message()
-    return (
-        "<h3>Patterns</h3>"
-        + _table(
-            ["Pattern type", "Confidence", "Reason", "Examples", "Affected anchors"],
-            rows,
-        )
+    return "<h3>Patterns</h3>" + _table(
+        ["Pattern type", "Confidence", "Reason", "Examples", "Affected anchors"],
+        rows,
     )
 
 
@@ -319,20 +318,17 @@ def _rule_candidate_table(rule_candidates: object) -> str:
         )
     if not rows:
         return "<h3>Suggested rule candidates</h3>" + _empty_message()
-    return (
-        "<h3>Suggested rule candidates</h3>"
-        + _table(
-            [
-                "Candidate ID",
-                "Rule type",
-                "Value",
-                "Confidence",
-                "Reason",
-                "Evidence paths",
-                "Suggested action",
-            ],
-            rows,
-        )
+    return "<h3>Suggested rule candidates</h3>" + _table(
+        [
+            "Candidate ID",
+            "Rule type",
+            "Value",
+            "Confidence",
+            "Reason",
+            "Evidence paths",
+            "Suggested action",
+        ],
+        rows,
     )
 
 
@@ -342,7 +338,11 @@ def _pattern_evidence_summary(pattern_evidence: object) -> str:
     priority = pattern_evidence.get("priority", "")
     reason = pattern_evidence.get("reason", "")
     matched = pattern_evidence.get("matched_patterns", [])
-    matched_text = ", ".join(str(pattern) for pattern in matched) if isinstance(matched, list) else str(matched)
+    matched_text = (
+        ", ".join(str(pattern) for pattern in matched)
+        if isinstance(matched, list)
+        else str(matched)
+    )
     return f"{priority}: {matched_text}. {reason}".strip()
 
 
@@ -435,7 +435,7 @@ def _organization_suggestions_section(title: str, suggestions: object) -> str:
         suggested_root = _escape(suggestion.get("suggested_root", ""))
         plan_items = suggestion.get("plan_items", [])
         blocks.append(
-            "<article class=\"suggestion\">"
+            '<article class="suggestion">'
             f"<h3>{group_name}</h3>"
             f"<p><strong>Suggested root:</strong> {suggested_root}</p>"
             + _plan_section_body(plan_items)

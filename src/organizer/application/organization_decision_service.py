@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import replace
-from datetime import datetime, timezone
 import os
+from dataclasses import replace
+from datetime import UTC, datetime
 from pathlib import Path
 
 from organizer.application.organization_decision_models import (
@@ -96,9 +96,7 @@ def update_organization_decision(
             raise OrganizationDecisionError("invalid_option")
         _validate_not_approved(session)
         recommendations = tuple(
-            replace(item, decision=decision)
-            if item.change_id == change_id
-            else item
+            replace(item, decision=decision) if item.change_id == change_id else item
             for item in session.recommendation_decisions
         )
         updated = replace(session, recommendation_decisions=recommendations)
@@ -184,8 +182,7 @@ def build_organization_approval_summary(
 ) -> OrganizationApprovalSummary:
     _validate_projection_generation(session, projection)
     pending_recommendations = sum(
-        item.decision == DECISION_UNDECIDED
-        for item in session.recommendation_decisions
+        item.decision == DECISION_UNDECIDED for item in session.recommendation_decisions
     )
     pending_destinations = sum(
         item.option_id is None for item in session.destination_decisions
@@ -264,9 +261,7 @@ def approve_organization_plan(
         raise OrganizationDecisionError("unsafe_destination")
 
     approved_duplicates: list[DuplicateChoiceDecision] = []
-    duplicate_decisions = {
-        item.choice_id: item for item in session.duplicate_decisions
-    }
+    duplicate_decisions = {item.choice_id: item for item in session.duplicate_decisions}
     for choice_id, duplicate in projection.duplicate_choices_by_id.items():
         decision = duplicate_decisions[choice_id]
         if decision.option_id != "choose-for-bin":
@@ -523,11 +518,9 @@ def _fingerprint(item_id: str, metadata: FileMetadata) -> SourceFingerprint:
 
 def _has_move_chain_conflict(items: list[ReviewedPlanItem]) -> bool:
     sources = {item.plan_item.source.resolve(strict=False) for item in items}
-    destinations = {
-        item.plan_item.destination.resolve(strict=False) for item in items
-    }
+    destinations = {item.plan_item.destination.resolve(strict=False) for item in items}
     return bool(sources & destinations)
 
 
 def _utc_timestamp() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()

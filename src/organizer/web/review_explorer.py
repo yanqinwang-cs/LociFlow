@@ -1,12 +1,12 @@
 from __future__ import annotations
 
+import hmac
+import secrets
+from collections.abc import Callable
 from dataclasses import dataclass
 from functools import wraps
-import hmac
 from pathlib import Path
-import secrets
 from threading import Lock
-from collections.abc import Callable
 
 from organizer.application.review_service import (
     apply_current_page_decision,
@@ -174,10 +174,7 @@ class ReviewExplorerStore:
             project(session)
             try:
                 item = get_review_item(session, item_id)
-                if (
-                    expected_category is not None
-                    and item.category != expected_category
-                ):
+                if expected_category is not None and item.category != expected_category:
                     raise ValueError("review item is unavailable for this surface")
                 module = queue_module or self._module_for_category(item.category)
                 queue = self._queue_snapshot_locked(module)
@@ -335,11 +332,7 @@ class ReviewExplorerStore:
         self,
         scan: ScanJobSnapshot,
     ) -> ReviewExplorerSnapshot:
-        if (
-            scan.status != "completed"
-            or scan.job_id is None
-            or scan.result is None
-        ):
+        if scan.status != "completed" or scan.job_id is None or scan.result is None:
             self._invalidate_locked(scan.job_id)
             return ReviewExplorerSnapshot(
                 status=scan.status,
@@ -353,9 +346,7 @@ class ReviewExplorerStore:
         ):
             self._invalidate_locked(scan.job_id)
             try:
-                session = create_fresh_web_review_session_from_scan_result(
-                    scan.result
-                )
+                session = create_fresh_web_review_session_from_scan_result(scan.result)
                 if session.root != self._root:
                     raise ValueError("review session root does not match web root")
                 self._session = session

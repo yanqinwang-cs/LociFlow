@@ -8,9 +8,9 @@ from typing import Any
 from organizer.application.standards_read_models import StandardsReadProjection
 from organizer.models import FileMetadata, ReviewedPlanItem
 from organizer.organization_rules import OrganizationRulesLoadResult
-from organizer.scan_boundary import ScanBoundary
 from organizer.review_session import ReviewViewState
 from organizer.review_state import ReviewState
+from organizer.scan_boundary import ScanBoundary
 
 
 class ReviewModule(StrEnum):

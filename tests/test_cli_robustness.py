@@ -1,10 +1,9 @@
 import contextlib
 import io
-import json
 import os
-from pathlib import Path
 import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from organizer.cli import main
@@ -15,9 +14,11 @@ from organizer.models import MovePlanItem
 def run_main(*args: str) -> tuple[int, str, str]:
     stdout = io.StringIO()
     stderr = io.StringIO()
-    with mock.patch("sys.argv", ["organizer", *args]), contextlib.redirect_stdout(
-        stdout
-    ), contextlib.redirect_stderr(stderr):
+    with (
+        mock.patch("sys.argv", ["organizer", *args]),
+        contextlib.redirect_stdout(stdout),
+        contextlib.redirect_stderr(stderr),
+    ):
         try:
             code = main()
         except SystemExit as exit_request:
@@ -152,16 +153,12 @@ class UndoCommandTests(unittest.TestCase):
             # The original spot is taken, so undo cannot put the file back.
             source.write_text("someone else's file", encoding="utf-8")
 
-            code, stdout, stderr = run_main(
-                str(root), "--undo-log", str(log.log_path)
-            )
+            code, stdout, stderr = run_main(str(root), "--undo-log", str(log.log_path))
 
             self.assertEqual(code, 1)
             self.assertIn("failure", stdout)
             self.assertIn("Undo completed with failures", stderr)
-            self.assertEqual(
-                source.read_text(encoding="utf-8"), "someone else's file"
-            )
+            self.assertEqual(source.read_text(encoding="utf-8"), "someone else's file")
 
     def test_undo_exits_zero_when_every_restore_succeeds(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

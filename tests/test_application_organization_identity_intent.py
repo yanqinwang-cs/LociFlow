@@ -1,16 +1,15 @@
 from __future__ import annotations
 
-from dataclasses import replace
 import hashlib
-from pathlib import Path
 import tempfile
 import unittest
-from unittest import mock
 import uuid
+from dataclasses import replace
+from pathlib import Path
+from unittest import mock
 
 from organizer.application.content_identity import RegularFileContentIdentity
 from organizer.application.execution_coordinator import (
-    OrganizationExecutionCoordinator,
     approved_plan_identity,
 )
 from organizer.application.file_identity_capture import (
@@ -90,7 +89,11 @@ class OrganizationIdentityIntentTests(unittest.TestCase):
             cases = (
                 {"O1": captures["O1"]},
                 {**captures, "O3": captures["O1"]},
-                [("O1", captures["O1"]), ("O1", captures["O1"]), ("O2", captures["O2"])],
+                [
+                    ("O1", captures["O1"]),
+                    ("O1", captures["O1"]),
+                    ("O2", captures["O2"]),
+                ],
             )
             for candidate in cases:
                 with self.subTest(candidate=candidate), self.assertRaises(ValueError):
@@ -106,7 +109,10 @@ class OrganizationIdentityIntentTests(unittest.TestCase):
             plan, authorization, moves, captures, root_identity = _inputs(root)
             candidates = (
                 tuple(reversed(moves)),
-                (replace(moves[0], content_identity=captures["O1"].content_identity), moves[1]),
+                (
+                    replace(moves[0], content_identity=captures["O1"].content_identity),
+                    moves[1],
+                ),
                 (replace(moves[0], result_state="moved"), moves[1]),
             )
             for candidate in candidates:
@@ -125,9 +131,17 @@ class OrganizationIdentityIntentTests(unittest.TestCase):
                 approved_plan_identity=approved_plan_identity(unsupported_plan),
             )
             with self.assertRaises(ValueError):
-                _build(unsupported_plan, unsupported_authorization, moves, captures, root_identity)
+                _build(
+                    unsupported_plan,
+                    unsupported_authorization,
+                    moves,
+                    captures,
+                    root_identity,
+                )
 
-    def test_rejects_invalid_identity_authorization_root_uuid_and_timestamp(self) -> None:
+    def test_rejects_invalid_identity_authorization_root_uuid_and_timestamp(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             plan, authorization, moves, captures, root_identity = _inputs(root)
@@ -136,9 +150,17 @@ class OrganizationIdentityIntentTests(unittest.TestCase):
                     captures["O1"].stat_fingerprint,
                     file_type="directory",
                 )
-            malformed_capture = replace(captures["O1"], content_identity="not-an-identity")
+            malformed_capture = replace(
+                captures["O1"], content_identity="not-an-identity"
+            )
             with self.assertRaises(ValueError):
-                _build(plan, authorization, moves, {**captures, "O1": malformed_capture}, root_identity)
+                _build(
+                    plan,
+                    authorization,
+                    moves,
+                    {**captures, "O1": malformed_capture},
+                    root_identity,
+                )
             changed_after_preflight = replace(
                 captures["O1"],
                 stat_fingerprint=replace(
@@ -164,16 +186,26 @@ class OrganizationIdentityIntentTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 _build(plan, authorization, moves, captures, "not-a-root-identity")
             with self.assertRaises(ValueError):
-                _build(plan, authorization, moves, captures, root_identity, operation_id="not-a-uuid")
+                _build(
+                    plan,
+                    authorization,
+                    moves,
+                    captures,
+                    root_identity,
+                    operation_id="not-a-uuid",
+                )
             with self.assertRaises(ValueError):
-                _build(plan, authorization, moves, captures, root_identity, created_at="")
+                _build(
+                    plan, authorization, moves, captures, root_identity, created_at=""
+                )
 
-    def test_builder_has_no_repository_executor_or_authorization_side_effect(self) -> None:
+    def test_builder_has_no_repository_executor_or_authorization_side_effect(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             plan, authorization, moves, captures, root_identity = _inputs(root)
             repository = OrganizationOperationRepository(root)
-            coordinator = OrganizationExecutionCoordinator()
             original = authorization
 
             with (
@@ -187,11 +219,14 @@ class OrganizationIdentityIntentTests(unittest.TestCase):
             self.assertEqual(authorization, original)
             self.assertFalse(repository.directory.exists())
 
-    def test_production_execution_modules_do_not_import_capture_or_v2_builder(self) -> None:
+    def test_production_execution_modules_do_not_import_capture_or_v2_builder(
+        self,
+    ) -> None:
         repository_root = Path(__file__).resolve().parents[1]
         protected = (
             repository_root / "src/organizer/application/execution_service.py",
-            repository_root / "src/organizer/application/organization_movement_service.py",
+            repository_root
+            / "src/organizer/application/organization_movement_service.py",
             repository_root / "src/organizer/application/undo_service.py",
         )
         forbidden = ("file_identity_capture", "organization_identity_intent")

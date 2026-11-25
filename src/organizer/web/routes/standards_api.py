@@ -16,6 +16,7 @@ from organizer.organization_rules import (
     STANDARD_KEEP_MATCHING_FILES_TOGETHER,
 )
 from organizer.web.forms import FormDataError, read_urlencoded_form
+from organizer.web.scan_jobs import ScanJobSnapshot
 from organizer.web.security import (
     WebSecurityError,
     is_authenticated,
@@ -23,8 +24,6 @@ from organizer.web.security import (
     validate_csrf_token,
     validate_same_origin,
 )
-from organizer.web.scan_jobs import ScanJobSnapshot
-
 
 _ERRORS = {
     "standard_revision_mismatch": (409, "Standards changed. Reload the latest list."),
@@ -39,7 +38,10 @@ _ERRORS = {
     "wrong_root_scope": (409, "Check files again and choose the folder again."),
     "folder_scope_stale": (409, "Check files again and choose the folder again."),
     "preview_expired": (409, "This preview expired. Preview the Standard again."),
-    "preview_superseded": (409, "A newer preview is available. Preview the Standard again."),
+    "preview_superseded": (
+        409,
+        "A newer preview is available. Preview the Standard again.",
+    ),
     "invalid_preset": (400, "Choose one of the available Standard types."),
     "invalid_matcher": (400, "Enter a valid course or project code."),
     "duplicate_standard": (409, "This Standard is already saved."),
@@ -101,13 +103,18 @@ def create_standards_api_router() -> APIRouter:
             expected_revision = _revision(form.get("expected_revision"))
             scan = _current_scan(request)
             request.app.state.standards.ensure_creation_available()
-            if request.app.state.standards.list_standards().revision != expected_revision:
+            if (
+                request.app.state.standards.list_standards().revision
+                != expected_revision
+            ):
                 raise StandardsApplicationError("standard_revision_mismatch")
-            context = request.app.state.standards_creation_service.issue_creation_context(
-                session_id=session_id_for_session(request.session),
-                scan_generation=scan.job_id,
-                scan_result=scan.result,
-                expected_revision=expected_revision,
+            context = (
+                request.app.state.standards_creation_service.issue_creation_context(
+                    session_id=session_id_for_session(request.session),
+                    scan_generation=scan.job_id,
+                    scan_result=scan.result,
+                    expected_revision=expected_revision,
+                )
             )
         except ApplicationStoppingError:
             return _application_stopping_error()
@@ -131,8 +138,12 @@ def create_standards_api_router() -> APIRouter:
         if common is not None:
             return common
         allowed = {
-            "csrf_token", "expected_revision", "preset_type", "scope_id",
-            "matcher_kind", "matcher_value",
+            "csrf_token",
+            "expected_revision",
+            "preset_type",
+            "scope_id",
+            "matcher_kind",
+            "matcher_value",
         }
         try:
             form = await _validated_form(request, allowed)
@@ -141,8 +152,12 @@ def create_standards_api_router() -> APIRouter:
                 {"csrf_token", "expected_revision", "preset_type", "scope_id"}
                 if preset_type == STANDARD_KEEP_FOLDER_UNCHANGED
                 else {
-                    "csrf_token", "expected_revision", "preset_type", "scope_id",
-                    "matcher_kind", "matcher_value",
+                    "csrf_token",
+                    "expected_revision",
+                    "preset_type",
+                    "scope_id",
+                    "matcher_kind",
+                    "matcher_value",
                 }
                 if preset_type == STANDARD_KEEP_MATCHING_FILES_TOGETHER
                 else None

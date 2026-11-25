@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from collections.abc import Mapping, MutableMapping
 import hmac
 import secrets
+from collections.abc import Mapping, MutableMapping
 from threading import Lock
 from urllib.parse import urlsplit
 

@@ -1,17 +1,16 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
-from datetime import datetime, timedelta, timezone
-from enum import StrEnum
 import re
-from threading import Lock
-from typing import Callable
 import uuid
+from collections.abc import Callable
+from dataclasses import dataclass, replace
+from datetime import UTC, datetime, timedelta
+from enum import StrEnum
+from threading import Lock
 
 from organizer.application.recovery_continue_eligibility import (
     RecoveryContinueFamily,
 )
-
 
 RECOVERY_CONTINUE_ACTION = "continue"
 RECOVERY_CONTINUE_LABEL = "Continue"
@@ -132,7 +131,7 @@ class RecoveryContinueContextStore:
         if isinstance(capacity, bool) or not isinstance(capacity, int) or capacity < 1:
             raise ValueError("Continue capacity is invalid")
         self.configured_root_identity = configured_root_identity
-        self._now = now or (lambda: datetime.now(timezone.utc))
+        self._now = now or (lambda: datetime.now(UTC))
         self._id_source = id_source or (lambda: str(uuid.uuid4()))
         self._lifetime = lifetime
         self._capacity = capacity
@@ -242,7 +241,7 @@ def _uuid(value: object) -> str:
 def _aware(value: datetime) -> datetime:
     if not isinstance(value, datetime) or value.tzinfo is None:
         raise ValueError("Continue clock is invalid")
-    return value.astimezone(timezone.utc)
+    return value.astimezone(UTC)
 
 
 def _timestamp(value: str) -> datetime:

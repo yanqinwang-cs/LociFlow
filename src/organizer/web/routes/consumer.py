@@ -9,8 +9,8 @@ from starlette.templating import Jinja2Templates
 
 from organizer.application.runtime_lifecycle import ApplicationStoppingError
 from organizer.web.consumer_presenter import (
-    ConsumerSurface,
     SURFACE_SPECS,
+    ConsumerSurface,
     build_guided_module_page,
     feedback_for_card,
     module_for_surface,
@@ -132,9 +132,7 @@ def render_consumer_page(
             raise ValueError("guided modules do not paginate")
         selected = selected_override or query.get("selected")
         saved_requested = saved_override or query.get("saved") == "1"
-        revisited_requested = (
-            revisited_override or query.get("revisited") == "1"
-        )
+        revisited_requested = revisited_override or query.get("revisited") == "1"
     except ValueError:
         return _consumer_error(
             request,

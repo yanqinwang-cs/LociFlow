@@ -1,18 +1,18 @@
 from __future__ import annotations
 
-from collections.abc import Callable
-from datetime import datetime, timezone
-from enum import StrEnum
 import errno
 import hashlib
 import json
 import os
-from pathlib import Path
 import secrets
 import stat
+import weakref
+from collections.abc import Callable
+from datetime import UTC, datetime
+from enum import StrEnum
+from pathlib import Path
 from threading import Lock
 from typing import Any, Final
-import weakref
 
 from organizer.macos_launcher.application_paths import (
     ApplicationPathError,
@@ -187,11 +187,7 @@ def _acquire(
     try:
         paths.create_lock_directories()
     except ApplicationPathError as error:
-        code = (
-            "unsafe_lock_path"
-            if error.code == "unsafe_path"
-            else "unavailable"
-        )
+        code = "unsafe_lock_path" if error.code == "unsafe_path" else "unavailable"
         raise ProcessLeaseError(code) from error
 
     local_key = os.fspath(lock_path)
@@ -285,7 +281,7 @@ def _metadata(
     now: Callable[[], datetime] | None,
     nonce_factory: Callable[[], str] | None,
 ) -> dict[str, object]:
-    timestamp = (now or (lambda: datetime.now(timezone.utc)))()
+    timestamp = (now or (lambda: datetime.now(UTC)))()
     if timestamp.tzinfo is None or timestamp.utcoffset() is None:
         raise ProcessLeaseError("unavailable")
     nonce = (nonce_factory or (lambda: secrets.token_hex(16)))()
@@ -297,7 +293,7 @@ def _metadata(
     ):
         raise ProcessLeaseError("unavailable")
     metadata: dict[str, object] = {
-        "created_at": timestamp.astimezone(timezone.utc).isoformat(),
+        "created_at": timestamp.astimezone(UTC).isoformat(),
         "instance_nonce": nonce,
         "lease_kind": kind.value,
         "process_id": os.getpid(),

@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from dataclasses import replace
 import errno
 import hashlib
 import os
-from pathlib import Path
 import tempfile
 import unittest
 import uuid
+from dataclasses import replace
+from pathlib import Path
 from unittest import mock
 
 from organizer.application.content_identity import RegularFileContentIdentity
@@ -40,7 +40,9 @@ from organizer.application.organization_operation_models import (
 
 
 class IdentityAwareOrganizationVerificationTests(unittest.TestCase):
-    def test_valid_one_and_multiple_item_operations_pass_with_bounded_reads(self) -> None:
+    def test_valid_one_and_multiple_item_operations_pass_with_bounded_reads(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             payloads = (b"a" * 41, b"b" * 37)
@@ -117,7 +119,10 @@ class IdentityAwareOrganizationVerificationTests(unittest.TestCase):
 
     def test_source_presence_and_any_occupant_are_mismatches(self) -> None:
         for occupant in (b"recorded", b"another-entry"):
-            with self.subTest(occupant=occupant), tempfile.TemporaryDirectory() as directory:
+            with (
+                self.subTest(occupant=occupant),
+                tempfile.TemporaryDirectory() as directory,
+            ):
                 root = Path(directory)
                 record = _record(root, (b"recorded",))
                 source = root / record.expected_moves[0].source
@@ -161,7 +166,9 @@ class IdentityAwareOrganizationVerificationTests(unittest.TestCase):
                 self.assertEqual(result.state, IdentityVerificationState.MISMATCH)
                 self.assertIn(expected[case], result.mismatch_categories)
 
-    def test_unavailable_inspection_is_indeterminate_and_mismatch_dominates(self) -> None:
+    def test_unavailable_inspection_is_indeterminate_and_mismatch_dominates(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             record = _record(root, (b"first", b"second"))
@@ -263,7 +270,10 @@ class IdentityAwareOrganizationVerificationTests(unittest.TestCase):
             SystemExit(),
         )
         for failure in failures:
-            with self.subTest(failure=type(failure).__name__), tempfile.TemporaryDirectory() as directory:
+            with (
+                self.subTest(failure=type(failure).__name__),
+                tempfile.TemporaryDirectory() as directory,
+            ):
                 root = Path(directory)
                 record = _record(root, (b"recorded",))
                 real_open = os.open
@@ -302,7 +312,9 @@ class IdentityAwareOrganizationVerificationTests(unittest.TestCase):
                         os.fstat(descriptor)
                     self.assertEqual(raised.exception.errno, errno.EBADF)
 
-    def test_strict_eligibility_rejects_incomplete_and_cross_field_records(self) -> None:
+    def test_strict_eligibility_rejects_incomplete_and_cross_field_records(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             valid = _record(root, (b"recorded",))
@@ -317,11 +329,19 @@ class IdentityAwareOrganizationVerificationTests(unittest.TestCase):
                 replace(valid, status=STATUS_VERIFIED),
                 replace(valid, status=STATUS_VERIFICATION_FAILED),
                 replace(valid, expected_moves=()),
-                replace(valid, expected_moves=(replace(item, result_state=MOVE_PENDING),)),
-                replace(valid, expected_moves=(replace(item, result_state=MOVE_ATTEMPTING),)),
-                replace(valid, expected_moves=(replace(item, result_state=MOVE_FAILED),)),
+                replace(
+                    valid, expected_moves=(replace(item, result_state=MOVE_PENDING),)
+                ),
+                replace(
+                    valid, expected_moves=(replace(item, result_state=MOVE_ATTEMPTING),)
+                ),
+                replace(
+                    valid, expected_moves=(replace(item, result_state=MOVE_FAILED),)
+                ),
                 replace(valid, expected_moves=(replace(item, content_identity=None),)),
-                replace(valid, expected_moves=(replace(item, content_identity=object()),)),
+                replace(
+                    valid, expected_moves=(replace(item, content_identity=object()),)
+                ),
                 replace(valid, configured_root_identity="0" * 64),
                 replace(valid, started_at=None),
                 replace(valid, completed_at="2026-07-20T10:02:00+00:00"),
@@ -336,18 +356,23 @@ class IdentityAwareOrganizationVerificationTests(unittest.TestCase):
                 ),
                 replace(valid, expected_moves=(replace(item, failure_code="failed"),)),
                 replace(valid, expected_moves=(replace(item, recovery_state="retry"),)),
-                replace(valid, expected_moves=(replace(item, destination=item.source),)),
+                replace(
+                    valid, expected_moves=(replace(item, destination=item.source),)
+                ),
                 replace(valid, expected_moves=(item, item)),
             )
             for candidate in cases:
-                with self.subTest(status=candidate.status), self.assertRaises(
-                    IdentityVerificationEligibilityError
-                ) as raised:
+                with (
+                    self.subTest(status=candidate.status),
+                    self.assertRaises(IdentityVerificationEligibilityError) as raised,
+                ):
                     verify_identity_organization_operation(candidate, root)
                 self.assertNotIn(str(root), str(raised.exception))
                 self.assertNotIn("item-1", str(raised.exception))
 
-    def test_result_and_error_copy_are_private_and_operation_log_is_irrelevant(self) -> None:
+    def test_result_and_error_copy_are_private_and_operation_log_is_irrelevant(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             record = replace(
@@ -367,7 +392,9 @@ class IdentityAwareOrganizationVerificationTests(unittest.TestCase):
             ):
                 self.assertNotIn(secret, rendered)
 
-    def test_verifier_has_no_repository_executor_recorder_or_operation_log_dependency(self) -> None:
+    def test_verifier_has_no_repository_executor_recorder_or_operation_log_dependency(
+        self,
+    ) -> None:
         source = (
             Path(__file__).parents[1]
             / "src"

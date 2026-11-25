@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-
 _KINDS_BY_EXTENSION = {
     ".pdf": "pdf",
     ".txt": "text",

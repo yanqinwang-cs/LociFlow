@@ -8,7 +8,6 @@ from organizer.application.content_identity import (
     identity_compatibility,
 )
 
-
 ORGANIZATION_UNDO_SCHEMA_VERSION = 1
 ORGANIZATION_UNDO_SCHEMA_VERSION_V2 = 2
 ORGANIZATION_UNDO_RECORD_TYPE = "loci_flow_organization_undo"

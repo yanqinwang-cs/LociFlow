@@ -64,7 +64,9 @@ class StandardsCreationRegistry(Protocol):
 
     def commit_preview_token(self, prepared: PreparedStandardsPreviewToken) -> None: ...
 
-    def rollback_preview_token(self, prepared: PreparedStandardsPreviewToken) -> None: ...
+    def rollback_preview_token(
+        self, prepared: PreparedStandardsPreviewToken
+    ) -> None: ...
 
 
 @dataclass(frozen=True)
@@ -98,7 +100,9 @@ class StandardsCreationApplicationService:
         expected_revision: int,
     ) -> StandardsCreationContext:
         with (
-            self._runtime_lifecycle.begin_operation(RuntimeOperationKind.STATE_MUTATION),
+            self._runtime_lifecycle.begin_operation(
+                RuntimeOperationKind.STATE_MUTATION
+            ),
             self._mutation_lock,
         ):
             self._validate_catalog_admitted(expected_revision)
@@ -136,7 +140,9 @@ class StandardsCreationApplicationService:
             expected_revision=expected_revision,
         )
         with (
-            self._runtime_lifecycle.begin_operation(RuntimeOperationKind.STATE_MUTATION),
+            self._runtime_lifecycle.begin_operation(
+                RuntimeOperationKind.STATE_MUTATION
+            ),
             self._mutation_lock,
         ):
             self._validate_catalog_admitted(expected_revision)

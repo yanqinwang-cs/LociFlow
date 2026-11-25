@@ -1,6 +1,6 @@
-from pathlib import Path
 import tempfile
 import unittest
+from pathlib import Path
 
 import httpx
 
@@ -75,8 +75,8 @@ class WebLociFlowReadOnlyUiTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertNotIn("https://", shell.text)
         self.assertNotIn("http://", shell.text)
-        self.assertIn('/static/loci_flow/styles.css', shell.text)
-        self.assertIn('/static/loci_flow/app.js', shell.text)
+        self.assertIn("/static/loci_flow/styles.css", shell.text)
+        self.assertIn("/static/loci_flow/app.js", shell.text)
         self.assertTrue(all(response.status_code == 200 for response in responses))
 
 

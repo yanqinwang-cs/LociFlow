@@ -1,13 +1,11 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
-import re
 import shutil
 import subprocess
 import textwrap
 import unittest
-
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 LIVE = ROOT / "src" / "organizer" / "web" / "static" / "loci_flow"
@@ -21,17 +19,17 @@ class LociFlowStageB1RendererContractTests(unittest.TestCase):
         script = textwrap.dedent(
             f"""
             import fs from "node:fs";
-            import {{ createFixtureDataSource }} from {json.dumps((LIVE / 'data_source.js').as_uri())};
-            import {{ createStore }} from {json.dumps((LIVE / 'store.js').as_uri())};
+            import {{ createFixtureDataSource }} from {json.dumps((LIVE / "data_source.js").as_uri())};
+            import {{ createStore }} from {json.dumps((LIVE / "store.js").as_uri())};
             import {{
               buildRouteViewModel, buildDialogViewModel, buildHomeViewModel,
               buildOrganizeViewModel
-            }} from {json.dumps((LIVE / 'view_models.js').as_uri())};
-            import {{ renderRoute, renderDialog }} from {json.dumps((LIVE / 'views.js').as_uri())};
-            import {{ renderMovementTree }} from {json.dumps((LIVE / 'tree.js').as_uri())};
+            }} from {json.dumps((LIVE / "view_models.js").as_uri())};
+            import {{ renderRoute, renderDialog }} from {json.dumps((LIVE / "views.js").as_uri())};
+            import {{ renderMovementTree }} from {json.dumps((LIVE / "tree.js").as_uri())};
             import {{
               STAGE_B1_SCENARIO_IDS, DEFAULT_STAGE_B1_SCENARIO_ID
-            }} from {json.dumps((LIVE / 'stage_b1_scenarios.js').as_uri())};
+            }} from {json.dumps((LIVE / "stage_b1_scenarios.js").as_uri())};
             const make = async (scenarioId) => createStore(await createFixtureDataSource({{ scenarioId }}).load());
             const page = (store, route) => renderRoute(buildRouteViewModel(store, route), route);
             const dialog = (store, type, payload={{}}) => renderDialog(buildDialogViewModel(store), type, payload);
@@ -56,10 +54,18 @@ class LociFlowStageB1RendererContractTests(unittest.TestCase):
         self.assertEqual(
             result["ids"],
             [
-                "accepted_default", "not_checked", "checking", "no_changes",
-                "recommendations", "destination_choice", "duplicate_choice",
-                "ready_for_approval", "ready_to_move", "stale_generation",
-                "stale_revision", "disconnected_pages",
+                "accepted_default",
+                "not_checked",
+                "checking",
+                "no_changes",
+                "recommendations",
+                "destination_choice",
+                "duplicate_choice",
+                "ready_for_approval",
+                "ready_to_move",
+                "stale_generation",
+                "stale_revision",
+                "disconnected_pages",
             ],
         )
         self.assertEqual(result["defaultId"], "accepted_default")
@@ -70,9 +76,9 @@ class LociFlowStageB1RendererContractTests(unittest.TestCase):
         result = self.run_node(
             f"""
             const current=await make('accepted_default');
-            const fixture=JSON.parse(fs.readFileSync({json.dumps(str(PROTOTYPE / 'fixtures.json'))},'utf8'));
-            const {{ createStore: createAcceptedStore }}=await import({json.dumps((PROTOTYPE / 'store.js').as_uri())});
-            const {{ renderRoute: renderAccepted }}=await import({json.dumps((PROTOTYPE / 'views.js').as_uri())});
+            const fixture=JSON.parse(fs.readFileSync({json.dumps(str(PROTOTYPE / "fixtures.json"))},'utf8'));
+            const {{ createStore: createAcceptedStore }}=await import({json.dumps((PROTOTYPE / "store.js").as_uri())});
+            const {{ renderRoute: renderAccepted }}=await import({json.dumps((PROTOTYPE / "views.js").as_uri())});
             const accepted=createAcceptedStore(fixture);
             const normalize=(html)=>html.replaceAll(/href="[^"]*file-icons[.]svg#/g,'href="file-icons.svg#');
             const routes=['home','organize','duplicate-bin','activity','standards','settings'];
@@ -106,9 +112,14 @@ class LociFlowStageB1RendererContractTests(unittest.TestCase):
                     self.assertIn(label, result[scenario]["html"])
         self.assertIn("disabled", result["checking"]["html"])
         self.assertIn("disabled", result["ready_to_move"]["html"])
-        self.assertNotIn("summary-card", result["recommendations"]["html"].split("Organization", 1)[0])
+        self.assertNotIn(
+            "summary-card",
+            result["recommendations"]["html"].split("Organization", 1)[0],
+        )
 
-    def test_structured_organize_rows_details_and_kept_items_render_separately(self) -> None:
+    def test_structured_organize_rows_details_and_kept_items_render_separately(
+        self,
+    ) -> None:
         result = self.run_node(
             """
             const store=await make('recommendations'); const model=buildOrganizeViewModel(store); const before=page(store,'organize');
@@ -129,7 +140,9 @@ class LociFlowStageB1RendererContractTests(unittest.TestCase):
         self.assertNotIn("home-summaries", result["before"])
         self.assertNotIn("implementation-status", result["before"])
 
-    def test_destination_choice_uses_supplied_options_and_stores_only_the_selected_id(self) -> None:
+    def test_destination_choice_uses_supplied_options_and_stores_only_the_selected_id(
+        self,
+    ) -> None:
         result = self.run_node(
             """
             const store=await make('destination_choice'); const before=dialog(store,'destination',{itemId:'choose-notes-folder'});
@@ -142,7 +155,7 @@ class LociFlowStageB1RendererContractTests(unittest.TestCase):
         )
         self.assertIn("Projects › Elarian › Notes", result["before"]["content"])
         self.assertIn("Keep in Downloads", result["before"]["content"])
-        self.assertNotIn("type=\"text\"", result["before"]["content"])
+        self.assertNotIn('type="text"', result["before"]["content"])
         self.assertTrue(result["selected"] and result["confirmed"] and result["done"])
         self.assertEqual(result["stored"], "notes-keep")
         self.assertIn("checked", result["after"]["content"])
@@ -171,7 +184,9 @@ class LociFlowStageB1RendererContractTests(unittest.TestCase):
         for forbidden in ("SHA-256", "reference copy", "original"):
             self.assertNotIn(forbidden, result["html"])
 
-    def test_supplied_tree_is_rendered_without_rebuilding_or_forbidden_items(self) -> None:
+    def test_supplied_tree_is_rendered_without_rebuilding_or_forbidden_items(
+        self,
+    ) -> None:
         result = self.run_node(
             """
             const store=await make('recommendations'); const model=buildOrganizeViewModel(store);
@@ -186,11 +201,15 @@ class LociFlowStageB1RendererContractTests(unittest.TestCase):
         self.assertIn("Quarterly report.pdf", result["before"])
         self.assertNotIn("Budget 2026.xlsx", result["before"])
         self.assertNotIn("submission.pdf", result["before"])
-        self.assertNotIn("Project notes.md", result["choiceTree"].split("Where files will go", 1)[1])
+        self.assertNotIn(
+            "Project notes.md", result["choiceTree"].split("Where files will go", 1)[1]
+        )
         self.assertIn('role="tree"', result["before"])
         self.assertNotIn("data-action", result["before"])
 
-    def test_approval_ready_to_move_and_stale_states_have_product_language_only(self) -> None:
+    def test_approval_ready_to_move_and_stale_states_have_product_language_only(
+        self,
+    ) -> None:
         result = self.run_node(
             """
             const store=await make('ready_for_approval'); const activityBefore=store.getState().activityMoves.length;
@@ -203,7 +222,10 @@ class LociFlowStageB1RendererContractTests(unittest.TestCase):
         self.assertEqual(result["approval"]["title"], "Ready to organize")
         self.assertIn("2", result["approval"]["content"])
         self.assertIn("files will move", result["approval"]["content"])
-        self.assertIn("duplicate copy is set aside for a later step", result["approval"]["content"])
+        self.assertIn(
+            "duplicate copy is set aside for a later step",
+            result["approval"]["content"],
+        )
         self.assertEqual(result["activityBefore"], result["activityAfter"])
         self.assertIsNotNone(result["approved"])
         self.assertIn("Ready to move", result["ready"])
@@ -211,11 +233,15 @@ class LociFlowStageB1RendererContractTests(unittest.TestCase):
         self.assertIn("Move files — not connected yet", result["ready"])
         self.assertIn("disabled>Move files — not connected yet", result["ready"])
         self.assertIn("Files have changed", result["staleGeneration"])
-        self.assertIn("Check the folder again before continuing.", result["staleGeneration"])
+        self.assertIn(
+            "Check the folder again before continuing.", result["staleGeneration"]
+        )
         self.assertIn("Organization choices were updated", result["staleRevision"])
         self.assertIn("Reload the latest choices.", result["staleRevision"])
 
-    def test_disconnected_pages_show_no_accepted_fixture_records_or_actions(self) -> None:
+    def test_disconnected_pages_show_no_accepted_fixture_records_or_actions(
+        self,
+    ) -> None:
         result = self.run_node(
             """
             const store=await make('disconnected_pages'); console.log(JSON.stringify({bin:page(store,'duplicate-bin'),activity:page(store,'activity'),standards:page(store,'standards'),settings:page(store,'settings')}));
@@ -229,13 +255,23 @@ class LociFlowStageB1RendererContractTests(unittest.TestCase):
         self.assertNotIn("Keep Submissions unchanged", result["standards"])
         self.assertIn("Appearance", result["settings"])
 
-    def test_fixture_boundary_remains_explicit_without_persistence_or_dom_bypass(self) -> None:
+    def test_fixture_boundary_remains_explicit_without_persistence_or_dom_bypass(
+        self,
+    ) -> None:
         fixture_source = (LIVE / "data_source.js").read_text(encoding="utf-8")
         lower = fixture_source.lower()
         for forbidden in (
-            "fetch(", "xmlhttprequest", "websocket", "eventsource",
-            "localstorage", "sessionstorage", "indexeddb",
-            "document.cookie", "shutil", "os.rename", "path.rename",
+            "fetch(",
+            "xmlhttprequest",
+            "websocket",
+            "eventsource",
+            "localstorage",
+            "sessionstorage",
+            "indexeddb",
+            "document.cookie",
+            "shutil",
+            "os.rename",
+            "path.rename",
         ):
             self.assertNotIn(forbidden, lower)
         self.assertIn('import("./fixtures.json"', fixture_source)
@@ -243,7 +279,10 @@ class LociFlowStageB1RendererContractTests(unittest.TestCase):
         self.assertNotRegex(lower, r"[?&](fixture|scenario|debug)=")
         app = (LIVE / "app.js").read_text(encoding="utf-8")
         self.assertEqual(app.count("elements.app.innerHTML ="), 1)
-        self.assertIn("renderRoute(buildRouteViewModel(viewSource, state.route), state.route)", app)
+        self.assertIn(
+            "renderRoute(buildRouteViewModel(viewSource, state.route), state.route)",
+            app,
+        )
         self.assertNotIn("createFixtureDataSource", app)
 
     def test_prohibited_visible_language_is_absent(self) -> None:
@@ -252,10 +291,17 @@ class LociFlowStageB1RendererContractTests(unittest.TestCase):
             for path in [*sorted(LIVE.glob("*.js")), LIVE / "fixtures.json"]
         )
         for phrase in (
-            "BACKEND VERIFIED MOVEMENT", "backend-provided metadata",
-            "backend-provided destinations", "Organization styles are not connected yet",
-            "scan generation", "decision revision", "option ID", "copy ID",
-            "fixture operation", "immutable derived structure", "structural plan",
+            "BACKEND VERIFIED MOVEMENT",
+            "backend-provided metadata",
+            "backend-provided destinations",
+            "Organization styles are not connected yet",
+            "scan generation",
+            "decision revision",
+            "option ID",
+            "copy ID",
+            "fixture operation",
+            "immutable derived structure",
+            "structural plan",
             "simulation",
         ):
             self.assertNotIn(phrase.lower(), authored.lower())

@@ -1,9 +1,9 @@
-from pathlib import Path
 import os
 import subprocess
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 
 from organizer.duplicates import find_exact_duplicates, hash_file
 from organizer.scanner import scan_directory

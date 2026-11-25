@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
-from pathlib import Path
 import secrets
+from collections.abc import Callable
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from threading import Lock
-from typing import Callable
 
 from organizer.application.standards_models import (
     PREVIEW_LIFETIME_SECONDS,
@@ -58,7 +58,7 @@ class StandardsCreationStore:
         now: Callable[[], datetime] | None = None,
     ) -> None:
         self._root = root.resolve(strict=True)
-        self._now = now or (lambda: datetime.now(timezone.utc))
+        self._now = now or (lambda: datetime.now(UTC))
         self._lock = Lock()
         self._scopes: dict[str, _ScopeBinding] = {}
         self._session_contexts: dict[str, _CreationContextBinding] = {}
@@ -93,7 +93,9 @@ class StandardsCreationStore:
                 ),
             )
         )
-        for item in sorted(metadata_items, key=lambda value: value.relative_path.as_posix()):
+        for item in sorted(
+            metadata_items, key=lambda value: value.relative_path.as_posix()
+        ):
             if not _safe_folder(item, self._root):
                 continue
             relative = item.relative_path.as_posix()
@@ -173,7 +175,8 @@ class StandardsCreationStore:
             (
                 item
                 for item in metadata_items
-                if item.is_dir and item.relative_path.as_posix() == binding.relative_path
+                if item.is_dir
+                and item.relative_path.as_posix() == binding.relative_path
             ),
             None,
         )

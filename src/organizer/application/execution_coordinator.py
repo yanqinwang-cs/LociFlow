@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import replace
-from datetime import datetime, timezone
 import hashlib
 import json
-from threading import Lock
 import uuid
+from dataclasses import replace
+from datetime import UTC, datetime
+from threading import Lock
 
 from organizer.application.organization_decision_models import ApprovedOrganizationPlan
 from organizer.application.organization_operation_models import (
@@ -132,7 +132,9 @@ class OrganizationExecutionCoordinator:
             )
             return True
 
-    def authorization_snapshot(self, authorization_id: str) -> MovementAuthorization | None:
+    def authorization_snapshot(
+        self, authorization_id: str
+    ) -> MovementAuthorization | None:
         with self._authorization_lock:
             return self._authorizations.get(authorization_id)
 
@@ -172,7 +174,7 @@ class OrganizationExecutionCoordinator:
 
 
 def _utc_timestamp() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def approved_plan_identity(approved_plan: ApprovedOrganizationPlan) -> str:
@@ -219,7 +221,5 @@ def approved_plan_identity(approved_plan: ApprovedOrganizationPlan) -> str:
         ],
         "summary": approved_plan.summary.to_dict(),
     }
-    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode(
-        "utf-8"
-    )
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
