@@ -39,7 +39,10 @@ class ArtifactServiceTests(unittest.TestCase):
             self.assertEqual(
                 tuple((item.artifact_type, item.relative_path) for item in summaries),
                 (
-                    (ARTIFACT_REVIEWED_PLAN, reviewed_path.relative_to(root).as_posix()),
+                    (
+                        ARTIFACT_REVIEWED_PLAN,
+                        reviewed_path.relative_to(root).as_posix(),
+                    ),
                     (ARTIFACT_SCAN_REPORT, report_path.relative_to(root).as_posix()),
                 ),
             )
@@ -65,8 +68,14 @@ class ArtifactServiceTests(unittest.TestCase):
 
             self.assertEqual(loaded_report.payload, report)
             self.assertEqual(loaded_plan.payload, session.items)
-            self.assertEqual(loaded_report.summary.relative_path, report_path.relative_to(root).as_posix())
-            self.assertEqual(loaded_plan.summary.relative_path, reviewed_path.relative_to(root).as_posix())
+            self.assertEqual(
+                loaded_report.summary.relative_path,
+                report_path.relative_to(root).as_posix(),
+            )
+            self.assertEqual(
+                loaded_plan.summary.relative_path,
+                reviewed_path.relative_to(root).as_posix(),
+            )
 
     def test_report_owner_rejects_malformed_or_wrong_schema(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -115,8 +124,13 @@ class ArtifactServiceTests(unittest.TestCase):
             with self.assertRaisesRegex(InvalidArtifact, "JSON file"):
                 load_artifact(root, ARTIFACT_SCAN_REPORT, text.relative_to(root))
 
-    def test_rejects_arbitrary_outside_traversal_and_wrong_allowlist_paths(self) -> None:
-        with tempfile.TemporaryDirectory() as directory, tempfile.TemporaryDirectory() as outside_directory:
+    def test_rejects_arbitrary_outside_traversal_and_wrong_allowlist_paths(
+        self,
+    ) -> None:
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            tempfile.TemporaryDirectory() as outside_directory,
+        ):
             root = Path(directory).resolve()
             outside = Path(outside_directory) / "outside.json"
             outside.write_text("{}", encoding="utf-8")
@@ -137,7 +151,10 @@ class ArtifactServiceTests(unittest.TestCase):
             link.symlink_to(report_path)
 
             summaries = list_artifacts(root, ARTIFACT_SCAN_REPORT)
-            self.assertNotIn(link.relative_to(root).as_posix(), [item.relative_path for item in summaries])
+            self.assertNotIn(
+                link.relative_to(root).as_posix(),
+                [item.relative_path for item in summaries],
+            )
             with self.assertRaisesRegex(InvalidArtifact, "symlink"):
                 load_artifact(root, ARTIFACT_SCAN_REPORT, link.relative_to(root))
 

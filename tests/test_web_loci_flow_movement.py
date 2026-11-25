@@ -12,11 +12,15 @@ class WebLociFlowMovementBoundaryTests(unittest.TestCase):
     def test_frontend_connects_only_to_the_fixed_backend_movement_routes(self) -> None:
         assets = "\n".join(
             (LOCI / name).read_text(encoding="utf-8")
-            for name in ("api.js", "data_source.js", "view_models.js", "app.js", "views.js")
+            for name in (
+                "api.js",
+                "data_source.js",
+                "view_models.js",
+                "app.js",
+                "views.js",
+            )
         )
-        route = (WEB / "routes" / "organization_api.py").read_text(
-            encoding="utf-8"
-        )
+        route = (WEB / "routes" / "organization_api.py").read_text(encoding="utf-8")
 
         self.assertNotIn("Move files — not connected yet", assets)
         self.assertIn("/api/organization/move/preview", assets)
@@ -37,9 +41,7 @@ class WebLociFlowMovementBoundaryTests(unittest.TestCase):
             / "application"
             / "organization_movement_service.py"
         ).read_text(encoding="utf-8")
-        route = (WEB / "routes" / "organization_api.py").read_text(
-            encoding="utf-8"
-        )
+        route = (WEB / "routes" / "organization_api.py").read_text(encoding="utf-8")
         combined = movement + route
 
         self.assertIn("duplicate_copies_deferred", combined)

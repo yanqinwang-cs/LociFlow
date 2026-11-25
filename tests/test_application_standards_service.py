@@ -131,8 +131,14 @@ class StandardsServiceTests(unittest.TestCase):
             (root / "Documents" / "CS1010X notes.txt").write_text("x", encoding="utf-8")
             scan = scan_root(root)
             service = StandardsService(StandardsRepository(root))
-            folder = next(item for item in scan.metadata_items if item.relative_path == Path("Documents"))
-            folder_scope = service.resolve_folder_scope(folder, scan_generation="scan-1")
+            folder = next(
+                item
+                for item in scan.metadata_items
+                if item.relative_path == Path("Documents")
+            )
+            folder_scope = service.resolve_folder_scope(
+                folder, scan_generation="scan-1"
+            )
 
             keep_folder = service.preview(
                 preset_type=STANDARD_KEEP_FOLDER_UNCHANGED,
@@ -161,7 +167,9 @@ class StandardsServiceTests(unittest.TestCase):
             self.assertEqual(project.matcher_kind, "project_code")
             self.assertFalse((root / ORGANIZATION_RULES_RELATIVE_PATH).exists())
 
-    def test_first_material_save_migrates_supported_v1_semantics_atomically(self) -> None:
+    def test_first_material_save_migrates_supported_v1_semantics_atomically(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "Documents").mkdir()
@@ -238,7 +246,9 @@ class StandardsServiceTests(unittest.TestCase):
                 matcher_value="CS1010X",
                 expected_revision=1,
             )
-            duplicate_result = service.save_preview(duplicate.preview_id, expected_revision=1)
+            duplicate_result = service.save_preview(
+                duplicate.preview_id, expected_revision=1
+            )
 
             self.assertEqual(created.standard.id, repeated_token.standard.id)
             self.assertEqual(created.standard.id, duplicate_result.standard.id)
@@ -253,8 +263,13 @@ class StandardsServiceTests(unittest.TestCase):
                     expected_revision=0,
                 )
 
-    def test_preview_expiry_supersession_and_wrong_root_or_stale_scope_reject(self) -> None:
-        with tempfile.TemporaryDirectory() as first, tempfile.TemporaryDirectory() as second:
+    def test_preview_expiry_supersession_and_wrong_root_or_stale_scope_reject(
+        self,
+    ) -> None:
+        with (
+            tempfile.TemporaryDirectory() as first,
+            tempfile.TemporaryDirectory() as second,
+        ):
             root = Path(first)
             now = [datetime(2026, 1, 1, tzinfo=UTC)]
             service = StandardsService(StandardsRepository(root), now=lambda: now[0])
@@ -273,13 +288,17 @@ class StandardsServiceTests(unittest.TestCase):
                 matcher_value="BootAI",
                 expected_revision=0,
             )
-            with self.assertRaisesRegex(StandardsApplicationError, "preview_superseded"):
+            with self.assertRaisesRegex(
+                StandardsApplicationError, "preview_superseded"
+            ):
                 service.save_preview(old.preview_id, expected_revision=0)
             now[0] += timedelta(minutes=16)
             with self.assertRaisesRegex(StandardsApplicationError, "preview_expired"):
                 service.save_preview(current.preview_id, expected_revision=0)
 
-            wrong_scope = StandardsService(StandardsRepository(Path(second))).resolve_root_scope()
+            wrong_scope = StandardsService(
+                StandardsRepository(Path(second))
+            ).resolve_root_scope()
             with self.assertRaisesRegex(StandardsApplicationError, "wrong_root_scope"):
                 service.preview(
                     preset_type=STANDARD_KEEP_FOLDER_UNCHANGED,
@@ -291,7 +310,8 @@ class StandardsServiceTests(unittest.TestCase):
             stale.mkdir()
             stale_scan = scan_root(root)
             stale_metadata = next(
-                item for item in stale_scan.metadata_items
+                item
+                for item in stale_scan.metadata_items
                 if item.relative_path == Path("Stale")
             )
             stale_scope = service.resolve_folder_scope(
@@ -299,7 +319,9 @@ class StandardsServiceTests(unittest.TestCase):
                 scan_generation="scan-stale",
             )
             stale.rmdir()
-            with self.assertRaisesRegex(StandardsApplicationError, "folder_scope_stale"):
+            with self.assertRaisesRegex(
+                StandardsApplicationError, "folder_scope_stale"
+            ):
                 service.preview(
                     preset_type=STANDARD_KEEP_FOLDER_UNCHANGED,
                     scope=stale_scope,
@@ -310,8 +332,9 @@ class StandardsServiceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             service = StandardsService(StandardsRepository(Path(directory)))
             for kind, value in (("person_name", "Ada"), ("course_code", "")):
-                with self.subTest(kind=kind, value=value), self.assertRaises(
-                    StandardsApplicationError
+                with (
+                    self.subTest(kind=kind, value=value),
+                    self.assertRaises(StandardsApplicationError),
                 ):
                     service.preview(
                         preset_type=STANDARD_KEEP_MATCHING_FILES_TOGETHER,
@@ -322,8 +345,11 @@ class StandardsServiceTests(unittest.TestCase):
                     )
 
             for value in ("Boot*", "Boot.+", "../Boot", "Boot AI"):
-                with self.subTest(project_value=value), self.assertRaisesRegex(
-                    StandardsApplicationError, "invalid_matcher"
+                with (
+                    self.subTest(project_value=value),
+                    self.assertRaisesRegex(
+                        StandardsApplicationError, "invalid_matcher"
+                    ),
                 ):
                     service.preview(
                         preset_type=STANDARD_KEEP_MATCHING_FILES_TOGETHER,
@@ -367,7 +393,9 @@ class StandardsServiceTests(unittest.TestCase):
                     expected_revision=0,
                     owner_key="session-one",
                 )
-            with self.assertRaisesRegex(StandardsApplicationError, "preview_superseded"):
+            with self.assertRaisesRegex(
+                StandardsApplicationError, "preview_superseded"
+            ):
                 service.save_preview(
                     first_session.preview_id,
                     expected_revision=0,
@@ -409,7 +437,11 @@ class StandardsServiceTests(unittest.TestCase):
             (root / "Documents").mkdir()
             scan = scan_root(root)
             service = StandardsService(StandardsRepository(root))
-            folder = next(item for item in scan.metadata_items if item.relative_path == Path("Documents"))
+            folder = next(
+                item
+                for item in scan.metadata_items
+                if item.relative_path == Path("Documents")
+            )
             preview = service.preview(
                 preset_type=STANDARD_KEEP_FOLDER_UNCHANGED,
                 scope=service.resolve_folder_scope(folder, scan_generation="scan-1"),
@@ -432,7 +464,9 @@ class StandardsServiceTests(unittest.TestCase):
             self.assertEqual(noop.catalog_revision, 2)
             self.assertTrue(activated.standard.active)
             self.assertEqual(activated.catalog_revision, 3)
-            with self.assertRaisesRegex(StandardsApplicationError, "immutable_standard"):
+            with self.assertRaisesRegex(
+                StandardsApplicationError, "immutable_standard"
+            ):
                 service.set_active(
                     "builtin-protect-project-folders",
                     active=False,
@@ -450,7 +484,9 @@ class StandardsServiceTests(unittest.TestCase):
             with self.assertRaisesRegex(StandardsApplicationError, "standard_conflict"):
                 service.save_preview(conflict.preview_id, expected_revision=3)
 
-    def test_first_v1_deactivation_migrates_and_preserves_the_stable_read_id(self) -> None:
+    def test_first_v1_deactivation_migrates_and_preserves_the_stable_read_id(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             path = root / ORGANIZATION_RULES_RELATIVE_PATH
@@ -477,9 +513,13 @@ class StandardsServiceTests(unittest.TestCase):
             self.assertFalse(result.standard.active)
             self.assertEqual(result.standard.record_revision, 2)
             self.assertEqual(result.catalog_revision, 1)
-            self.assertFalse(next(item for item in restarted.items if item.id == standard_id).active)
+            self.assertFalse(
+                next(item for item in restarted.items if item.id == standard_id).active
+            )
 
-    def test_plan_state_blocks_and_successful_mutation_invalidates_without_activity(self) -> None:
+    def test_plan_state_blocks_and_successful_mutation_invalidates_without_activity(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             decisions = _DecisionStore()
@@ -497,7 +537,9 @@ class StandardsServiceTests(unittest.TestCase):
                 expected_revision=0,
             )
             decisions.approved = True
-            with self.assertRaisesRegex(StandardsApplicationError, "active_plan_conflict"):
+            with self.assertRaisesRegex(
+                StandardsApplicationError, "active_plan_conflict"
+            ):
                 service.save_preview(preview.preview_id, expected_revision=0)
             self.assertTrue(decisions.approved)
             self.assertEqual(decisions.invalidations, 0)
@@ -507,7 +549,9 @@ class StandardsServiceTests(unittest.TestCase):
             self.assertTrue(result.fresh_scan_required)
             self.assertEqual(decisions.invalidations, 1)
 
-    def test_movement_authorization_operation_and_duplicate_batch_each_block(self) -> None:
+    def test_movement_authorization_operation_and_duplicate_batch_each_block(
+        self,
+    ) -> None:
         blockers = (
             {"execution_coordinator": _Coordinator(blocked=True)},
             {"operation_repository": _Operations(blocked=True)},
@@ -551,7 +595,9 @@ class StandardsServiceTests(unittest.TestCase):
                 service.save_preview(preview.preview_id, expected_revision=0).changed
             )
 
-    def test_safe_projection_has_revision_mutability_and_no_raw_storage_fields(self) -> None:
+    def test_safe_projection_has_revision_mutability_and_no_raw_storage_fields(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             service = StandardsService(StandardsRepository(root))
@@ -565,7 +611,11 @@ class StandardsServiceTests(unittest.TestCase):
             result = service.save_preview(preview.preview_id, expected_revision=0)
             payload = result.projection.to_dict()
             serialized = json.dumps(payload).lower()
-            saved = next(item for item in result.projection.items if item.id == result.standard.id)
+            saved = next(
+                item
+                for item in result.projection.items
+                if item.id == result.standard.id
+            )
 
             self.assertEqual(payload["revision"], 1)
             self.assertTrue(saved.mutable)

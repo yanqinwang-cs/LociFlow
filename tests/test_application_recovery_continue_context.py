@@ -44,7 +44,9 @@ class RecoveryContinueContextStoreTests(unittest.TestCase):
         for secret in (_ROOT, _OPERATION, _PARENT, "b" * 64, "e" * 64):
             self.assertNotIn(secret, repr(context))
 
-    def test_wrong_binding_does_not_consume_and_correct_binding_is_one_use(self) -> None:
+    def test_wrong_binding_does_not_consume_and_correct_binding_is_one_use(
+        self,
+    ) -> None:
         context = self._issue()
         for changes in (
             {"browser_session_id": "other"},

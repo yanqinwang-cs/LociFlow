@@ -10,12 +10,14 @@ LOCI = ROOT / "src" / "organizer" / "web" / "static" / "loci_flow"
 
 
 class WebLociFlowActivityTests(unittest.TestCase):
-    def test_activity_client_uses_fixed_same_origin_contract_and_exact_confirmation(self) -> None:
+    def test_activity_client_uses_fixed_same_origin_contract_and_exact_confirmation(
+        self,
+    ) -> None:
         script = textwrap.dedent(
             f"""
             import fs from 'node:fs';
             import assert from 'node:assert/strict';
-            const source = fs.readFileSync({str(LOCI / 'api.js')!r}, 'utf8');
+            const source = fs.readFileSync({str(LOCI / "api.js")!r}, 'utf8');
             const api = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
             const id = '4d7b4e92-14c8-4bb9-8328-3d271f355574';
             const entry = {{
@@ -62,15 +64,23 @@ class WebLociFlowActivityTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
 
-    def test_activity_ui_has_real_controls_confirmation_and_no_fixture_persistence(self) -> None:
+    def test_activity_ui_has_real_controls_confirmation_and_no_fixture_persistence(
+        self,
+    ) -> None:
         api = (LOCI / "api.js").read_text(encoding="utf-8")
         app = (LOCI / "app.js").read_text(encoding="utf-8")
         view_models = (LOCI / "view_models.js").read_text(encoding="utf-8")
         views = (LOCI / "views.js").read_text(encoding="utf-8")
         combined = api + app + view_models + views
         for wording in (
-            "No file moves recorded.", "Details", "Expand all", "Collapse all",
-            "Undo move", "Undo this move?", "will return to", "UNDO FILE MOVE",
+            "No file moves recorded.",
+            "Details",
+            "Expand all",
+            "Collapse all",
+            "Undo move",
+            "Undo this move?",
+            "will return to",
+            "UNDO FILE MOVE",
             "Move files",
         ):
             self.assertIn(wording, combined)

@@ -36,7 +36,10 @@ from tests.test_application_organization_undo_identity_execution import _intent
 class IdentityAwareOrganizationUndoVerificationTests(unittest.TestCase):
     def test_one_and_multiple_item_restores_pass_with_bounded_reads(self) -> None:
         for payloads in ((b"a" * 41,), (b"a" * 41, b"b" * 37)):
-            with self.subTest(items=len(payloads)), tempfile.TemporaryDirectory() as directory:
+            with (
+                self.subTest(items=len(payloads)),
+                tempfile.TemporaryDirectory() as directory,
+            ):
                 root = Path(directory).resolve()
                 _operations, _undos, parent, undo = _restored_pair(root, payloads)
                 read_sizes: list[int] = []
@@ -243,7 +246,9 @@ class IdentityAwareOrganizationUndoVerificationTests(unittest.TestCase):
                 IdentityUndoVerificationState.INDETERMINATE,
             )
 
-    def test_ineligible_parent_undo_status_root_mapping_and_identity_reject(self) -> None:
+    def test_ineligible_parent_undo_status_root_mapping_and_identity_reject(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             _operations, _undos, parent, undo = _restored_pair(
@@ -337,10 +342,13 @@ class IdentityAwareOrganizationUndoVerificationTests(unittest.TestCase):
                 (undo, replace(parent, status="verification_failed")),
             )
             for candidate_undo, candidate_parent in candidates:
-                with self.subTest(
-                    undo_status=candidate_undo.status,
-                    parent_status=candidate_parent.status,
-                ), self.assertRaises(IdentityUndoVerificationEligibilityError):
+                with (
+                    self.subTest(
+                        undo_status=candidate_undo.status,
+                        parent_status=candidate_parent.status,
+                    ),
+                    self.assertRaises(IdentityUndoVerificationEligibilityError),
+                ):
                     verify_identity_organization_undo(
                         candidate_undo,
                         candidate_parent,

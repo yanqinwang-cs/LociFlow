@@ -63,7 +63,9 @@ class OrganizationUndoIdentityExecutionTests(unittest.TestCase):
                 executor=execute,
             )
 
-            self.assertEqual(result.state, IdentityUndoExecutionState.RESTORED_UNVERIFIED)
+            self.assertEqual(
+                result.state, IdentityUndoExecutionState.RESTORED_UNVERIFIED
+            )
             self.assertEqual((result.files_expected, result.files_restored), (2, 2))
             self.assertEqual(operations.load(parent.operation_id), parent_before)
             self.assertEqual(
@@ -91,7 +93,9 @@ class OrganizationUndoIdentityExecutionTests(unittest.TestCase):
                 ),
             )
             for index, payload in enumerate((b"alpha", b"beta"), start=1):
-                self.assertEqual((root / f"Inbox/item-{index}.txt").read_bytes(), payload)
+                self.assertEqual(
+                    (root / f"Inbox/item-{index}.txt").read_bytes(), payload
+                )
                 self.assertFalse((root / f"Documents/item-{index}.txt").exists())
 
             persisted = undos.load(intent.record.undo_id)
@@ -116,7 +120,9 @@ class OrganizationUndoIdentityExecutionTests(unittest.TestCase):
             executor = mock.Mock()
             parent_before = operations.load(parent.operation_id)
             with mock.patch.object(undos, "create", side_effect=OSError("private")):
-                with self.assertRaises(OrganizationIdentityUndoExecutionError) as raised:
+                with self.assertRaises(
+                    OrganizationIdentityUndoExecutionError
+                ) as raised:
                     execute_v2_organization_undo_intent(
                         intent=intent,
                         operation_repository=operations,
@@ -148,7 +154,9 @@ class OrganizationUndoIdentityExecutionTests(unittest.TestCase):
             tampered = replace(
                 intent,
                 executor_evidence=(
-                    replace(intent.executor_evidence[0], content_identity=changed_identity),
+                    replace(
+                        intent.executor_evidence[0], content_identity=changed_identity
+                    ),
                 ),
             )
             executor = mock.Mock()
@@ -216,7 +224,10 @@ class OrganizationUndoIdentityExecutionTests(unittest.TestCase):
                 (UNDO_ITEM_RESTORED, UNDO_ITEM_FAILED),
             ),
         ):
-            with self.subTest(status=expected_status), tempfile.TemporaryDirectory() as directory:
+            with (
+                self.subTest(status=expected_status),
+                tempfile.TemporaryDirectory() as directory,
+            ):
                 root = Path(directory).resolve()
                 operations, undos, _parent, intent = _intent(root, payloads)
                 real_save = undos.save
@@ -231,7 +242,9 @@ class OrganizationUndoIdentityExecutionTests(unittest.TestCase):
                         == UNDO_ITEM_ATTEMPTING
                     ):
                         mutated = True
-                        source = root / record.expected_restores[mutate_index].moved_from
+                        source = (
+                            root / record.expected_restores[mutate_index].moved_from
+                        )
                         source.write_bytes(b"wrong")
 
                 with mock.patch.object(undos, "save", side_effect=save):
@@ -259,7 +272,9 @@ class OrganizationUndoIdentityExecutionTests(unittest.TestCase):
             root = Path(directory).resolve()
             operations, undos, _parent, intent = _intent(root, (b"alpha",))
 
-            with mock.patch("organizer.executor.os.unlink", side_effect=OSError("private")):
+            with mock.patch(
+                "organizer.executor.os.unlink", side_effect=OSError("private")
+            ):
                 result = execute_v2_organization_undo_intent(
                     intent=intent,
                     operation_repository=operations,
@@ -283,7 +298,9 @@ class OrganizationUndoIdentityExecutionTests(unittest.TestCase):
             operations, undos, _parent, intent = _intent(root, (b"alpha",))
 
             with (
-                mock.patch("organizer.executor.os.unlink", side_effect=KeyboardInterrupt()),
+                mock.patch(
+                    "organizer.executor.os.unlink", side_effect=KeyboardInterrupt()
+                ),
                 self.assertRaises(StrictExecutorInterrupted),
             ):
                 execute_v2_organization_undo_intent(
@@ -301,13 +318,17 @@ class OrganizationUndoIdentityExecutionTests(unittest.TestCase):
             self.assertTrue((root / "Documents/item-1.txt").exists())
             self.assertTrue((root / "Inbox/item-1.txt").exists())
 
-    def test_prepublication_process_interrupt_propagates_without_success_claim(self) -> None:
+    def test_prepublication_process_interrupt_propagates_without_success_claim(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             operations, undos, _parent, intent = _intent(root, (b"alpha",))
 
             with (
-                mock.patch("organizer.executor.os.link", side_effect=KeyboardInterrupt()),
+                mock.patch(
+                    "organizer.executor.os.link", side_effect=KeyboardInterrupt()
+                ),
                 self.assertRaises(KeyboardInterrupt) as raised,
             ):
                 execute_v2_organization_undo_intent(
@@ -342,7 +363,9 @@ class OrganizationUndoIdentityExecutionTests(unittest.TestCase):
 
             with (
                 mock.patch.object(undos, "save", side_effect=save),
-                mock.patch("organizer.executor.os.unlink", side_effect=OSError("private")),
+                mock.patch(
+                    "organizer.executor.os.unlink", side_effect=OSError("private")
+                ),
                 self.assertRaises(OrganizationIdentityUndoExecutionError) as raised,
             ):
                 execute_v2_organization_undo_intent(
@@ -369,7 +392,10 @@ class OrganizationUndoIdentityExecutionTests(unittest.TestCase):
             4: (UNDO_ITEM_RESTORED, False, True),
         }
         for fail_on, (item_state, moved_exists, restored_exists) in expected.items():
-            with self.subTest(save_call=fail_on), tempfile.TemporaryDirectory() as directory:
+            with (
+                self.subTest(save_call=fail_on),
+                tempfile.TemporaryDirectory() as directory,
+            ):
                 root = Path(directory).resolve()
                 operations, undos, _parent, intent = _intent(root, (b"alpha",))
                 real_save = undos.save
@@ -393,12 +419,18 @@ class OrganizationUndoIdentityExecutionTests(unittest.TestCase):
                 self.assertEqual(result.state, IdentityUndoExecutionState.INTERRUPTED)
                 persisted = undos.load(intent.record.undo_id)
                 self.assertEqual(persisted.status, UNDO_INTERRUPTED)
-                self.assertEqual(persisted.expected_restores[0].result_state, item_state)
+                self.assertEqual(
+                    persisted.expected_restores[0].result_state, item_state
+                )
                 self.assertEqual((root / "Documents/item-1.txt").exists(), moved_exists)
                 self.assertEqual((root / "Inbox/item-1.txt").exists(), restored_exists)
-                self.assertEqual(persisted.verification.status, UNDO_VERIFICATION_NOT_RUN)
+                self.assertEqual(
+                    persisted.verification.status, UNDO_VERIFICATION_NOT_RUN
+                )
 
-    def test_after_failure_recorder_failure_remains_interrupted_and_attempting(self) -> None:
+    def test_after_failure_recorder_failure_remains_interrupted_and_attempting(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             operations, undos, _parent, intent = _intent(root, (b"alpha",))
@@ -433,7 +465,9 @@ class OrganizationUndoIdentityExecutionTests(unittest.TestCase):
             self.assertTrue((root / "Documents/item-1.txt").exists())
             self.assertFalse((root / "Inbox/item-1.txt").exists())
 
-    def test_production_and_terminal_verification_owners_remain_disconnected(self) -> None:
+    def test_production_and_terminal_verification_owners_remain_disconnected(
+        self,
+    ) -> None:
         repository_root = Path(__file__).resolve().parents[1]
         production = (
             repository_root / "src/organizer/application/undo_service.py",

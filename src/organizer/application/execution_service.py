@@ -374,8 +374,7 @@ def _validate_approved_plan(
         or current_authorization.approved_at != authorization.approved_at
         or current_authorization.approved_plan_identity
         != authorization.approved_plan_identity
-        or current_authorization.browser_session_id
-        != authorization.browser_session_id
+        or current_authorization.browser_session_id != authorization.browser_session_id
         or current_authorization.configured_root_identity
         != authorization.configured_root_identity
         or current_authorization.issued_at != authorization.issued_at
@@ -458,7 +457,9 @@ def _verify_and_finish(
         )
     else:
         operation_verification = OrganizationOperationVerification(
-            status=(VERIFICATION_PASSED if verification.passed else VERIFICATION_FAILED),
+            status=(
+                VERIFICATION_PASSED if verification.passed else VERIFICATION_FAILED
+            ),
             verified_count=verification.verified_count,
             mismatch_codes=verification.mismatch_codes,
         )
@@ -583,7 +584,11 @@ def _frozen_moves_match(
 
 
 def _relative(path: Path, root: Path) -> str:
-    return validate_under_root(path.resolve(strict=False), root).relative_to(root).as_posix()
+    return (
+        validate_under_root(path.resolve(strict=False), root)
+        .relative_to(root)
+        .as_posix()
+    )
 
 
 def _utc_timestamp() -> str:

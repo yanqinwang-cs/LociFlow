@@ -10,9 +10,7 @@ from pathlib import Path
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 SPEC = REPOSITORY_ROOT / "packaging" / "macos" / "loci_flow.spec"
-BUILD_SCRIPT = (
-    REPOSITORY_ROOT / "packaging" / "macos" / "build_unsigned_app.py"
-)
+BUILD_SCRIPT = REPOSITORY_ROOT / "packaging" / "macos" / "build_unsigned_app.py"
 METADATA = REPOSITORY_ROOT / "packaging" / "macos" / "release_metadata.py"
 
 
@@ -45,9 +43,7 @@ class MacOSPackagingContractTests(unittest.TestCase):
         )
         self.assertNotIn(
             "pyinstaller",
-            "\n".join(
-                project["optional-dependencies"]["macos-launcher"]
-            ).lower(),
+            "\n".join(project["optional-dependencies"]["macos-launcher"]).lower(),
         )
 
     def test_spec_is_onedir_windowed_native_and_unsigned(self) -> None:
@@ -195,26 +191,18 @@ class MacOSPackagingContractTests(unittest.TestCase):
             self.assertEqual(checked.returncode, 0, relative)
 
     def test_bundle_validator_is_release_tooling_not_product_runtime(self) -> None:
-        validator = (
-            REPOSITORY_ROOT
-            / "packaging"
-            / "macos"
-            / "validate_app_bundle.py"
-        )
+        validator = REPOSITORY_ROOT / "packaging" / "macos" / "validate_app_bundle.py"
         source = validator.read_text(encoding="utf-8")
         self.assertIn('["file", "-b", str(file_path)]', source)
         self.assertIn('["lipo", "-archs", str(file_path)]', source)
-        self.assertIn('record.architectures != _EXPECTED_ARCHITECTURES', source)
+        self.assertIn("record.architectures != _EXPECTED_ARCHITECTURES", source)
         self.assertIn('_EXPECTED_ARCHITECTURES: Final = ("arm64",)', source)
         self.assertNotIn("x86_64 build", source)
         runtime_sources = "\n".join(
             path.read_text(encoding="utf-8")
-            for path in (
-                REPOSITORY_ROOT
-                / "src"
-                / "organizer"
-                / "macos_launcher"
-            ).glob("*.py")
+            for path in (REPOSITORY_ROOT / "src" / "organizer" / "macos_launcher").glob(
+                "*.py"
+            )
         )
         self.assertNotIn("validate_app_bundle", runtime_sources)
 

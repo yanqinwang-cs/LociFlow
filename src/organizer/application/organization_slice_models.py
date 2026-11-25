@@ -172,8 +172,6 @@ class OrganizationSlice:
                 change.to_dict() for change in self.recommended_changes
             ],
             "choices_needed": [choice.to_dict() for choice in self.choices_needed],
-            "kept_by_standards": [
-                kept.to_dict() for kept in self.kept_by_standards
-            ],
+            "kept_by_standards": [kept.to_dict() for kept in self.kept_by_standards],
             "summary": self.summary.to_dict(),
         }

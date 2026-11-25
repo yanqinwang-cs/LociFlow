@@ -68,8 +68,12 @@ class ProcessSignalCoordinatorTests(unittest.TestCase):
             self.assertEqual(result.intent.exit_code, 130)
             self.assertTrue(result.owns_shutdown)
             self.assertEqual(len(intents), 1)
-            self.assertEqual(signal.getsignal(signal.SIGINT), previous_handlers[signal.SIGINT])
-            self.assertEqual(signal.getsignal(signal.SIGTERM), previous_handlers[signal.SIGTERM])
+            self.assertEqual(
+                signal.getsignal(signal.SIGINT), previous_handlers[signal.SIGINT]
+            )
+            self.assertEqual(
+                signal.getsignal(signal.SIGTERM), previous_handlers[signal.SIGTERM]
+            )
             restored_wakeup = signal.set_wakeup_fd(
                 -1,
                 warn_on_full_buffer=False,
@@ -169,8 +173,12 @@ class ProcessSignalCoordinatorTests(unittest.TestCase):
             with self.assertRaisesRegex(OSError, "controlled pipe failure"):
                 coordinator.install()
 
-        self.assertEqual(signal.getsignal(signal.SIGINT), previous_handlers[signal.SIGINT])
-        self.assertEqual(signal.getsignal(signal.SIGTERM), previous_handlers[signal.SIGTERM])
+        self.assertEqual(
+            signal.getsignal(signal.SIGINT), previous_handlers[signal.SIGINT]
+        )
+        self.assertEqual(
+            signal.getsignal(signal.SIGTERM), previous_handlers[signal.SIGTERM]
+        )
         self.assertFalse(coordinator._installed)
 
     def test_handler_restoration_failure_is_not_reported_as_success(self) -> None:

@@ -30,7 +30,9 @@ class WebLociFlowStageB1Tests(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self) -> None:
         self.directory.cleanup()
 
-    async def test_authenticated_shell_packages_the_stage_b1_scenario_contract(self) -> None:
+    async def test_authenticated_shell_packages_the_stage_b1_scenario_contract(
+        self,
+    ) -> None:
         paths = (
             "/static/loci_flow/stage_b1_scenarios.js",
             "/static/loci_flow/data_source.js",
@@ -60,7 +62,9 @@ class WebLociFlowStageB1Tests(unittest.IsolatedAsyncioTestCase):
             if hasattr(route, "path") and hasattr(route, "methods")
         }
         self.assertEqual(methods_by_path["/loci-flow"], {"GET"})
-        self.assertFalse(any("scenario" in path or "fixture" in path for path in methods_by_path))
+        self.assertFalse(
+            any("scenario" in path or "fixture" in path for path in methods_by_path)
+        )
         self.assertNotIn("/api/loci-flow/stage-b1", methods_by_path)
 
     async def test_launch_and_root_behavior_remain_stage_a_compatible(self) -> None:

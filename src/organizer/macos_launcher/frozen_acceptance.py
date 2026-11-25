@@ -36,9 +36,7 @@ from organizer.macos_launcher.process_lease import (
 from organizer.web.launcher import launch
 from organizer.web.server import build_launcher_dependencies
 
-_CSRF_PATTERN: Final = re.compile(
-    r'<meta name="csrf-token" content="([^"]+)">'
-)
+_CSRF_PATTERN: Final = re.compile(r'<meta name="csrf-token" content="([^"]+)">')
 _DIAGNOSTIC_KEYS: Final = frozenset(
     {
         "application_version",
@@ -261,8 +259,7 @@ class _AcceptanceAdapter:
             global_result != 1
             or global_conflict.choose_called
             or len(global_conflict.messages) != 1
-            or global_conflict.messages[0].message
-            != "Loci Flow is already open."
+            or global_conflict.messages[0].message != "Loci Flow is already open."
         ):
             raise FrozenWorkflowAcceptanceError
 

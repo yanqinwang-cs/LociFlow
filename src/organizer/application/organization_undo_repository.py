@@ -222,10 +222,20 @@ def _record_from_versioned_dict(
     item_parser,
 ) -> OrganizationUndoRecord:
     required = {
-        "schema_version", "record_type", "undo_id", "operation_id",
-        "authorization_id", "configured_root_identity", "status", "created_at",
-        "started_at", "completed_at", "expected_restores", "verification",
-        "legacy_undo_log", "failure_code",
+        "schema_version",
+        "record_type",
+        "undo_id",
+        "operation_id",
+        "authorization_id",
+        "configured_root_identity",
+        "status",
+        "created_at",
+        "started_at",
+        "completed_at",
+        "expected_restores",
+        "verification",
+        "legacy_undo_log",
+        "failure_code",
     }
     if set(data) != required:
         raise ValueError(
@@ -245,7 +255,9 @@ def _record_from_versioned_dict(
     if set(verification) != {"status", "verified_count", "mismatch_codes"}:
         raise ValueError("organization undo verification fields are invalid")
     mismatch_codes = verification["mismatch_codes"]
-    if not isinstance(mismatch_codes, list) or not all(isinstance(item, str) for item in mismatch_codes):
+    if not isinstance(mismatch_codes, list) or not all(
+        isinstance(item, str) for item in mismatch_codes
+    ):
         raise ValueError("organization undo verification mismatches are invalid")
     verification_status = _string(verification["status"], "verification status")
     if verification_status not in _VERIFICATION_STATES:
@@ -254,7 +266,9 @@ def _record_from_versioned_dict(
         undo_id=_uuid_string(data["undo_id"], "undo_id"),
         operation_id=_uuid_string(data["operation_id"], "operation_id"),
         authorization_id=_uuid_string(data["authorization_id"], "authorization_id"),
-        configured_root_identity=_string(data["configured_root_identity"], "configured_root_identity"),
+        configured_root_identity=_string(
+            data["configured_root_identity"], "configured_root_identity"
+        ),
         status=status,
         created_at=_string(data["created_at"], "created_at"),
         started_at=_optional_string(data["started_at"], "started_at"),
@@ -265,7 +279,9 @@ def _record_from_versioned_dict(
             verified_count=_integer(verification["verified_count"], "verified_count"),
             mismatch_codes=tuple(mismatch_codes),
         ),
-        legacy_undo_log=_optional_relative_path(data["legacy_undo_log"], root, "legacy_undo_log"),
+        legacy_undo_log=_optional_relative_path(
+            data["legacy_undo_log"], root, "legacy_undo_log"
+        ),
         failure_code=_optional_string(data["failure_code"], "failure_code"),
         schema_version=schema_version,
         record_type=ORGANIZATION_UNDO_RECORD_TYPE,
@@ -276,11 +292,19 @@ def _item_from_dict_v1(data: object, root: Path) -> OrganizationUndoItem:
     if not isinstance(data, dict):
         raise ValueError("organization undo item must contain an object")
     required = {
-        "change_id", "restore_target", "moved_from", "baseline_size_bytes",
-        "baseline_modified_time", "result_state", "failure_code", "recovery_state",
+        "change_id",
+        "restore_target",
+        "moved_from",
+        "baseline_size_bytes",
+        "baseline_modified_time",
+        "result_state",
+        "failure_code",
+        "recovery_state",
     }
     if set(data) != required:
-        raise ValueError("organization undo item fields are invalid for schema version 1")
+        raise ValueError(
+            "organization undo item fields are invalid for schema version 1"
+        )
     return _item_from_versioned_dict(data, root, content_identity=None)
 
 
@@ -288,18 +312,24 @@ def _item_from_dict_v2(data: object, root: Path) -> OrganizationUndoItem:
     if not isinstance(data, dict):
         raise ValueError("organization undo item must contain an object")
     required = {
-        "change_id", "restore_target", "moved_from", "baseline_size_bytes",
-        "baseline_modified_time", "result_state", "failure_code", "recovery_state",
+        "change_id",
+        "restore_target",
+        "moved_from",
+        "baseline_size_bytes",
+        "baseline_modified_time",
+        "result_state",
+        "failure_code",
+        "recovery_state",
         "content_identity",
     }
     if set(data) != required:
-        raise ValueError("organization undo item fields are invalid for schema version 2")
+        raise ValueError(
+            "organization undo item fields are invalid for schema version 2"
+        )
     return _item_from_versioned_dict(
         data,
         root,
-        content_identity=RegularFileContentIdentity.from_dict(
-            data["content_identity"]
-        ),
+        content_identity=RegularFileContentIdentity.from_dict(data["content_identity"]),
     )
 
 
@@ -319,7 +349,9 @@ def _item_from_versioned_dict(
         change_id=_string(data["change_id"], "change_id"),
         restore_target=_relative_path(data["restore_target"], root, "restore_target"),
         moved_from=_relative_path(data["moved_from"], root, "moved_from"),
-        baseline_size_bytes=_integer(data["baseline_size_bytes"], "baseline_size_bytes"),
+        baseline_size_bytes=_integer(
+            data["baseline_size_bytes"], "baseline_size_bytes"
+        ),
         baseline_modified_time=float(modified),
         result_state=state,
         failure_code=_optional_string(data["failure_code"], "failure_code"),

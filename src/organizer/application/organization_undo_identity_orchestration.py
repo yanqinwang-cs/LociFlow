@@ -168,18 +168,12 @@ class OrganizationIdentityUndoOrchestrationService:
                 reason=eligibility.reason,
             )
         if eligibility.parent is None:
-            return IdentityUndoPreviewResult(
-                IdentityUndoPreviewState.UNAVAILABLE, 0
-            )
+            return IdentityUndoPreviewResult(IdentityUndoPreviewState.UNAVAILABLE, 0)
         authorization = self.authorization_store.issue(
             browser_session_id=browser_session_id,
             parent_operation_id=parent_operation_id,
-            parent_record_digest=canonical_parent_record_digest(
-                eligibility.parent
-            ),
-            reverse_evidence_digest=canonical_reverse_evidence_digest(
-                eligibility
-            ),
+            parent_record_digest=canonical_parent_record_digest(eligibility.parent),
+            reverse_evidence_digest=canonical_reverse_evidence_digest(eligibility),
         )
         return IdentityUndoPreviewResult(
             state=IdentityUndoPreviewState.READY,
@@ -199,9 +193,7 @@ class OrganizationIdentityUndoOrchestrationService:
         confirmation: str,
     ) -> IdentityUndoConfirmationResult:
         if confirmation != UNDO_FILE_MOVE_CONFIRMATION:
-            raise OrganizationIdentityUndoOrchestrationError(
-                "invalid_confirmation"
-            )
+            raise OrganizationIdentityUndoOrchestrationError("invalid_confirmation")
         try:
             authorization = self.authorization_store.require_available(
                 authorization_id,
@@ -290,9 +282,7 @@ class OrganizationIdentityUndoOrchestrationService:
             return self._execution_result(execution)
         if execution.state is IdentityUndoExecutionState.RESTORED_UNVERIFIED:
             try:
-                publication = self.verification_publisher.publish(
-                    execution.undo_id
-                )
+                publication = self.verification_publisher.publish(execution.undo_id)
             finally:
                 self._refresh_status()
             if (
@@ -302,8 +292,7 @@ class OrganizationIdentityUndoOrchestrationService:
                 state = IdentityUndoConfirmationState.RESTORED
             elif (
                 publication.state
-                is IdentityUndoVerificationPublicationState
-                .PUBLISHED_VERIFICATION_FAILED
+                is IdentityUndoVerificationPublicationState.PUBLISHED_VERIFICATION_FAILED
             ):
                 state = IdentityUndoConfirmationState.UNDO_VERIFICATION_FAILED
             else:

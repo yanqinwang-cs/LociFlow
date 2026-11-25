@@ -26,9 +26,11 @@ class WebActivityApiTests(unittest.IsolatedAsyncioTestCase):
             app = _app(root)
             async with _client(app) as client:
                 csrf = await _authenticate(client)
-                app.state.filesystem_operation_admission.inspect_and_require_clear = mock.Mock(
-                    side_effect=FilesystemOperationBlockedError(
-                        RecoveryAdmissionState.BLOCKED_UNFINISHED_OPERATION
+                app.state.filesystem_operation_admission.inspect_and_require_clear = (
+                    mock.Mock(
+                        side_effect=FilesystemOperationBlockedError(
+                            RecoveryAdmissionState.BLOCKED_UNFINISHED_OPERATION
+                        )
                     )
                 )
                 blocked = await client.post(
@@ -51,7 +53,9 @@ class WebActivityApiTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(app.state.organization_execution._undo_authorizations, {})
             self.assertEqual(app.state.organization_undos.list_records(), ())
 
-    async def test_recovery_block_returns_safe_conflict_without_consuming_undo(self) -> None:
+    async def test_recovery_block_returns_safe_conflict_without_consuming_undo(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             _, _, _, record = _verified_operation(root, 1)
@@ -64,24 +68,45 @@ class WebActivityApiTests(unittest.IsolatedAsyncioTestCase):
                     headers={"Origin": "http://127.0.0.1"},
                 )
                 token = preview.json()["confirmation_token"]
-                app.state.filesystem_operation_admission.inspect_and_require_clear = mock.Mock(
-                    side_effect=FilesystemOperationBlockedError(
-                        RecoveryAdmissionState.BLOCKED_UNFINISHED_OPERATION
+                app.state.filesystem_operation_admission.inspect_and_require_clear = (
+                    mock.Mock(
+                        side_effect=FilesystemOperationBlockedError(
+                            RecoveryAdmissionState.BLOCKED_UNFINISHED_OPERATION
+                        )
                     )
                 )
                 response = await client.post(
                     f"/api/activity/{record.operation_id}/undo",
-                    data={"csrf_token": csrf, "confirmation_token": token, "confirmation": "UNDO FILE MOVE"},
+                    data={
+                        "csrf_token": csrf,
+                        "confirmation_token": token,
+                        "confirmation": "UNDO FILE MOVE",
+                    },
                     headers={"Origin": "http://127.0.0.1"},
                 )
 
             self.assertEqual(response.status_code, 409)
             self.assertEqual(response.headers["cache-control"], "no-store")
-            self.assertEqual(response.json(), {"error": {"code": "filesystem_operation_blocked", "message": SAFE_RECOVERY_MESSAGE}})
-            self.assertEqual(app.state.organization_execution.undo_authorization_snapshot(token).status, "available")
+            self.assertEqual(
+                response.json(),
+                {
+                    "error": {
+                        "code": "filesystem_operation_blocked",
+                        "message": SAFE_RECOVERY_MESSAGE,
+                    }
+                },
+            )
+            self.assertEqual(
+                app.state.organization_execution.undo_authorization_snapshot(
+                    token
+                ).status,
+                "available",
+            )
             self.assertEqual(app.state.organization_undos.list_records(), ())
 
-    async def test_activity_requires_auth_rejects_queries_and_returns_empty_no_store_json(self) -> None:
+    async def test_activity_requires_auth_rejects_queries_and_returns_empty_no_store_json(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             app = _app(root)
@@ -98,7 +123,9 @@ class WebActivityApiTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(query.status_code, 400)
             self.assertNotIn(str(root), empty.text)
 
-    async def test_preview_and_execute_restore_through_strict_same_origin_forms(self) -> None:
+    async def test_preview_and_execute_restore_through_strict_same_origin_forms(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             _, _, _, record = _verified_operation(root, 2)
@@ -128,11 +155,17 @@ class WebActivityApiTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(payload["files_to_restore"], 2)
             self.assertEqual(executed.status_code, 200)
             self.assertEqual(executed.json()["undo"]["status"], "restored")
-            self.assertIn("restore", {item["type"] for item in updated.json()["activity"]})
-            self.assertFalse(any(item["undoable"] for item in updated.json()["activity"]))
+            self.assertIn(
+                "restore", {item["type"] for item in updated.json()["activity"]}
+            )
+            self.assertFalse(
+                any(item["undoable"] for item in updated.json()["activity"])
+            )
             self.assertNotIn(str(root), updated.text)
 
-    async def test_undo_routes_enforce_origin_csrf_fields_content_type_and_uuid(self) -> None:
+    async def test_undo_routes_enforce_origin_csrf_fields_content_type_and_uuid(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             _, _, _, record = _verified_operation(root, 1)
@@ -162,7 +195,10 @@ class WebActivityApiTests(unittest.IsolatedAsyncioTestCase):
                 wrong_type = await client.post(
                     path,
                     content="{}",
-                    headers={"Origin": "http://127.0.0.1", "Content-Type": "application/json"},
+                    headers={
+                        "Origin": "http://127.0.0.1",
+                        "Content-Type": "application/json",
+                    },
                 )
                 invalid_id = await client.post(
                     "/api/activity/NOT-A-UUID/undo/preview",
@@ -237,12 +273,14 @@ class WebActivityApiTests(unittest.IsolatedAsyncioTestCase):
 
 
 def _app(root: Path):
-    return create_app(WebAppConfig(
-        root,
-        session_secret="s" * 32,
-        launch_token="t" * 32,
-        testing=True,
-    ))
+    return create_app(
+        WebAppConfig(
+            root,
+            session_secret="s" * 32,
+            launch_token="t" * 32,
+            testing=True,
+        )
+    )
 
 
 async def _authenticate(client: httpx.AsyncClient) -> str:

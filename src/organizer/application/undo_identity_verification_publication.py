@@ -100,8 +100,7 @@ class OrganizationUndoIdentityVerificationPublicationService:
         except (AttributeError, TypeError, ValueError):
             return _result(IdentityUndoVerificationPublicationState.STALE)
         if (
-            original_undo.schema_version
-            != ORGANIZATION_UNDO_SCHEMA_VERSION_V2
+            original_undo.schema_version != ORGANIZATION_UNDO_SCHEMA_VERSION_V2
             or original_undo.status != UNDO_RESTORED_UNVERIFIED
         ):
             return _result(IdentityUndoVerificationPublicationState.STALE)
@@ -192,18 +191,14 @@ class OrganizationUndoIdentityVerificationPublicationService:
                 )
             except Exception:
                 return None
-            if (
-                not categories
-                or len(categories) != len(result.mismatch_categories)
-            ):
+            if not categories or len(categories) != len(result.mismatch_categories):
                 return None
             status = UNDO_VERIFICATION_FAILED
             verification = UndoVerificationResult(
                 status=UNDO_VERIFICATION_FAILED_STATE,
                 verified_count=result.verified_count,
                 mismatch_codes=tuple(
-                    _DURABLE_MISMATCH_CODES[category]
-                    for category in categories
+                    _DURABLE_MISMATCH_CODES[category] for category in categories
                 ),
             )
             failure_code = UNDO_VERIFICATION_FAILED

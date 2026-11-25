@@ -225,10 +225,7 @@ class OrganizationVolumeAdmission:
             destination_stat = self._stat(destination_ancestor)
         except OSError:
             return VolumeAdmissionState.INDETERMINATE
-        if (
-            source_stat.st_dev != root_device
-            or destination_stat.st_dev != root_device
-        ):
+        if source_stat.st_dev != root_device or destination_stat.st_dev != root_device:
             return VolumeAdmissionState.CROSS_VOLUME
         return VolumeAdmissionState.ALLOWED
 

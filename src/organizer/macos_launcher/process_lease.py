@@ -187,11 +187,7 @@ def _acquire(
     try:
         paths.create_lock_directories()
     except ApplicationPathError as error:
-        code = (
-            "unsafe_lock_path"
-            if error.code == "unsafe_path"
-            else "unavailable"
-        )
+        code = "unsafe_lock_path" if error.code == "unsafe_path" else "unavailable"
         raise ProcessLeaseError(code) from error
 
     local_key = os.fspath(lock_path)

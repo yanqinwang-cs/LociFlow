@@ -34,18 +34,24 @@ class WebReviewRouteTests(unittest.IsolatedAsyncioTestCase):
             scan=lambda _: self.result,
             write_report=lambda _: self.root / "AI_Review" / "reports" / "scan.json",
         )
-        self.app.state.scan_jobs._snapshot = self.app.state.scan_jobs._snapshot.__class__(
-            status="completed",
-            job_id="completed-generation",
-            result=self.result,
+        self.app.state.scan_jobs._snapshot = (
+            self.app.state.scan_jobs._snapshot.__class__(
+                status="completed",
+                job_id="completed-generation",
+                result=self.result,
+            )
         )
         self.token = token
 
     async def asyncTearDown(self) -> None:
         self.directory.cleanup()
 
-    async def test_review_routes_render_rows_decisions_and_details_without_writes(self) -> None:
-        before = sorted(path.relative_to(self.root).as_posix() for path in self.root.rglob("*"))
+    async def test_review_routes_render_rows_decisions_and_details_without_writes(
+        self,
+    ) -> None:
+        before = sorted(
+            path.relative_to(self.root).as_posix() for path in self.root.rglob("*")
+        )
         async with _client(self.app) as client:
             await client.get(f"/launch/{self.token}")
             review = await client.get("/review/advanced")
@@ -54,13 +60,15 @@ class WebReviewRouteTests(unittest.IsolatedAsyncioTestCase):
             conflicts = await client.get("/review/conflicts")
             invalid = await client.get("/review/advanced?sort=not-a-field")
             post = await client.post("/review")
-        after = sorted(path.relative_to(self.root).as_posix() for path in self.root.rglob("*"))
+        after = sorted(
+            path.relative_to(self.root).as_posix() for path in self.root.rglob("*")
+        )
 
         self.assertEqual(review.status_code, 200)
         self.assertIn('<html lang="en">', review.text)
         self.assertIn("<title>Advanced review · bootAI</title>", review.text)
         self.assertIn('<main id="main-content"', review.text)
-        self.assertIn('<caption>Review findings and decisions</caption>', review.text)
+        self.assertIn("<caption>Review findings and decisions</caption>", review.text)
         self.assertIn('scope="col"', review.text)
         self.assertIn('for="decision-filter"', review.text)
         self.assertIn('aria-current="page"', review.text)

@@ -27,11 +27,7 @@ def build_duplicate_review_plan(
     metadata_context = (
         all_metadata
         if all_metadata is not None
-        else [
-            metadata
-            for group in duplicate_groups
-            for metadata in group.files
-        ]
+        else [metadata for group in duplicate_groups for metadata in group.files]
     )
 
     for group in duplicate_groups:
@@ -59,10 +55,7 @@ def build_duplicate_review_plan(
                 continue
 
             destination = (
-                root
-                / review_folder_name
-                / "duplicates"
-                / metadata.relative_path
+                root / review_folder_name / "duplicates" / metadata.relative_path
             )
             plan_items.append(
                 MovePlanItem(

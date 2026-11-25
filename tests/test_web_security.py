@@ -86,12 +86,8 @@ class WebSecurityTests(unittest.TestCase):
             session_id_for_session({})
 
     def test_same_origin_accepts_exact_loopback_origins(self) -> None:
-        validate_same_origin(
-            _request("127.0.0.1:8123", ["http://127.0.0.1:8123"])
-        )
-        validate_same_origin(
-            _request("localhost:8123", ["http://localhost:8123"])
-        )
+        validate_same_origin(_request("127.0.0.1:8123", ["http://127.0.0.1:8123"]))
+        validate_same_origin(_request("localhost:8123", ["http://localhost:8123"]))
         validate_same_origin(
             _request(
                 "localhost:443",

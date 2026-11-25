@@ -159,9 +159,7 @@ class MacOSPackagedDiagnosticsTests(unittest.TestCase):
             _sink(paths)(PackagedDiagnosticInput("startup", "launcher_started"))
 
             self.assertEqual(outside.read_text(encoding="utf-8"), "untouched")
-            self.assertTrue(
-                (paths.logs_directory / ACTIVE_LOG_NAME).is_symlink()
-            )
+            self.assertTrue((paths.logs_directory / ACTIVE_LOG_NAME).is_symlink())
 
         with tempfile.TemporaryDirectory() as directory:
             paths = MacOSApplicationPaths.for_home(Path(directory) / "home")
@@ -170,9 +168,7 @@ class MacOSPackagedDiagnosticsTests(unittest.TestCase):
 
             _sink(paths)(PackagedDiagnosticInput("startup", "launcher_started"))
 
-            self.assertTrue(
-                (paths.logs_directory / ACTIVE_LOG_NAME).is_dir()
-            )
+            self.assertTrue((paths.logs_directory / ACTIVE_LOG_NAME).is_dir())
 
     def test_rotation_rejects_symlinked_rotated_target_without_deletion(
         self,
@@ -187,9 +183,7 @@ class MacOSPackagedDiagnosticsTests(unittest.TestCase):
             outside.write_text("untouched", encoding="utf-8")
             (paths.logs_directory / ROTATED_LOG_NAMES[0]).symlink_to(outside)
 
-            _sink(paths)(
-                PackagedDiagnosticInput("startup", "launcher_started")
-            )
+            _sink(paths)(PackagedDiagnosticInput("startup", "launcher_started"))
 
             self.assertEqual(outside.read_text(encoding="utf-8"), "untouched")
             self.assertEqual(active.stat().st_size, MAX_ACTIVE_BYTES)
@@ -221,9 +215,7 @@ class MacOSPackagedDiagnosticsTests(unittest.TestCase):
                 sum(path.stat().st_size for path in retained),
                 MAX_ACTIVE_BYTES * 3,
             )
-            self.assertFalse(
-                (paths.logs_directory / "launcher.log.3").exists()
-            )
+            self.assertFalse((paths.logs_directory / "launcher.log.3").exists())
             self.assertEqual(
                 unrelated.read_text(encoding="utf-8"),
                 "preserve",
@@ -293,16 +285,13 @@ class MacOSPackagedDiagnosticsTests(unittest.TestCase):
 
             paths = MacOSApplicationPaths.for_home(Path(directory) / "home")
             with mock.patch(
-                "organizer.macos_launcher.packaged_diagnostics."
-                "read_runtime_identity",
+                "organizer.macos_launcher.packaged_diagnostics.read_runtime_identity",
                 return_value=None,
             ):
                 sink = create_packaged_diagnostic_sink(paths, now=lambda: _NOW)
             sink(PackagedDiagnosticInput("startup", "launcher_started"))
             payload = json.loads(
-                (paths.logs_directory / ACTIVE_LOG_NAME).read_text(
-                    encoding="ascii"
-                )
+                (paths.logs_directory / ACTIVE_LOG_NAME).read_text(encoding="ascii")
             )
             self.assertEqual(payload["application_version"], "unknown")
             self.assertEqual(payload["build_number"], 0)

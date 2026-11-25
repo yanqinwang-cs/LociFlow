@@ -68,9 +68,7 @@ class RecoveryCheckContextStoreTests(unittest.TestCase):
                 RecoveryCheckContextState.AVAILABLE,
             )
 
-        consumed = self.store.consume_bound(
-            **self._consume_arguments(context)
-        )
+        consumed = self.store.consume_bound(**self._consume_arguments(context))
         self.assertEqual(consumed.state, RecoveryCheckContextState.CONSUMED)
         with self.assertRaises(RecoveryCheckContextError) as raised:
             self.store.consume_bound(**self._consume_arguments(context))
@@ -97,9 +95,7 @@ class RecoveryCheckContextStoreTests(unittest.TestCase):
         def consume() -> None:
             barrier.wait()
             try:
-                self.store.consume_bound(
-                    **self._consume_arguments(context)
-                )
+                self.store.consume_bound(**self._consume_arguments(context))
             except RecoveryCheckContextError as error:
                 outcomes.append(error.code)
             else:

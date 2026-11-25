@@ -165,18 +165,14 @@ class OrganizationIdentityVerificationPublicationService:
                 )
             except Exception:
                 return None
-            if (
-                not categories
-                or len(categories) != len(result.mismatch_categories)
-            ):
+            if not categories or len(categories) != len(result.mismatch_categories):
                 return None
             status = STATUS_VERIFICATION_FAILED
             verification = OrganizationOperationVerification(
                 status=VERIFICATION_FAILED,
                 verified_count=result.verified_count,
                 mismatch_codes=tuple(
-                    _DURABLE_MISMATCH_CODES[category]
-                    for category in categories
+                    _DURABLE_MISMATCH_CODES[category] for category in categories
                 ),
             )
             failure_code = "verification_failed"

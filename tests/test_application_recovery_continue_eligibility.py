@@ -56,7 +56,10 @@ from tests.test_application_organization_undo_identity_execution import _intent
 class RecoveryContinueEligibilityTests(unittest.TestCase):
     def test_movement_moved_plus_pending_is_exactly_bound(self) -> None:
         for status in (STATUS_MOVING, STATUS_INTERRUPTED):
-            with self.subTest(status=status), tempfile.TemporaryDirectory() as directory:
+            with (
+                self.subTest(status=status),
+                tempfile.TemporaryDirectory() as directory,
+            ):
                 root = Path(directory).resolve()
                 repository, record = _movement_candidate(root, status)
 
@@ -84,7 +87,10 @@ class RecoveryContinueEligibilityTests(unittest.TestCase):
 
     def test_undo_restored_plus_pending_is_exactly_bound(self) -> None:
         for status in (UNDO_UNDOING, UNDO_INTERRUPTED):
-            with self.subTest(status=status), tempfile.TemporaryDirectory() as directory:
+            with (
+                self.subTest(status=status),
+                tempfile.TemporaryDirectory() as directory,
+            ):
                 root = Path(directory).resolve()
                 operations, undos, parent, undo = _undo_candidate(root, status)
 
@@ -113,7 +119,10 @@ class RecoveryContinueEligibilityTests(unittest.TestCase):
             MOVE_UNATTEMPTED,
         )
         for state in movement_states:
-            with self.subTest(family="movement", state=state), tempfile.TemporaryDirectory() as directory:
+            with (
+                self.subTest(family="movement", state=state),
+                tempfile.TemporaryDirectory() as directory,
+            ):
                 root = Path(directory).resolve()
                 repository, record = _movement_candidate(root, STATUS_INTERRUPTED)
                 items = list(record.expected_moves)
@@ -134,7 +143,10 @@ class RecoveryContinueEligibilityTests(unittest.TestCase):
             UNDO_ITEM_UNATTEMPTED,
         )
         for state in undo_states:
-            with self.subTest(family="undo", state=state), tempfile.TemporaryDirectory() as directory:
+            with (
+                self.subTest(family="undo", state=state),
+                tempfile.TemporaryDirectory() as directory,
+            ):
                 root = Path(directory).resolve()
                 _operations, undos, _parent, undo = _undo_candidate(
                     root,
@@ -178,7 +190,10 @@ class RecoveryContinueEligibilityTests(unittest.TestCase):
 
         movement_statuses = (STATUS_MOVED_UNVERIFIED, STATUS_PARTIAL_MOVEMENT)
         for status in movement_statuses:
-            with self.subTest(status=status), tempfile.TemporaryDirectory() as directory:
+            with (
+                self.subTest(status=status),
+                tempfile.TemporaryDirectory() as directory,
+            ):
                 root = Path(directory).resolve()
                 repository, record = _movement_candidate(root, STATUS_INTERRUPTED)
                 repository.save(replace(record, status=status))
@@ -206,7 +221,10 @@ class RecoveryContinueEligibilityTests(unittest.TestCase):
             )
 
         for status in (UNDO_RESTORED_UNVERIFIED, UNDO_PARTIAL):
-            with self.subTest(status=status), tempfile.TemporaryDirectory() as directory:
+            with (
+                self.subTest(status=status),
+                tempfile.TemporaryDirectory() as directory,
+            ):
                 root = Path(directory).resolve()
                 _operations, undos, _parent, undo = _undo_candidate(
                     root,
@@ -246,12 +264,40 @@ class RecoveryContinueEligibilityTests(unittest.TestCase):
 
     def test_every_completed_and_pending_filesystem_fact_is_reproved(self) -> None:
         mutations = (
-            ("completed_source_reappears", lambda root, record: _write(root / record.expected_moves[0].source, b"x")),
-            ("completed_destination_disappears", lambda root, record: (root / record.expected_moves[0].destination).unlink()),
-            ("completed_destination_changes", lambda root, record: (root / record.expected_moves[0].destination).write_bytes(b"changed")),
-            ("pending_source_disappears", lambda root, record: (root / record.expected_moves[1].source).unlink()),
-            ("pending_source_changes", lambda root, record: (root / record.expected_moves[1].source).write_bytes(b"changed")),
-            ("pending_destination_appears", lambda root, record: _write(root / record.expected_moves[1].destination, b"x")),
+            (
+                "completed_source_reappears",
+                lambda root, record: _write(
+                    root / record.expected_moves[0].source, b"x"
+                ),
+            ),
+            (
+                "completed_destination_disappears",
+                lambda root, record: (
+                    root / record.expected_moves[0].destination
+                ).unlink(),
+            ),
+            (
+                "completed_destination_changes",
+                lambda root, record: (
+                    root / record.expected_moves[0].destination
+                ).write_bytes(b"changed"),
+            ),
+            (
+                "pending_source_disappears",
+                lambda root, record: (root / record.expected_moves[1].source).unlink(),
+            ),
+            (
+                "pending_source_changes",
+                lambda root, record: (
+                    root / record.expected_moves[1].source
+                ).write_bytes(b"changed"),
+            ),
+            (
+                "pending_destination_appears",
+                lambda root, record: _write(
+                    root / record.expected_moves[1].destination, b"x"
+                ),
+            ),
         )
         for label, mutate in mutations:
             with self.subTest(label=label), tempfile.TemporaryDirectory() as directory:
@@ -391,15 +437,9 @@ def _undo_candidate(root: Path, status: str):
         status=status,
         started_at="2026-07-27T03:00:00+00:00",
         completed_at=(
-            "2026-07-27T03:01:00+00:00"
-            if status == UNDO_INTERRUPTED
-            else None
+            "2026-07-27T03:01:00+00:00" if status == UNDO_INTERRUPTED else None
         ),
-        failure_code=(
-            "undo_recovery_required"
-            if status == UNDO_INTERRUPTED
-            else None
-        ),
+        failure_code=("undo_recovery_required" if status == UNDO_INTERRUPTED else None),
         expected_restores=tuple(items),
     )
     undos.create(undo)

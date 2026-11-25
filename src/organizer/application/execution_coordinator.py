@@ -132,7 +132,9 @@ class OrganizationExecutionCoordinator:
             )
             return True
 
-    def authorization_snapshot(self, authorization_id: str) -> MovementAuthorization | None:
+    def authorization_snapshot(
+        self, authorization_id: str
+    ) -> MovementAuthorization | None:
         with self._authorization_lock:
             return self._authorizations.get(authorization_id)
 
@@ -219,7 +221,5 @@ def approved_plan_identity(approved_plan: ApprovedOrganizationPlan) -> str:
         ],
         "summary": approved_plan.summary.to_dict(),
     }
-    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode(
-        "utf-8"
-    )
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()

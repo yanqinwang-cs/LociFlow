@@ -20,7 +20,9 @@ from organizer.organization_verify import (
 
 
 class OrganizationApplyVerificationTests(unittest.TestCase):
-    def test_loci_undo_verification_checks_pair_fingerprint_and_absent_destination(self) -> None:
+    def test_loci_undo_verification_checks_pair_fingerprint_and_absent_destination(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             restored = root / "Inbox" / "a.txt"
@@ -49,7 +51,9 @@ class OrganizationApplyVerificationTests(unittest.TestCase):
             self.assertFalse(failed.passed)
             self.assertIn("moved_destination_still_exists:O1", failed.mismatch_codes)
 
-    def test_loci_operation_verification_checks_fingerprint_and_filesystem_state(self) -> None:
+    def test_loci_operation_verification_checks_fingerprint_and_filesystem_state(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             source = root / "a.txt"
@@ -88,7 +92,9 @@ class OrganizationApplyVerificationTests(unittest.TestCase):
             self.assertFalse(changed.passed)
             self.assertIn("destination_size_changed:O1", changed.mismatch_codes)
 
-    def test_loci_operation_verification_rejects_lingering_source_and_symlink(self) -> None:
+    def test_loci_operation_verification_rejects_lingering_source_and_symlink(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             source = root / "a.txt"
@@ -151,8 +157,12 @@ class OrganizationApplyVerificationTests(unittest.TestCase):
 
             self.assertFalse(outcome.passed)
             self.assertEqual(outcome.status, "mismatches")
-            self.assertTrue(any("source still exists" in item for item in report["mismatches"]))
-            self.assertTrue(any("destination is missing" in item for item in report["mismatches"]))
+            self.assertTrue(
+                any("source still exists" in item for item in report["mismatches"])
+            )
+            self.assertTrue(
+                any("destination is missing" in item for item in report["mismatches"])
+            )
             self.assertEqual(source.read_text(encoding="utf-8"), "returned manually")
 
     def test_operation_log_pair_mismatch_is_reported(self) -> None:
@@ -171,7 +181,12 @@ class OrganizationApplyVerificationTests(unittest.TestCase):
             report = read_json(outcome.result_path)
 
             self.assertEqual(outcome.status, "mismatches")
-            self.assertTrue(any("missing from operation log" in item for item in report["mismatches"]))
+            self.assertTrue(
+                any(
+                    "missing from operation log" in item
+                    for item in report["mismatches"]
+                )
+            )
 
     def test_duplicate_applied_source_is_a_verification_failure(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -222,8 +237,13 @@ class OrganizationApplyVerificationTests(unittest.TestCase):
                 read_json(outcome.result_path)["mismatches"][0],
             )
 
-    def test_outside_root_and_direct_symlink_inputs_are_rejected_without_report(self) -> None:
-        with tempfile.TemporaryDirectory() as directory, tempfile.TemporaryDirectory() as outside:
+    def test_outside_root_and_direct_symlink_inputs_are_rejected_without_report(
+        self,
+    ) -> None:
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            tempfile.TemporaryDirectory() as outside,
+        ):
             root = Path(directory)
             outside_result = Path(outside) / "result.json"
             outside_result.write_text("{}", encoding="utf-8")
@@ -299,7 +319,10 @@ class OrganizationApplyVerificationTests(unittest.TestCase):
             self.assertTrue(undo.log_path.is_file())
 
     def test_undo_source_collision_and_root_escape_do_not_overwrite(self) -> None:
-        with tempfile.TemporaryDirectory() as directory, tempfile.TemporaryDirectory() as outside:
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            tempfile.TemporaryDirectory() as outside,
+        ):
             root = Path(directory)
             apply_result = make_completed_apply(root)
             operation_log = root / read_json(apply_result)["undo_log_path"]

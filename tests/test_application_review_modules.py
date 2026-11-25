@@ -32,7 +32,9 @@ class ApplicationReviewModuleTests(unittest.TestCase):
         (self.root / "alpha.txt").write_text("same", encoding="utf-8")
         (self.root / "beta copy.txt").write_text("same", encoding="utf-8")
         (self.root / "EvoSim_project_slides.pptx").write_text("notes", encoding="utf-8")
-        (self.root / "EvoSim_project_slides_final.pptx").write_text("report", encoding="utf-8")
+        (self.root / "EvoSim_project_slides_final.pptx").write_text(
+            "report", encoding="utf-8"
+        )
         (self.root / "empty.txt").write_text("", encoding="utf-8")
         self.result = scan_root(self.root)
 
@@ -81,8 +83,12 @@ class ApplicationReviewModuleTests(unittest.TestCase):
     def test_module_mapping_is_strict_and_rows_are_complete(self) -> None:
         session = create_fresh_web_review_session_from_scan_result(self.result)
         self.assertEqual(review_module_category(ReviewModule.DUPLICATES), "duplicate")
-        self.assertEqual(review_module_category(ReviewModule.ORGANIZATION), "organization")
-        self.assertEqual(review_module_category(ReviewModule.ATTENTION), "review_candidate")
+        self.assertEqual(
+            review_module_category(ReviewModule.ORGANIZATION), "organization"
+        )
+        self.assertEqual(
+            review_module_category(ReviewModule.ATTENTION), "review_candidate"
+        )
         with self.assertRaises(ValueError):
             review_module_category("duplicates")  # type: ignore[arg-type]
         for module in ReviewModule:
@@ -92,27 +98,41 @@ class ApplicationReviewModuleTests(unittest.TestCase):
                 {category} if review_module_items(session, module) else set(),
             )
 
-    def test_module_save_updates_only_its_baseline_and_uses_existing_schema(self) -> None:
+    def test_module_save_updates_only_its_baseline_and_uses_existing_schema(
+        self,
+    ) -> None:
         session = create_fresh_web_review_session_from_scan_result(self.result)
         duplicate_id = review_module_items(session, ReviewModule.DUPLICATES)[0].id
         organization_id = review_module_items(session, ReviewModule.ORGANIZATION)[0].id
         session = change_review_decisions(session, (duplicate_id,), "approved").session
-        session = change_review_decisions(session, (organization_id,), "rejected").session
+        session = change_review_decisions(
+            session, (organization_id,), "rejected"
+        ).session
 
         result = save_review_module(session, ReviewModule.DUPLICATES)
-        self.assertFalse(review_module_is_dirty(result.session, ReviewModule.DUPLICATES))
-        self.assertTrue(review_module_is_dirty(result.session, ReviewModule.ORGANIZATION))
-        self.assertEqual(dirty_review_modules(result.session), (ReviewModule.ORGANIZATION,))
+        self.assertFalse(
+            review_module_is_dirty(result.session, ReviewModule.DUPLICATES)
+        )
+        self.assertTrue(
+            review_module_is_dirty(result.session, ReviewModule.ORGANIZATION)
+        )
+        self.assertEqual(
+            dirty_review_modules(result.session), (ReviewModule.ORGANIZATION,)
+        )
         self.assertEqual(result.reviewed_plan_path.name, "duplicate_reviewed_plan.json")
         data = json.loads(result.reviewed_plan_path.read_text(encoding="utf-8"))
         self.assertEqual(data["schema_version"], 1)
         self.assertEqual(data["plan_type"], "batch_review")
         loaded = load_reviewed_plan_items(result.reviewed_plan_path, self.root)
         self.assertEqual({item.category for item in loaded}, {"duplicate"})
-        self.assertEqual(len(loaded), len(review_module_items(session, ReviewModule.DUPLICATES)))
+        self.assertEqual(
+            len(loaded), len(review_module_items(session, ReviewModule.DUPLICATES))
+        )
 
         second = save_review_module(result.session, ReviewModule.DUPLICATES)
-        self.assertEqual(second.reviewed_plan_path.name, "duplicate_reviewed_plan_1.json")
+        self.assertEqual(
+            second.reviewed_plan_path.name, "duplicate_reviewed_plan_1.json"
+        )
 
     def test_untouched_module_has_no_approved_new_rows_or_review_memory(self) -> None:
         session = create_fresh_web_review_session_from_scan_result(self.result)
@@ -125,7 +145,9 @@ class ApplicationReviewModuleTests(unittest.TestCase):
         resumed = resume_review_session(self.root, result.reviewed_plan_path)
         self.assertTrue(all(item.decision == "undecided" for item in resumed.items))
 
-    def test_explicit_eligible_choice_is_written_through_existing_review_policy(self) -> None:
+    def test_explicit_eligible_choice_is_written_through_existing_review_policy(
+        self,
+    ) -> None:
         session = create_fresh_web_review_session_from_scan_result(self.result)
         item = review_module_items(session, ReviewModule.ORGANIZATION)[0]
         chosen = change_review_decisions(session, (item.id,), "approved").session

@@ -68,7 +68,9 @@ class WebStandardsCreationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 200, response.text)
         return response.json()
 
-    async def test_standards_list_is_read_only_and_available_while_stopping(self) -> None:
+    async def test_standards_list_is_read_only_and_available_while_stopping(
+        self,
+    ) -> None:
         self._complete_scan("scan-read-only")
         async with _client(self.app) as client:
             await _authenticate(client, self.token)
@@ -160,7 +162,9 @@ class WebStandardsCreationTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(self.app.state.runtime_lifecycle.snapshot().active_count, 0)
 
-    async def test_shutdown_rejected_save_preserves_reusable_preview_reference(self) -> None:
+    async def test_shutdown_rejected_save_preserves_reusable_preview_reference(
+        self,
+    ) -> None:
         self._complete_scan("scan-save-stopping")
         async with _client(self.app) as client:
             csrf = await _authenticate(client, self.token)
@@ -199,7 +203,9 @@ class WebStandardsCreationTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertTrue(application_preview_id)
 
-    async def test_server_owned_folder_preview_save_and_fresh_scan_planning(self) -> None:
+    async def test_server_owned_folder_preview_save_and_fresh_scan_planning(
+        self,
+    ) -> None:
         documents = self.root / "Documents"
         documents.mkdir()
         for folder in ("lectures", "recitations", "exams"):
@@ -292,7 +298,9 @@ class WebStandardsCreationTests(unittest.IsolatedAsyncioTestCase):
             ),
         )
 
-    async def test_matching_preview_uses_exact_fields_and_shapes_fresh_grouping(self) -> None:
+    async def test_matching_preview_uses_exact_fields_and_shapes_fresh_grouping(
+        self,
+    ) -> None:
         documents = self.root / "Documents"
         documents.mkdir()
         for name in ("CS1010X notes.txt", "CS1010X slides.pdf"):
@@ -357,7 +365,9 @@ class WebStandardsCreationTests(unittest.IsolatedAsyncioTestCase):
             {"Documents/CS1010X notes.txt", "Documents/CS1010X slides.pdf"},
         )
 
-    async def test_preview_and_save_are_strict_authenticated_and_same_origin(self) -> None:
+    async def test_preview_and_save_are_strict_authenticated_and_same_origin(
+        self,
+    ) -> None:
         (self.root / "Documents").mkdir()
         self._complete_scan("scan-strict")
         async with _client(self.app) as client:
@@ -484,7 +494,9 @@ class WebStandardsCreationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(stale_preview.status_code, 409)
         self.assertEqual(stale_preview.json()["error"]["code"], "preview_expired")
 
-    async def test_active_plan_makes_creation_unavailable_and_preview_rejects(self) -> None:
+    async def test_active_plan_makes_creation_unavailable_and_preview_rejects(
+        self,
+    ) -> None:
         (self.root / "Documents").mkdir()
         self._complete_scan("scan-blocked")
         async with _client(self.app) as client:
@@ -510,7 +522,9 @@ class WebStandardsCreationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(context.status_code, 409)
         self.assertEqual(context.json()["error"]["code"], "active_plan_conflict")
 
-    async def test_scope_registry_filters_unsafe_folders_and_revalidates_ownership(self) -> None:
+    async def test_scope_registry_filters_unsafe_folders_and_revalidates_ownership(
+        self,
+    ) -> None:
         safe = self.root / "Safe"
         protected = self.root / "AI_Review"
         safe.mkdir()
@@ -539,17 +553,19 @@ class WebStandardsCreationTests(unittest.IsolatedAsyncioTestCase):
 
             self.assertIn("Safe", {choice.label for choice in choices})
             self.assertFalse(
-                {"AI_Review", "Linked", "Missing"} & {choice.label for choice in choices}
+                {"AI_Review", "Linked", "Missing"}
+                & {choice.label for choice in choices}
             )
             safe_choice = next(choice for choice in choices if choice.label == "Safe")
             for session_id, root_identity in (
                 ("session-two", "root-one"),
                 ("session-one", "root-two"),
             ):
-                with self.subTest(
-                    session_id=session_id, root_identity=root_identity
-                ), self.assertRaisesRegex(
-                    StandardsApplicationError, "folder_scope_stale"
+                with (
+                    self.subTest(session_id=session_id, root_identity=root_identity),
+                    self.assertRaisesRegex(
+                        StandardsApplicationError, "folder_scope_stale"
+                    ),
                 ):
                     store.resolve_scope(
                         scope_id=safe_choice.id,

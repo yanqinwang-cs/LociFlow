@@ -14,8 +14,14 @@ ROOT = Path(__file__).resolve().parents[1]
 PROTOTYPE = ROOT / "prototype" / "loci-flow-ux-1-1-focused-policy-controls"
 ORIGINAL = Path("/Users/yanqinwang/bootAI")
 EXPECTED_FILES = {
-    "README.md", "app.js", "fixtures.json", "index.html", "store.js",
-    "styles.css", "tree.js", "views.js",
+    "README.md",
+    "app.js",
+    "fixtures.json",
+    "index.html",
+    "store.js",
+    "styles.css",
+    "tree.js",
+    "views.js",
 }
 EXPECTED_ROUTES = {
     "#/home": "Home",
@@ -72,7 +78,9 @@ class NavigationParser(HTMLParser):
 
     def handle_endtag(self, tag):
         if tag == "a" and self.in_link:
-            self.links.append((self.current_href or "", " ".join("".join(self.current_text).split())))
+            self.links.append(
+                (self.current_href or "", " ".join("".join(self.current_text).split()))
+            )
             self.in_link = False
             self.current_href = None
         if tag == "nav":
@@ -86,11 +94,20 @@ class FocusedPolicyControlsPrototypeTests(unittest.TestCase):
         cls.fixture = json.loads(cls.fixture_text)
         cls.sources = {
             path.name: path.read_text(encoding="utf-8")
-            for path in PROTOTYPE.iterdir() if path.is_file()
+            for path in PROTOTYPE.iterdir()
+            if path.is_file()
         }
         cls.runtime = "\n".join(
-            cls.sources[name] for name in
-            ("index.html", "styles.css", "fixtures.json", "tree.js", "store.js", "views.js", "app.js")
+            cls.sources[name]
+            for name in (
+                "index.html",
+                "styles.css",
+                "fixtures.json",
+                "tree.js",
+                "store.js",
+                "views.js",
+                "app.js",
+            )
         )
         cls.visible_sources = "\n".join(
             cls.sources[name] for name in ("index.html", "fixtures.json", "views.js")
@@ -107,10 +124,10 @@ class FocusedPolicyControlsPrototypeTests(unittest.TestCase):
               createStore, deriveActionCounts, recommendedChanges, choiceChanges,
               compatibleChanges, authoredCandidateChanges, applyStandardsToChanges,
               buildChangeCollections, WORKFLOW_STAGES
-            }} from {json.dumps((PROTOTYPE / 'store.js').as_uri())};
-            import {{ buildMovementTree, FILE_ICON_MAP }} from {json.dumps((PROTOTYPE / 'tree.js').as_uri())};
-            import {{ renderRoute, renderDialog }} from {json.dumps((PROTOTYPE / 'views.js').as_uri())};
-            const sample = JSON.parse(fs.readFileSync({json.dumps(str(PROTOTYPE / 'fixtures.json'))}, 'utf8'));
+            }} from {json.dumps((PROTOTYPE / "store.js").as_uri())};
+            import {{ buildMovementTree, FILE_ICON_MAP }} from {json.dumps((PROTOTYPE / "tree.js").as_uri())};
+            import {{ renderRoute, renderDialog }} from {json.dumps((PROTOTYPE / "views.js").as_uri())};
+            const sample = JSON.parse(fs.readFileSync({json.dumps(str(PROTOTYPE / "fixtures.json"))}, 'utf8'));
             const finishAll = (store) => {{
               store.acceptRecommended();
               for (const change of [...store.choiceChanges()]) {{
@@ -125,26 +142,39 @@ class FocusedPolicyControlsPrototypeTests(unittest.TestCase):
         """)
         completed = subprocess.run(
             ["node", "--input-type=module", "-e", script],
-            check=True, capture_output=True, text=True,
+            check=True,
+            capture_output=True,
+            text=True,
         )
         return json.loads(completed.stdout)
 
     def test_active_prototype_file_set_is_bounded(self) -> None:
-        self.assertEqual({path.name for path in PROTOTYPE.iterdir() if path.is_file()}, EXPECTED_FILES)
-        self.assertEqual({path.name for path in (PROTOTYPE / "assets").iterdir()}, {"loci-flow-mark.svg", "file-icons.svg"})
+        self.assertEqual(
+            {path.name for path in PROTOTYPE.iterdir() if path.is_file()},
+            EXPECTED_FILES,
+        )
+        self.assertEqual(
+            {path.name for path in (PROTOTYPE / "assets").iterdir()},
+            {"loci-flow-mark.svg", "file-icons.svg"},
+        )
         self.assertFalse((PROTOTYPE / "package.json").exists())
 
     def test_previous_focused_prototype_and_test_are_byte_identical(self) -> None:
         for relative, expected in PRESERVED_SHA256.items():
             with self.subTest(path=relative):
-                self.assertEqual(hashlib.sha256((ROOT / relative).read_bytes()).hexdigest(), expected)
+                self.assertEqual(
+                    hashlib.sha256((ROOT / relative).read_bytes()).hexdigest(), expected
+                )
 
     def test_original_policy_comparison_is_byte_identical_when_present(self) -> None:
         if not ORIGINAL.exists():
             self.skipTest("Original comparison worktree unavailable")
         for relative, expected in ORIGINAL_POLICY_SHA256.items():
             with self.subTest(path=relative):
-                self.assertEqual(hashlib.sha256((ORIGINAL / relative).read_bytes()).hexdigest(), expected)
+                self.assertEqual(
+                    hashlib.sha256((ORIGINAL / relative).read_bytes()).hexdigest(),
+                    expected,
+                )
 
     def test_primary_navigation_has_exact_six_pages(self) -> None:
         self.assertEqual({href for href, _ in self.parser.links}, set(EXPECTED_ROUTES))
@@ -156,7 +186,9 @@ class FocusedPolicyControlsPrototypeTests(unittest.TestCase):
             store.setOrganizationStyle('standard'); store.setOrganizationStyle('proactive');
             console.log(JSON.stringify({styles:Object.keys(sample.organizationStyles),delta:store.getState().activityMoves.length-before}));
         """)
-        self.assertEqual(result, {"styles": ["cautious", "standard", "proactive"], "delta": 0})
+        self.assertEqual(
+            result, {"styles": ["cautious", "standard", "proactive"], "delta": 0}
+        )
 
     def test_light_and_dark_share_one_theme_state(self) -> None:
         result = self.run_node("""
@@ -166,7 +198,10 @@ class FocusedPolicyControlsPrototypeTests(unittest.TestCase):
 
     def test_workflow_stage_enum_is_exact(self) -> None:
         result = self.run_node("console.log(JSON.stringify(WORKFLOW_STAGES));")
-        self.assertEqual(result, ["idle", "checking", "organizing", "approving", "moving", "verifying"])
+        self.assertEqual(
+            result,
+            ["idle", "checking", "organizing", "approving", "moving", "verifying"],
+        )
 
     def test_home_workflow_labels_are_exact(self) -> None:
         result = self.run_node("""
@@ -179,7 +214,9 @@ class FocusedPolicyControlsPrototypeTests(unittest.TestCase):
         views = self.sources["views.js"]
         self.assertIn("Recommended changes", views)
         self.assertIn("Choices needed", views)
-        self.assertLess(views.index("Recommended changes"), views.index("Choices needed"))
+        self.assertLess(
+            views.index("Recommended changes"), views.index("Choices needed")
+        )
 
     def test_visible_counts_derive_from_change_records(self) -> None:
         result = self.run_node("""
@@ -218,7 +255,7 @@ class FocusedPolicyControlsPrototypeTests(unittest.TestCase):
 
     def assert_style_filters_submission(self, style: str) -> None:
         result = self.run_node(f"""
-            const store=createStore(sample); {'store.setOrganizationStyle(' + json.dumps(style) + ');' if style != 'cautious' else ''}
+            const store=createStore(sample); {"store.setOrganizationStyle(" + json.dumps(style) + ");" if style != "cautious" else ""}
             console.log(JSON.stringify({{visible:store.getState().changes.some(item=>item.name==='submission.pdf'),kept:store.getState().keptByStandards.map(item=>item.name)}}));
         """)
         self.assertFalse(result["visible"])
@@ -275,7 +312,12 @@ class FocusedPolicyControlsPrototypeTests(unittest.TestCase):
 
     def test_compatible_bulk_actions_remain_available(self) -> None:
         views = self.sources["views.js"]
-        for label in ("Accept selected", "Keep selected", "Change folder", "Remove changes"):
+        for label in (
+            "Accept selected",
+            "Keep selected",
+            "Change folder",
+            "Remove changes",
+        ):
             self.assertIn(label, views)
 
     def test_review_and_approve_appears_only_after_all_choices(self) -> None:
@@ -301,10 +343,19 @@ class FocusedPolicyControlsPrototypeTests(unittest.TestCase):
         result = self.run_node("""
             const store=createStore(sample); const batch=approveMove(store); console.log(JSON.stringify(Object.keys(batch.preMoveSnapshot).sort()));
         """)
-        for key in ("sampleFiles", "createdFolders", "duplicateBinItems", "changes", "candidateChanges", "keptByStandards"):
+        for key in (
+            "sampleFiles",
+            "createdFolders",
+            "duplicateBinItems",
+            "changes",
+            "candidateChanges",
+            "keptByStandards",
+        ):
             self.assertIn(key, result)
 
-    def test_approve_test_move_applies_locations_names_folders_and_duplicates(self) -> None:
+    def test_approve_test_move_applies_locations_names_folders_and_duplicates(
+        self,
+    ) -> None:
         result = self.run_node("""
             const store=createStore(sample); const before=JSON.stringify(store.getState().sampleFiles); const bin=store.getState().duplicateBinItems.length; approveMove(store);
             console.log(JSON.stringify({filesChanged:before!==JSON.stringify(store.getState().sampleFiles),folders:store.getState().createdFolders.length,binDelta:store.getState().duplicateBinItems.length-bin}));
@@ -405,7 +456,14 @@ class FocusedPolicyControlsPrototypeTests(unittest.TestCase):
         result = self.run_node("""
             const store=createStore(sample); verifyMove(store); const before=store.getState().activityMoves.length; store.completeWorkflow(); store.undoLatestMove(); const entry=store.getState().activityMoves[0]; console.log(JSON.stringify({delta:store.getState().activityMoves.length-before,title:entry.title,summary:entry.summary}));
         """)
-        self.assertEqual(result, {"delta": 1, "title": "Restored previous organization", "summary": "12 files restored"})
+        self.assertEqual(
+            result,
+            {
+                "delta": 1,
+                "title": "Restored previous organization",
+                "summary": "12 files restored",
+            },
+        )
 
     def test_undo_disables_original_batch_and_returns_home_idle(self) -> None:
         result = self.run_node("""
@@ -414,7 +472,11 @@ class FocusedPolicyControlsPrototypeTests(unittest.TestCase):
         self.assertEqual(result, {"undoable": False, "route": "home", "stage": "idle"})
 
     def test_standards_page_has_compact_interpretation_entry_point(self) -> None:
-        for text in ("Describe an organization preference", "Loci Flow turns your description into Standards for you to review.", "Interpret preference"):
+        for text in (
+            "Describe an organization preference",
+            "Loci Flow turns your description into Standards for you to review.",
+            "Interpret preference",
+        ):
             self.assertIn(text, self.sources["views.js"])
         self.assertIn("<textarea", self.sources["views.js"])
 
@@ -450,15 +512,22 @@ class FocusedPolicyControlsPrototypeTests(unittest.TestCase):
         """)
         self.assertEqual(result["status"], "clarification")
         self.assertEqual(result["question"], "What kind of name do you mean?")
-        self.assertEqual(result["choices"], ["Person name", "Project code", "Course code", "Common filename prefix"])
+        self.assertEqual(
+            result["choices"],
+            ["Person name", "Project code", "Course code", "Common filename prefix"],
+        )
 
     def test_clarification_choice_yields_editable_suggested_standards(self) -> None:
         result = self.run_node("""
             const store=createStore(sample); store.interpretPreference('Organize files by name'); const suggestions=store.clarifyInterpretation('Project code'); const html=renderRoute(store,'standards'); console.log(JSON.stringify({count:suggestions.length,edit:html.includes('Edit'),remove:html.includes('Remove'),use:html.includes('Use these Standards')}));
         """)
-        self.assertEqual(result, {"count": 1, "edit": True, "remove": True, "use": True})
+        self.assertEqual(
+            result, {"count": 1, "edit": True, "remove": True, "use": True}
+        )
 
-    def test_editing_suggested_standard_preserves_or_updates_its_authored_values(self) -> None:
+    def test_editing_suggested_standard_preserves_or_updates_its_authored_values(
+        self,
+    ) -> None:
         result = self.run_node("""
             const store=createStore(sample); store.interpretPreference(sample.interpretations.codingProjects.intent);
             const original=store.getState().interpretation.suggestions[0];
@@ -473,58 +542,129 @@ class FocusedPolicyControlsPrototypeTests(unittest.TestCase):
         """)
         self.assertTrue(result["prefilled"])
         self.assertTrue(result["preserved"])
-        self.assertEqual(result["updated"], {"name": "Keep reviewed code projects together", "appliesTo": ["Projects", "Reviewed"]})
+        self.assertEqual(
+            result["updated"],
+            {
+                "name": "Keep reviewed code projects together",
+                "appliesTo": ["Projects", "Reviewed"],
+            },
+        )
 
-    def test_unsafe_deletion_intent_is_rejected_with_supported_alternatives(self) -> None:
+    def test_unsafe_deletion_intent_is_rejected_with_supported_alternatives(
+        self,
+    ) -> None:
         result = self.run_node("""
             const store=createStore(sample); const value=store.interpretPreference('Remove files I probably do not need'); console.log(JSON.stringify({status:value.status,alternatives:value.alternatives,standards:store.getState().standards.length}));
         """)
         self.assertEqual(result["status"], "unsafe")
-        self.assertEqual(result["alternatives"], ["Find exact duplicate copies", "Organize files into folders", "Keep selected folders unchanged"])
+        self.assertEqual(
+            result["alternatives"],
+            [
+                "Find exact duplicate copies",
+                "Organize files into folders",
+                "Keep selected folders unchanged",
+            ],
+        )
         self.assertEqual(result["standards"], len(self.fixture["standards"]))
 
     def test_interpretation_is_fixture_driven_and_has_no_llm_or_chat_ui(self) -> None:
-        self.assertIn('fixtures.interpretations', self.sources["store.js"])
-        for forbidden in ("assistant avatar", "message history", "typing animation", "chat-message", "openai", "anthropic"):
+        self.assertIn("fixtures.interpretations", self.sources["store.js"])
+        for forbidden in (
+            "assistant avatar",
+            "message history",
+            "typing animation",
+            "chat-message",
+            "openai",
+            "anthropic",
+        ):
             self.assertNotIn(forbidden, self.runtime.lower())
 
     def test_activity_contains_no_planning_records_or_undo_plan(self) -> None:
         lower = self.runtime.lower()
         self.assertNotIn("undo plan", lower)
         self.assertNotIn("planning activity", lower)
-        self.assertTrue(all(entry["status"] == "Completed" for entry in self.fixture["activityMoves"]))
+        self.assertTrue(
+            all(
+                entry["status"] == "Completed"
+                for entry in self.fixture["activityMoves"]
+            )
+        )
 
     def test_duplicate_bin_and_activity_detail_grid_are_preserved(self) -> None:
         views = self.sources["views.js"]
-        for label in ("Duplicate Bin", "Original folder", "Restore selected", "Files moved", "Names changed", "Folders created", "Copies moved to Duplicate Bin", "Files restored", "Problems"):
+        for label in (
+            "Duplicate Bin",
+            "Original folder",
+            "Restore selected",
+            "Files moved",
+            "Names changed",
+            "Folders created",
+            "Copies moved to Duplicate Bin",
+            "Files restored",
+            "Problems",
+        ):
             self.assertIn(label, views)
 
     def test_settings_remain_the_five_minimal_sections(self) -> None:
-        match = re.search(r"export const SETTINGS_SECTIONS = \[([\s\S]*?)\];", self.sources["views.js"])
+        match = re.search(
+            r"export const SETTINGS_SECTIONS = \[([\s\S]*?)\];",
+            self.sources["views.js"],
+        )
         self.assertIsNotNone(match)
         for label in ("Appearance", "Notifications", "Local AI", "Privacy", "Advanced"):
             self.assertIn(label, match.group(1))
 
-    def test_no_network_filesystem_backend_or_persistence_api_is_introduced(self) -> None:
+    def test_no_network_filesystem_backend_or_persistence_api_is_introduced(
+        self,
+    ) -> None:
         lower = self.runtime.lower()
         for forbidden in (
-            "xmlhttprequest", "websocket", "eventsource", "serviceworker", "showdirectorypicker",
-            "showopenfilepicker", "executor.py", "localstorage", "sessionstorage", "indexeddb",
-            "document.cookie", "fetch(", "http://", "https://", "//cdn", "@import",
+            "xmlhttprequest",
+            "websocket",
+            "eventsource",
+            "serviceworker",
+            "showdirectorypicker",
+            "showopenfilepicker",
+            "executor.py",
+            "localstorage",
+            "sessionstorage",
+            "indexeddb",
+            "document.cookie",
+            "fetch(",
+            "http://",
+            "https://",
+            "//cdn",
+            "@import",
         ):
             self.assertNotIn(forbidden, lower)
 
     def test_no_drag_drop_sliders_or_substantial_animation(self) -> None:
         lower = self.runtime.lower()
-        for forbidden in ('type="range"', "draggable", "dragstart", "dropzone", "ondrop", "slider"):
+        for forbidden in (
+            'type="range"',
+            "draggable",
+            "dragstart",
+            "dropzone",
+            "ondrop",
+            "slider",
+        ):
             self.assertNotIn(forbidden, lower)
         self.assertIn("prefers-reduced-motion", self.sources["styles.css"])
 
     def test_readme_documents_final_correction_boundaries(self) -> None:
         readme = self.sources["README.md"]
         for text in (
-            "Recommended changes", "Choices needed", "Standards", "fixture-driven", "No LLM",
-            "approval", "verification", "Undo move", "idle", "no backend", "no persistence",
+            "Recommended changes",
+            "Choices needed",
+            "Standards",
+            "fixture-driven",
+            "No LLM",
+            "approval",
+            "verification",
+            "Undo move",
+            "idle",
+            "no backend",
+            "no persistence",
         ):
             self.assertIn(text.lower(), readme.lower())
 
@@ -535,7 +675,9 @@ class FocusedPolicyControlsPrototypeTests(unittest.TestCase):
         self.assertIn('role="table"', self.sources["views.js"])
         self.assertIn('event.key === "Escape"', self.sources["app.js"])
         self.assertIn('event.key === "Tab"', self.sources["app.js"])
-        self.assertIn("Sample files only. Your files are not changed.", self.sources["index.html"])
+        self.assertIn(
+            "Sample files only. Your files are not changed.", self.sources["index.html"]
+        )
 
 
 if __name__ == "__main__":

@@ -24,11 +24,11 @@ class LociFlowPostEWorkflowCycleTests(unittest.TestCase):
             self.skipTest("Node is unavailable")
         script = textwrap.dedent(
             f"""
-            import {{ validateOrganizationResponse }} from {json.dumps((LOCI / 'data_source.js').as_uri())};
+            import {{ validateOrganizationResponse }} from {json.dumps((LOCI / "data_source.js").as_uri())};
             import {{
               buildProductionStageB1Contract,buildRouteViewModel,buildShellViewModel,
-            }} from {json.dumps((LOCI / 'view_models.js').as_uri())};
-            import {{ renderRoute }} from {json.dumps((LOCI / 'views.js').as_uri())};
+            }} from {json.dumps((LOCI / "view_models.js").as_uri())};
+            import {{ renderRoute }} from {json.dumps((LOCI / "views.js").as_uri())};
             const clone=(value)=>JSON.parse(JSON.stringify(value));
             const base={json.dumps(_payload())};
             const ready={json.dumps(_ready_payload())};
@@ -93,7 +93,9 @@ class LociFlowPostEWorkflowCycleTests(unittest.TestCase):
         self.assertEqual(completed.returncode, 0, completed.stderr)
         return json.loads(completed.stdout)
 
-    def test_verified_history_yields_check_again_and_new_cycle_uses_new_scan(self) -> None:
+    def test_verified_history_yields_check_again_and_new_cycle_uses_new_scan(
+        self,
+    ) -> None:
         result = self.run_node(
             """
             const completedPayload=clone(ready);completedPayload.execution=verified;
@@ -107,22 +109,33 @@ class LociFlowPostEWorkflowCycleTests(unittest.TestCase):
         )
         completed = result["completed"]
         self.assertEqual(completed["workflow"]["stage"], "ready_for_check")
-        self.assertEqual(completed["workflow"]["primaryAction"], {
-            "label": "Check again", "action": "check-again", "enabled": True,
-        })
+        self.assertEqual(
+            completed["workflow"]["primaryAction"],
+            {
+                "label": "Check again",
+                "action": "check-again",
+                "enabled": True,
+            },
+        )
         self.assertIn("Files moved", completed["homeHtml"])
         self.assertIn("2 files moved.", completed["lastMoveSummary"])
-        self.assertNotEqual(completed["freshness"]["lastOrganizedLabel"], "Not organized yet")
+        self.assertNotEqual(
+            completed["freshness"]["lastOrganizedLabel"], "Not organized yet"
+        )
         self.assertTrue(completed["activityConnected"])
         self.assertIn("View Activity", completed["homeHtml"])
-        self.assertIn('<li class="current"><span>1</span>Check</li>', completed["homeHtml"])
+        self.assertIn(
+            '<li class="current"><span>1</span>Check</li>', completed["homeHtml"]
+        )
         self.assertIn('data-action="check-again"', completed["organizeHtml"])
         self.assertEqual(completed["shell"]["movementStatusLabel"], "Move verified")
 
         checking = result["checking"]
         self.assertEqual(checking["workflow"]["stage"], "checking")
         self.assertEqual(checking["lastMoveSummary"], "2 files moved.")
-        self.assertNotEqual(checking["freshness"]["lastOrganizedLabel"], "Not organized yet")
+        self.assertNotEqual(
+            checking["freshness"]["lastOrganizedLabel"], "Not organized yet"
+        )
         self.assertEqual(len(checking["duplicateItems"]), 1)
 
         self.assertEqual(result["newScan"]["workflow"]["stage"], "organizing")
@@ -158,7 +171,9 @@ class LociFlowPostEWorkflowCycleTests(unittest.TestCase):
         for key in ("interrupted", "recovery", "failed", "verification"):
             self.assertEqual(result[key]["stage"], "move_failed", key)
 
-    def test_check_again_starts_one_scan_and_resets_only_cycle_local_state(self) -> None:
+    def test_check_again_starts_one_scan_and_resets_only_cycle_local_state(
+        self,
+    ) -> None:
         app_path = LOCI / "app.js"
         script = textwrap.dedent(
             f"""
@@ -232,15 +247,27 @@ class LociFlowPostEWorkflowCycleTests(unittest.TestCase):
         self.assertEqual(result["during"]["binItems"], 1)
         self.assertEqual(result["during"]["binSelected"], 1)
         self.assertIsNone(result["during"]["restorePreview"])
-        self.assertEqual(result["after"], {
-            "requests": 1, "scanPolling": False, "snapshot": "completed",
-        })
-        self.assertEqual(result["discarded"], {
-            "movement": 1, "duplicateMovement": 1, "restore": 1,
-        })
+        self.assertEqual(
+            result["after"],
+            {
+                "requests": 1,
+                "scanPolling": False,
+                "snapshot": "completed",
+            },
+        )
+        self.assertEqual(
+            result["discarded"],
+            {
+                "movement": 1,
+                "duplicateMovement": 1,
+                "restore": 1,
+            },
+        )
         self.assertFalse(result["autoScan"])
 
-    def test_unresolved_duplicate_approval_conflict_reloads_and_closes_dialog(self) -> None:
+    def test_unresolved_duplicate_approval_conflict_reloads_and_closes_dialog(
+        self,
+    ) -> None:
         app_path = LOCI / "app.js"
         script = textwrap.dedent(
             f"""
@@ -313,7 +340,9 @@ class LociFlowPostEWorkflowCycleTests(unittest.TestCase):
                 "kind": None,
             },
         )
-        visible = " ".join(result["announcements"] + list(result["override"].values())[:2])
+        visible = " ".join(
+            result["announcements"] + list(result["override"].values())[:2]
+        )
         self.assertNotIn("information could not be loaded", visible)
         for internal_term in ("catalog", "claim", "batch", "digest"):
             self.assertNotIn(internal_term, visible.lower())

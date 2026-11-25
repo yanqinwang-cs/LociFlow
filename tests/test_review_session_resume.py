@@ -23,7 +23,9 @@ from organizer.review_session import (
 
 
 class ResumeReviewedPlanTests(unittest.TestCase):
-    def test_valid_session_preserves_decisions_ids_and_metadata_without_scan(self) -> None:
+    def test_valid_session_preserves_decisions_ids_and_metadata_without_scan(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             path = write_reviewed_plan(root, reviewed_plan_data())
@@ -57,13 +59,18 @@ class ResumeReviewedPlanTests(unittest.TestCase):
             items = undecide_items(items, ["O1"])
 
             decisions = {item.id: item.decision for item in items}
-            self.assertEqual(decisions, {
-                "D1": "rejected",
-                "O1": "undecided",
-                "R1": "undecided",
-            })
+            self.assertEqual(
+                decisions,
+                {
+                    "D1": "rejected",
+                    "O1": "undecided",
+                    "R1": "undecided",
+                },
+            )
 
-    def test_resumed_save_preserves_input_and_uses_collision_safe_siblings(self) -> None:
+    def test_resumed_save_preserves_input_and_uses_collision_safe_siblings(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             source = write_reviewed_plan(root, reviewed_plan_data())
@@ -95,7 +102,9 @@ class ResumeReviewedPlanTests(unittest.TestCase):
             self.assertEqual(len(plan_items), 1)
             self.assertEqual(plan_items[0].source, root.resolve() / "a.txt")
 
-    def test_approved_conflicts_remain_visible_and_rejection_resolves_them(self) -> None:
+    def test_approved_conflicts_remain_visible_and_rejection_resolves_them(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             data = reviewed_plan_data()
@@ -120,7 +129,9 @@ class ResumeReviewedPlanTests(unittest.TestCase):
 
             self.assertEqual(items, [])
 
-    def test_malformed_schema_missing_fields_and_invalid_decisions_are_rejected(self) -> None:
+    def test_malformed_schema_missing_fields_and_invalid_decisions_are_rejected(
+        self,
+    ) -> None:
         mutations = [
             lambda data: data.update(schema_version=2),
             lambda data: data.pop("items"),
@@ -130,7 +141,10 @@ class ResumeReviewedPlanTests(unittest.TestCase):
             lambda data: data["items"][0].update(category="unknown"),
         ]
         for mutate in mutations:
-            with self.subTest(mutate=mutate), tempfile.TemporaryDirectory() as directory:
+            with (
+                self.subTest(mutate=mutate),
+                tempfile.TemporaryDirectory() as directory,
+            ):
                 root = Path(directory)
                 data = reviewed_plan_data()
                 mutate(data)
@@ -154,7 +168,10 @@ class ResumeReviewedPlanTests(unittest.TestCase):
             ("source", "..\\outside.txt"),
         ]
         for field, value in mutations:
-            with self.subTest(field=field, value=value), tempfile.TemporaryDirectory() as directory:
+            with (
+                self.subTest(field=field, value=value),
+                tempfile.TemporaryDirectory() as directory,
+            ):
                 root = Path(directory)
                 data = reviewed_plan_data()
                 data["items"][0][field] = value
@@ -169,7 +186,10 @@ class ResumeReviewedPlanTests(unittest.TestCase):
                 load_reviewed_plan_items(write_reviewed_plan(root, data), root)
 
     def test_missing_directory_outside_and_symlink_inputs_are_rejected(self) -> None:
-        with tempfile.TemporaryDirectory() as directory, tempfile.TemporaryDirectory() as outside:
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            tempfile.TemporaryDirectory() as outside,
+        ):
             root = Path(directory)
             outside_path = Path(outside) / "plan.json"
             outside_path.write_text(json.dumps(reviewed_plan_data()), encoding="utf-8")
@@ -188,7 +208,9 @@ class ResumeReviewedPlanTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "symlink"):
                 load_reviewed_plan_items(link, root)
 
-    def test_cli_resume_preserves_saved_decisions_and_does_not_use_review_state(self) -> None:
+    def test_cli_resume_preserves_saved_decisions_and_does_not_use_review_state(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             source = write_reviewed_plan(root, reviewed_plan_data())
@@ -208,7 +230,9 @@ class ResumeReviewedPlanTests(unittest.TestCase):
             self.assertIn("decision: rejected", result.stdout)
             self.assertIn("total undecided moves: 1", result.stdout)
 
-    def test_cli_edit_save_is_non_mutating_and_quit_without_save_changes_nothing(self) -> None:
+    def test_cli_edit_save_is_non_mutating_and_quit_without_save_changes_nothing(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             source = write_reviewed_plan(root, reviewed_plan_data())
@@ -267,14 +291,19 @@ class ResumeReviewedPlanTests(unittest.TestCase):
             root = Path(directory)
             source = write_reviewed_plan(root, reviewed_plan_data())
             argv = ["organizer.cli", str(root), "--resume-reviewed-plan", str(source)]
-            with mock.patch("sys.argv", argv), mock.patch(
-                "builtins.input",
-                side_effect=["apply", EOFError, EOFError],
-            ), mock.patch(
-                "organizer.cli._apply_plan_items",
-            ) as apply_items, mock.patch(
-                "sys.stdout",
-                new_callable=io.StringIO,
+            with (
+                mock.patch("sys.argv", argv),
+                mock.patch(
+                    "builtins.input",
+                    side_effect=["apply", EOFError, EOFError],
+                ),
+                mock.patch(
+                    "organizer.cli._apply_plan_items",
+                ) as apply_items,
+                mock.patch(
+                    "sys.stdout",
+                    new_callable=io.StringIO,
+                ),
             ):
                 from organizer.cli import main
 
@@ -283,7 +312,9 @@ class ResumeReviewedPlanTests(unittest.TestCase):
             self.assertEqual(exit_code, 0)
             apply_items.assert_not_called()
 
-    def test_interactive_apply_reuses_saved_plan_validator_after_confirmation(self) -> None:
+    def test_interactive_apply_reuses_saved_plan_validator_after_confirmation(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             source = write_reviewed_plan(root, reviewed_plan_data())
@@ -301,18 +332,24 @@ class ResumeReviewedPlanTests(unittest.TestCase):
                 "--resume-reviewed-plan",
                 str(source),
             ]
-            with mock.patch("sys.argv", argv), mock.patch(
-                "builtins.input",
-                side_effect=["apply", "APPLY_REVIEWED_PLAN"],
-            ), mock.patch(
-                "organizer.cli.load_reviewed_plan_move_items",
-                return_value=[expected_plan],
-            ) as validate_apply, mock.patch(
-                "organizer.cli._apply_plan_items",
-                return_value=0,
-            ) as apply_items, mock.patch(
-                "sys.stdout",
-                new_callable=io.StringIO,
+            with (
+                mock.patch("sys.argv", argv),
+                mock.patch(
+                    "builtins.input",
+                    side_effect=["apply", "APPLY_REVIEWED_PLAN"],
+                ),
+                mock.patch(
+                    "organizer.cli.load_reviewed_plan_move_items",
+                    return_value=[expected_plan],
+                ) as validate_apply,
+                mock.patch(
+                    "organizer.cli._apply_plan_items",
+                    return_value=0,
+                ) as apply_items,
+                mock.patch(
+                    "sys.stdout",
+                    new_callable=io.StringIO,
+                ),
             ):
                 from organizer.cli import main
 

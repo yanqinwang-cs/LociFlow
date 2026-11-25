@@ -11,7 +11,9 @@ from organizer.organization_rules import ORGANIZATION_RULES_RELATIVE_PATH
 
 
 class StandardsReadServiceTests(unittest.TestCase):
-    def test_missing_storage_projects_no_saved_standards_but_keeps_built_in_behavior(self) -> None:
+    def test_missing_storage_projects_no_saved_standards_but_keeps_built_in_behavior(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "summary_notes.txt").write_text("notes", encoding="utf-8")
@@ -20,11 +22,13 @@ class StandardsReadServiceTests(unittest.TestCase):
             result = scan_root(root)
 
         saved = [
-            item for item in result.standards.items
+            item
+            for item in result.standards.items
             if item.preset_type.startswith("legacy_")
         ]
         built_ins = [
-            item for item in result.standards.items
+            item
+            for item in result.standards.items
             if item.preset_type in {"built_in_protection", "existing_folder_policy"}
         ]
         self.assertEqual(result.organization_rules_load_result.status, "missing")
@@ -40,16 +44,21 @@ class StandardsReadServiceTests(unittest.TestCase):
             },
         )
 
-    def test_built_ins_are_active_immutable_and_include_existing_folder_policy(self) -> None:
+    def test_built_ins_are_active_immutable_and_include_existing_folder_policy(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             result = scan_root(Path(directory))
 
         standards = result.standards
         self.assertEqual(standards.status, "available")
         self.assertTrue(standards.items)
-        self.assertTrue(all(item.active and not item.mutable for item in standards.items))
+        self.assertTrue(
+            all(item.active and not item.mutable for item in standards.items)
+        )
         existing = next(
-            item for item in standards.items
+            item
+            for item in standards.items
             if item.id == EXISTING_FOLDER_POLICY_STANDARD_ID
         )
         self.assertEqual(existing.preset_type, "existing_folder_policy")
@@ -76,7 +85,9 @@ class StandardsReadServiceTests(unittest.TestCase):
             second = scan_root(root).standards
 
         self.assertEqual(first.to_dict(), second.to_dict())
-        legacy = [item for item in first.items if item.preset_type.startswith("legacy_")]
+        legacy = [
+            item for item in first.items if item.preset_type.startswith("legacy_")
+        ]
         self.assertEqual(
             {item.preset_type for item in legacy},
             {"legacy_locked_anchor", "legacy_ignored_term", "legacy_alias"},

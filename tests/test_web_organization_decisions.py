@@ -52,14 +52,18 @@ class WebOrganizationDecisionTests(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self) -> None:
         self.directory.cleanup()
 
-    async def test_approval_recovery_block_is_no_store_and_follows_request_security(self):
+    async def test_approval_recovery_block_is_no_store_and_follows_request_security(
+        self,
+    ):
         async with _client(self.app) as client:
             csrf = await self._authenticate(client)
             selected = await self._bulk(client, csrf)
             revision = selected.json()["review"]["decision_revision"]
-            self.app.state.filesystem_operation_admission.inspect_and_require_clear = mock.Mock(
-                side_effect=FilesystemOperationBlockedError(
-                    RecoveryAdmissionState.BLOCKED_UNFINISHED_OPERATION
+            self.app.state.filesystem_operation_admission.inspect_and_require_clear = (
+                mock.Mock(
+                    side_effect=FilesystemOperationBlockedError(
+                        RecoveryAdmissionState.BLOCKED_UNFINISHED_OPERATION
+                    )
                 )
             )
             data = {
@@ -67,9 +71,7 @@ class WebOrganizationDecisionTests(unittest.IsolatedAsyncioTestCase):
                 "scan_generation": "scan-one",
                 "expected_revision": str(revision),
             }
-            wrong_origin = await client.post(
-                "/api/organization/approval", data=data
-            )
+            wrong_origin = await client.post("/api/organization/approval", data=data)
             blocked = await client.post(
                 "/api/organization/approval", data=data, headers=_origin()
             )
@@ -121,7 +123,9 @@ class WebOrganizationDecisionTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(reloaded.headers["cache-control"], "no-store")
 
-    async def test_material_standard_invalidates_old_generation_and_approved_plan_blocks(self) -> None:
+    async def test_material_standard_invalidates_old_generation_and_approved_plan_blocks(
+        self,
+    ) -> None:
         async with _client(self.app) as client:
             await self._authenticate(client)
             current = await client.get("/api/organization/current")
@@ -151,7 +155,9 @@ class WebOrganizationDecisionTests(unittest.IsolatedAsyncioTestCase):
         destination = self.root / "Organized" / "EvoSim_project_slides" / "slides"
         destination.mkdir(parents=True)
         (self.root / "EvoSim_project_slides.pptx").write_text("a", encoding="utf-8")
-        (self.root / "EvoSim_project_slides_final.pptx").write_text("b", encoding="utf-8")
+        (self.root / "EvoSim_project_slides_final.pptx").write_text(
+            "b", encoding="utf-8"
+        )
         self.result = scan_root(self.root)
         self.token = "z" * 32
         self.app = create_app(
@@ -337,7 +343,9 @@ class WebOrganizationDecisionTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse((self.root / "AI_Review" / "operation_logs").exists())
         self.assertTrue((self.root / "EvoSim_project_slides.pptx").exists())
 
-    async def test_later_standards_failure_does_not_alter_existing_approval(self) -> None:
+    async def test_later_standards_failure_does_not_alter_existing_approval(
+        self,
+    ) -> None:
         async with _client(self.app) as client:
             csrf = await self._authenticate(client)
             await self._bulk(client, csrf)
@@ -678,12 +686,12 @@ class WebOrganizationDecisionTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn("original", serialized)
             self.assertTrue((root / "Inbox" / "copy.txt").exists())
             self.assertTrue((root / "Archive" / "copy.txt").exists())
-            self.assertFalse(
-                (root / "AI_Review" / "organization_operations").exists()
-            )
+            self.assertFalse((root / "AI_Review" / "organization_operations").exists())
             self.assertFalse((root / "AI_Review" / "operation_logs").exists())
 
-    async def test_stopping_approval_does_not_create_durable_duplicate_batch(self) -> None:
+    async def test_stopping_approval_does_not_create_durable_duplicate_batch(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             (root / "Inbox").mkdir()
@@ -692,9 +700,7 @@ class WebOrganizationDecisionTests(unittest.IsolatedAsyncioTestCase):
             (root / "Archive" / "copy.txt").write_text("same", encoding="utf-8")
             result = scan_root(root)
             token = "q" * 32
-            app = create_app(
-                WebAppConfig(root, "s" * 32, token, testing=True)
-            )
+            app = create_app(WebAppConfig(root, "s" * 32, token, testing=True))
             app.state.scan_jobs._snapshot = ScanJobSnapshot(
                 status="completed",
                 job_id="duplicates",

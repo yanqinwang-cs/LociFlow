@@ -143,7 +143,10 @@ class NeutralFileIdentityTests(unittest.TestCase):
     def test_same_inode_change_and_path_substitution_during_hash_reject(self) -> None:
         mutations = ("rewrite", "remove", "rename", "symlink")
         for mutation in mutations:
-            with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as directory:
+            with (
+                self.subTest(mutation=mutation),
+                tempfile.TemporaryDirectory() as directory,
+            ):
                 root = Path(directory)
                 source = root / "source"
                 source.write_bytes(b"abcdefgh")
@@ -195,9 +198,10 @@ class NeutralFileIdentityTests(unittest.TestCase):
                 (root, "unsupported_item"),
             )
             for path, code in cases:
-                with self.subTest(code=code), self.assertRaises(
-                    StableFileIdentityError
-                ) as raised:
+                with (
+                    self.subTest(code=code),
+                    self.assertRaises(StableFileIdentityError) as raised,
+                ):
                     with capture_open_regular_file(path, root):
                         pass
                 self.assertEqual(raised.exception.code, code)
@@ -208,7 +212,10 @@ class NeutralFileIdentityTests(unittest.TestCase):
             KeyboardInterrupt(),
         )
         for failure in failures:
-            with self.subTest(kind=type(failure).__name__), tempfile.TemporaryDirectory() as directory:
+            with (
+                self.subTest(kind=type(failure).__name__),
+                tempfile.TemporaryDirectory() as directory,
+            ):
                 root = Path(directory)
                 source = root / "private-name"
                 source.write_bytes(b"private-content")

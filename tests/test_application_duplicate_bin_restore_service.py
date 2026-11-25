@@ -95,7 +95,9 @@ class DuplicateBinRestoreServiceTests(unittest.TestCase):
                     filesystem_operation_admission=admission,
                 )
 
-            self.assertEqual(restores.authorization_path.read_bytes(), authorization_before)
+            self.assertEqual(
+                restores.authorization_path.read_bytes(), authorization_before
+            )
             self.assertEqual(owners.batches.catalog_path.read_bytes(), catalog_before)
             self.assertEqual(restores.list_operations(), ())
             self.assertTrue((owners.root / item.future_relative_path).is_file())
@@ -138,7 +140,9 @@ class DuplicateBinRestoreServiceTests(unittest.TestCase):
             )
             self.assertEqual(restores.list_operations(), ())
 
-    def test_stopping_rejects_restore_previews_without_superseding_authorization(self) -> None:
+    def test_stopping_rejects_restore_previews_without_superseding_authorization(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             owners = _moved(Path(directory).resolve(), selected=1)
             restores = DuplicateBinRestoreRepository(owners.root)
@@ -150,7 +154,9 @@ class DuplicateBinRestoreServiceTests(unittest.TestCase):
             for preview in (
                 lambda: _restore_preview(owners, restores, (item.bin_item_id,)),
                 lambda: preview_duplicate_bin_activity_undo(
-                    movement_operation_id=owners.operations.list_records()[0].operation_id,
+                    movement_operation_id=owners.operations.list_records()[
+                        0
+                    ].operation_id,
                     browser_session_id="browser-one",
                     batch_repository=owners.batches,
                     movement_repository=owners.operations,
@@ -264,7 +270,9 @@ class DuplicateBinRestoreServiceTests(unittest.TestCase):
                 BATCH_COMPLETED,
             )
 
-    def test_stopping_rejects_before_restore_intent_or_filesystem_side_effects(self) -> None:
+    def test_stopping_rejects_before_restore_intent_or_filesystem_side_effects(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             owners = _moved(Path(directory).resolve(), selected=1)
             restores = DuplicateBinRestoreRepository(owners.root)
@@ -858,7 +866,9 @@ class DuplicateBinRestoreServiceTests(unittest.TestCase):
                 )
             retry.assert_not_called()
 
-    def test_inconsistent_terminal_replay_is_blocked_without_catalog_repair(self) -> None:
+    def test_inconsistent_terminal_replay_is_blocked_without_catalog_repair(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             owners = _moved(Path(directory).resolve(), selected=1)
             restores = DuplicateBinRestoreRepository(owners.root)

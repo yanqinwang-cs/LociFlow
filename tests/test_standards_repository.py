@@ -40,7 +40,10 @@ class StandardsRepositoryTests(unittest.TestCase):
             )
 
     def test_wrong_root_unknown_fields_and_malformed_v2_reject(self) -> None:
-        with tempfile.TemporaryDirectory() as first, tempfile.TemporaryDirectory() as second:
+        with (
+            tempfile.TemporaryDirectory() as first,
+            tempfile.TemporaryDirectory() as second,
+        ):
             source = StandardsRepository(Path(first))
             source.save_catalog(_catalog(source, revision=1), expected_revision=0)
             target_path = Path(second) / ORGANIZATION_RULES_RELATIVE_PATH
@@ -98,8 +101,12 @@ class StandardsRepositoryTests(unittest.TestCase):
 
             self.assertEqual(path.read_bytes(), original)
 
-    def test_scope_normalization_is_nfc_and_rejects_absolute_or_escape_paths(self) -> None:
-        self.assertEqual(normalize_standard_relative_path("Cafe\u0301/Notes"), "Café/Notes")
+    def test_scope_normalization_is_nfc_and_rejects_absolute_or_escape_paths(
+        self,
+    ) -> None:
+        self.assertEqual(
+            normalize_standard_relative_path("Cafe\u0301/Notes"), "Café/Notes"
+        )
         for value in ("/tmp/private", "../private", "."):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 normalize_standard_relative_path(value)

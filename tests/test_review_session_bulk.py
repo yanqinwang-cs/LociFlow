@@ -120,7 +120,10 @@ class PageDecisionCliTests(unittest.TestCase):
             ("undecide-page", "UNDECIDE CURRENT PAGE", "undecided"),
         ]
         for command, confirmation, decision in commands:
-            with self.subTest(command=command), tempfile.TemporaryDirectory() as directory:
+            with (
+                self.subTest(command=command),
+                tempfile.TemporaryDirectory() as directory,
+            ):
                 root = Path(directory)
                 plan = write_reviewed_plan(root)
                 result = run_cli(
@@ -146,7 +149,10 @@ class PageDecisionCliTests(unittest.TestCase):
     def test_wrong_blank_and_eof_confirmation_cancel_without_changes(self) -> None:
         confirmation_inputs = ["WRONG\nquit\n", "\nquit\n", ""]
         for confirmation_input in confirmation_inputs:
-            with self.subTest(input=confirmation_input), tempfile.TemporaryDirectory() as directory:
+            with (
+                self.subTest(input=confirmation_input),
+                tempfile.TemporaryDirectory() as directory,
+            ):
                 root = Path(directory)
                 plan = write_reviewed_plan(root)
                 original = plan.read_text(encoding="utf-8")
@@ -189,9 +195,7 @@ class PageDecisionCliTests(unittest.TestCase):
                 root,
                 "--resume-reviewed-plan",
                 str(plan),
-                input_text=(
-                    "filter review_category orphan_code\napprove-page\nquit\n"
-                ),
+                input_text=("filter review_category orphan_code\napprove-page\nquit\n"),
             )
             idempotent = run_cli(
                 root,
@@ -240,18 +244,23 @@ class PageDecisionCliTests(unittest.TestCase):
                 "--resume-reviewed-plan",
                 str(plan),
             ]
-            with mock.patch("sys.argv", argv), mock.patch(
-                "builtins.input",
-                side_effect=[
-                    "page-size 1",
-                    "reject-page",
-                    "REJECT CURRENT PAGE",
-                    "quit",
-                ],
-            ), mock.patch(
-                "organizer.cli.apply_move_plan",
-                side_effect=AssertionError("executor must not be called"),
-            ), mock.patch("sys.stdout", new_callable=io.StringIO):
+            with (
+                mock.patch("sys.argv", argv),
+                mock.patch(
+                    "builtins.input",
+                    side_effect=[
+                        "page-size 1",
+                        "reject-page",
+                        "REJECT CURRENT PAGE",
+                        "quit",
+                    ],
+                ),
+                mock.patch(
+                    "organizer.cli.apply_move_plan",
+                    side_effect=AssertionError("executor must not be called"),
+                ),
+                mock.patch("sys.stdout", new_callable=io.StringIO),
+            ):
                 from organizer.cli import main
 
                 exit_code = main()
@@ -269,9 +278,7 @@ class PageDecisionCliTests(unittest.TestCase):
             result = run_cli(
                 root,
                 "--review-plans",
-                input_text=(
-                    "reject-page\nREJECT CURRENT PAGE\nsummary\nquit\n"
-                ),
+                input_text=("reject-page\nREJECT CURRENT PAGE\nsummary\nquit\n"),
             )
 
             self.assertEqual(result.returncode, 0, result.stderr)

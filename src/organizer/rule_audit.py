@@ -99,7 +99,9 @@ def rule_audit_to_report(audit: RuleAudit) -> dict[str, Any]:
         "anchor_aliases": dict(sorted(audit.anchor_aliases.items())),
         "preferred_granularities": list(audit.preferred_granularities),
         "before_after_counts": dict(sorted(audit.before_after_counts.items())),
-        "rule_effects": [_rule_effect_to_report(effect) for effect in audit.rule_effects],
+        "rule_effects": [
+            _rule_effect_to_report(effect) for effect in audit.rule_effects
+        ],
         "warnings": list(audit.warnings),
     }
 
@@ -118,19 +120,27 @@ def _rule_effect_to_report(effect: RuleEffect) -> dict[str, Any]:
     }
 
 
-def _explicit_rule_values(load_result: OrganizationRulesLoadResult) -> dict[str, object]:
+def _explicit_rule_values(
+    load_result: OrganizationRulesLoadResult,
+) -> dict[str, object]:
     if load_result.catalog is not None:
         return _explicit_catalog_values(load_result)
     data = load_result.raw_data or {}
     return {
         "locked_anchors": tuple(sorted(_string_list(data.get("locked_anchors", [])))),
         "ignored_terms": tuple(sorted(_string_list(data.get("ignored_terms", [])))),
-        "anchor_aliases": dict(sorted(_string_map(data.get("anchor_aliases", {})).items())),
-        "preferred_granularities": tuple(sorted(_string_list(data.get("preferred_granularities", [])))),
+        "anchor_aliases": dict(
+            sorted(_string_map(data.get("anchor_aliases", {})).items())
+        ),
+        "preferred_granularities": tuple(
+            sorted(_string_list(data.get("preferred_granularities", [])))
+        ),
     }
 
 
-def _explicit_catalog_values(load_result: OrganizationRulesLoadResult) -> dict[str, object]:
+def _explicit_catalog_values(
+    load_result: OrganizationRulesLoadResult,
+) -> dict[str, object]:
     # Only active, unarchived Standards take effect; the raw catalog also holds
     # turned-off and archived records that must not be reported as rules.
     locked: list[str] = []
@@ -205,7 +215,9 @@ def _rule_effects(
                 matched_file_count=matched,
                 affected_anchors=_affected_anchors(before, after, term),
                 before_decision=before.decision if before is not None else None,
-                after_decision=after.decision if after is not None else "ignored_term_loaded",
+                after_decision=after.decision
+                if after is not None
+                else "ignored_term_loaded",
                 risk_level=risk,
                 warning=warning,
             )
@@ -224,9 +236,13 @@ def _rule_effects(
                     value={"alias": alias, "canonical": canonical},
                     effect="Alias maps matching anchors to a canonical anchor in rule-aware output.",
                     matched_file_count=matched,
-                    affected_anchors=_affected_anchors(before, after, str(alias), str(canonical)),
+                    affected_anchors=_affected_anchors(
+                        before, after, str(alias), str(canonical)
+                    ),
                     before_decision=before.decision if before is not None else None,
-                    after_decision=after.decision if after is not None else "alias_loaded",
+                    after_decision=after.decision
+                    if after is not None
+                    else "alias_loaded",
                     risk_level=risk,
                     warning=warning,
                 )
@@ -258,9 +274,15 @@ def _counts(
     groups: list[ProjectGroup],
 ) -> dict[str, int]:
     return {
-        "needs_decision": sum(1 for item in decisions if item.decision == ANCHOR_DECISION_NEEDS_DECISION),
-        "suggested_groups": sum(1 for item in decisions if item.decision == ANCHOR_DECISION_SUGGESTED),
-        "ignored_terms": sum(1 for item in decisions if item.decision == ANCHOR_DECISION_IGNORED),
+        "needs_decision": sum(
+            1 for item in decisions if item.decision == ANCHOR_DECISION_NEEDS_DECISION
+        ),
+        "suggested_groups": sum(
+            1 for item in decisions if item.decision == ANCHOR_DECISION_SUGGESTED
+        ),
+        "ignored_terms": sum(
+            1 for item in decisions if item.decision == ANCHOR_DECISION_IGNORED
+        ),
         "organization_suggestions": sum(len(group.files) for group in groups),
     }
 
@@ -290,10 +312,7 @@ def _expanded(before: int, after: int) -> bool:
 
 
 def _decisions_by_anchor(decisions: list[AnchorDecision]) -> dict[str, AnchorDecision]:
-    return {
-        normalize_anchor(decision.anchor): decision
-        for decision in decisions
-    }
+    return {normalize_anchor(decision.anchor): decision for decision in decisions}
 
 
 def _matched_file_count(

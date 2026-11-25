@@ -90,9 +90,9 @@ class ApplicationReviewWebSessionTests(unittest.TestCase):
             assert pending.preview_token is not None
             before = store.snapshot(scan).session
             assert before is not None
-            off_page = {
-                item.id for item in before.items
-            } - set(pending.preview.target_ids)
+            off_page = {item.id for item in before.items} - set(
+                pending.preview.target_ids
+            )
 
             confirmed = store.confirm_page_decision(
                 scan,
@@ -104,11 +104,7 @@ class ApplicationReviewWebSessionTests(unittest.TestCase):
 
             self.assertEqual(len(pending.preview.target_ids), 2)
             self.assertEqual(
-                {
-                    item.id
-                    for item in after.items
-                    if item.decision == "rejected"
-                },
+                {item.id for item in after.items if item.decision == "rejected"},
                 set(pending.preview.target_ids),
             )
             self.assertTrue(

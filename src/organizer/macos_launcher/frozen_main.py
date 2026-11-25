@@ -142,9 +142,7 @@ def _frozen_workflow_acceptance() -> int:
                 "alpha\n",
                 encoding="utf-8",
             )
-            paths = MacOSApplicationPaths.for_home(
-                temporary / "application-home"
-            )
+            paths = MacOSApplicationPaths.for_home(temporary / "application-home")
             diagnostic_sink = create_packaged_diagnostic_sink(paths)
             diagnostic_sink(
                 PackagedDiagnosticInput(
@@ -195,10 +193,7 @@ def _verify_packaged_resources(*, include_runtime_identity: bool) -> None:
         if read_runtime_identity(identity_path) is None:
             raise _PackagedResourceError
     try:
-        if any(
-            not path.is_file() or not path.read_bytes()
-            for path in required_files
-        ):
+        if any(not path.is_file() or not path.read_bytes() for path in required_files):
             raise _PackagedResourceError
     except OSError as error:
         raise _PackagedResourceError from error
@@ -213,11 +208,7 @@ def _required_packaged_files() -> tuple[Path, ...]:
         package_root / "static" / "css" / "bootai.css",
         package_root / "static" / "js" / "bootai.js",
         package_root / "static" / "loci_flow" / "app.js",
-        package_root
-        / "static"
-        / "loci_flow"
-        / "assets"
-        / "loci-flow-mark.svg",
+        package_root / "static" / "loci_flow" / "assets" / "loci-flow-mark.svg",
         package_root / "static" / "vendor" / "bootstrap.min.css",
         package_root / "static" / "THIRD_PARTY_NOTICES.txt",
     )

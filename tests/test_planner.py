@@ -188,7 +188,9 @@ class PlannerTests(unittest.TestCase):
 
                     self.assertEqual(plan, [])
 
-    def test_mixed_duplicate_group_plans_only_eligible_non_protected_candidates(self) -> None:
+    def test_mixed_duplicate_group_plans_only_eligible_non_protected_candidates(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "a.txt").write_text("same", encoding="utf-8")

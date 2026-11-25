@@ -73,9 +73,9 @@ def load_artifact(
             candidate.resolve(strict=False),
             resolved_root,
         )
-        allowed_folder = (
-            resolved_root / _ARTIFACT_FOLDERS[validated_type]
-        ).resolve(strict=False)
+        allowed_folder = (resolved_root / _ARTIFACT_FOLDERS[validated_type]).resolve(
+            strict=False
+        )
         validate_under_root(resolved_candidate, allowed_folder)
     except ValueError as error:
         raise InvalidArtifact(str(error)) from error
@@ -91,9 +91,7 @@ def load_artifact(
         if validated_type == ARTIFACT_SCAN_REPORT:
             payload: object = load_report(resolved_candidate, resolved_root)
         else:
-            payload = tuple(
-                load_reviewed_plan_items(resolved_candidate, resolved_root)
-            )
+            payload = tuple(load_reviewed_plan_items(resolved_candidate, resolved_root))
     except (OSError, UnicodeError, ValueError) as error:
         raise InvalidArtifact(str(error)) from error
 

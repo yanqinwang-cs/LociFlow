@@ -41,7 +41,9 @@ class WebDuplicateBinMovementTests(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self) -> None:
         self.directory.cleanup()
 
-    async def test_preview_recovery_block_does_not_supersede_existing_token(self) -> None:
+    async def test_preview_recovery_block_does_not_supersede_existing_token(
+        self,
+    ) -> None:
         async with _client(self.app) as client:
             csrf = await _authenticate(client, self.token)
             existing = await client.post(
@@ -50,9 +52,11 @@ class WebDuplicateBinMovementTests(unittest.IsolatedAsyncioTestCase):
                 headers=_origin(),
             )
             before = self.app.state.duplicate_bin_authorizations.path.read_bytes()
-            self.app.state.filesystem_operation_admission.inspect_and_require_clear = mock.Mock(
-                side_effect=FilesystemOperationBlockedError(
-                    RecoveryAdmissionState.BLOCKED_INCONSISTENT_OPERATION_STATE
+            self.app.state.filesystem_operation_admission.inspect_and_require_clear = (
+                mock.Mock(
+                    side_effect=FilesystemOperationBlockedError(
+                        RecoveryAdmissionState.BLOCKED_INCONSISTENT_OPERATION_STATE
+                    )
                 )
             )
             blocked = await client.post(
@@ -64,13 +68,17 @@ class WebDuplicateBinMovementTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(existing.status_code, 200)
         self.assertEqual(blocked.status_code, 409)
         self.assertEqual(blocked.headers["cache-control"], "no-store")
-        self.assertEqual(blocked.json()["error"]["code"], "filesystem_operation_blocked")
+        self.assertEqual(
+            blocked.json()["error"]["code"], "filesystem_operation_blocked"
+        )
         self.assertEqual(blocked.json()["error"]["message"], SAFE_RECOVERY_MESSAGE)
         self.assertEqual(
             self.app.state.duplicate_bin_authorizations.path.read_bytes(), before
         )
 
-    async def test_recovery_block_is_safe_and_does_not_consume_confirmation(self) -> None:
+    async def test_recovery_block_is_safe_and_does_not_consume_confirmation(
+        self,
+    ) -> None:
         async with _client(self.app) as client:
             csrf = await _authenticate(client, self.token)
             preview = await client.post(
@@ -80,21 +88,37 @@ class WebDuplicateBinMovementTests(unittest.IsolatedAsyncioTestCase):
             )
             payload = preview.json()
             before = self.app.state.duplicate_bin_authorizations.path.read_bytes()
-            self.app.state.filesystem_operation_admission.inspect_and_require_clear = mock.Mock(
-                side_effect=FilesystemOperationBlockedError(
-                    RecoveryAdmissionState.BLOCKED_MALFORMED_OPERATION_STATE
+            self.app.state.filesystem_operation_admission.inspect_and_require_clear = (
+                mock.Mock(
+                    side_effect=FilesystemOperationBlockedError(
+                        RecoveryAdmissionState.BLOCKED_MALFORMED_OPERATION_STATE
+                    )
                 )
             )
             response = await client.post(
                 "/api/duplicate-bin/move",
-                data={"csrf_token": csrf, "confirmation_token": payload["confirmation_token"], "confirmation": payload["confirmation"]},
+                data={
+                    "csrf_token": csrf,
+                    "confirmation_token": payload["confirmation_token"],
+                    "confirmation": payload["confirmation"],
+                },
                 headers=_origin(),
             )
 
         self.assertEqual(response.status_code, 409)
         self.assertEqual(response.headers["cache-control"], "no-store")
-        self.assertEqual(response.json(), {"error": {"code": "filesystem_operation_blocked", "message": SAFE_RECOVERY_MESSAGE}})
-        self.assertEqual(self.app.state.duplicate_bin_authorizations.path.read_bytes(), before)
+        self.assertEqual(
+            response.json(),
+            {
+                "error": {
+                    "code": "filesystem_operation_blocked",
+                    "message": SAFE_RECOVERY_MESSAGE,
+                }
+            },
+        )
+        self.assertEqual(
+            self.app.state.duplicate_bin_authorizations.path.read_bytes(), before
+        )
         self.assertEqual(self.app.state.duplicate_bin_operations.list_records(), ())
 
     async def test_preview_and_execution_are_safe_no_store_and_replay(self) -> None:
@@ -167,7 +191,9 @@ class WebDuplicateBinMovementTests(unittest.IsolatedAsyncioTestCase):
         ):
             self.assertNotIn(forbidden, serialized)
 
-    async def test_stopping_execution_returns_safe_conflict_without_movement(self) -> None:
+    async def test_stopping_execution_returns_safe_conflict_without_movement(
+        self,
+    ) -> None:
         async with _client(self.app) as client:
             csrf = await _authenticate(client, self.token)
             preview = await client.post(

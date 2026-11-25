@@ -52,7 +52,8 @@ class DuplicateBinScopeTests(unittest.TestCase):
             )
             self.assertTrue(
                 all(
-                    "duplicate_bin" not in candidate.source_metadata.relative_path.as_posix()
+                    "duplicate_bin"
+                    not in candidate.source_metadata.relative_path.as_posix()
                     for candidate in projection.recommendations_by_id.values()
                 )
             )

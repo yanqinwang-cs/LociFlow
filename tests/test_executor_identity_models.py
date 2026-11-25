@@ -79,13 +79,30 @@ class StrictExecutorIdentityModelTests(unittest.TestCase):
                 (ordinary,),
                 (first, ordinary),
                 (first, replace(second, change_id="O1")),
-                (first, replace(second, plan_item=replace(second.plan_item, source=first.plan_item.source))),
-                (first, replace(second, plan_item=replace(second.plan_item, destination=first.plan_item.destination))),
+                (
+                    first,
+                    replace(
+                        second,
+                        plan_item=replace(
+                            second.plan_item, source=first.plan_item.source
+                        ),
+                    ),
+                ),
+                (
+                    first,
+                    replace(
+                        second,
+                        plan_item=replace(
+                            second.plan_item, destination=first.plan_item.destination
+                        ),
+                    ),
+                ),
             )
             for candidate in candidates:
-                with self.subTest(candidate=candidate), self.assertRaises(
-                    StrictExecutorError
-                ) as raised:
+                with (
+                    self.subTest(candidate=candidate),
+                    self.assertRaises(StrictExecutorError) as raised,
+                ):
                     validate_identity_move_plan(candidate, root)
                 self.assertEqual(raised.exception.code, "invalid_strict_plan")
             self.assertTrue(first.plan_item.source.exists())
@@ -174,7 +191,9 @@ class StrictExecutorIdentityModelTests(unittest.TestCase):
                 with self.assertRaises(StrictExecutorError):
                     validate_same_volume_identity_move_plan((first, second), root)
 
-    def test_safe_errors_and_production_boundary_contain_no_sensitive_detail(self) -> None:
+    def test_safe_errors_and_production_boundary_contain_no_sensitive_detail(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             item = _strict_item(root, "private-id", "private-name", "Dest/private")
@@ -183,7 +202,12 @@ class StrictExecutorIdentityModelTests(unittest.TestCase):
             with self.assertRaises(StrictExecutorError) as raised:
                 validate_identity_move_plan((item,), root)
             rendered = str(raised.exception)
-            for secret in (str(root), "private-id", "private-name", item.expected_digest):
+            for secret in (
+                str(root),
+                "private-id",
+                "private-name",
+                item.expected_digest,
+            ):
                 self.assertNotIn(secret, rendered)
 
             repository_root = Path(__file__).resolve().parents[1]

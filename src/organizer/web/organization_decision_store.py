@@ -78,9 +78,7 @@ class OrganizationDecisionStore:
         with self._lock:
             self._reject_invalidated_generation(projection.root, scan.job_id)
             if scan.job_id is not None:
-                self._observed_generations.add(
-                    (projection.root.resolve(), scan.job_id)
-                )
+                self._observed_generations.add((projection.root.resolve(), scan.job_id))
             stored = self._sessions.get(browser_session_id)
             if stored is not None and stored.session.scan_generation == scan.job_id:
                 return stored
@@ -147,8 +145,7 @@ class OrganizationDecisionStore:
             stored = self._sessions.get(browser_session_id)
             current = (
                 stored
-                if stored is not None
-                and stored.session.scan_generation == scan.job_id
+                if stored is not None and stored.session.scan_generation == scan.job_id
                 else OrganizationDecisionSnapshot(
                     projection,
                     create_organization_decision_session(projection),
@@ -226,7 +223,9 @@ class OrganizationDecisionStore:
                     else:
                         self._validate_revision(current.session, expected_revision)
 
-                    self._admission_for(current.projection.root).inspect_and_require_clear()
+                    self._admission_for(
+                        current.projection.root
+                    ).inspect_and_require_clear()
 
                     if current.session.status == STATUS_READY_TO_MOVE:
                         return current
@@ -374,7 +373,10 @@ class OrganizationDecisionStore:
         root: Path,
         generation: str | None,
     ) -> None:
-        if generation is not None and (root.resolve(), generation) in self._invalidated_generations:
+        if (
+            generation is not None
+            and (root.resolve(), generation) in self._invalidated_generations
+        ):
             raise OrganizationDecisionError("scan_generation_mismatch")
 
     @staticmethod

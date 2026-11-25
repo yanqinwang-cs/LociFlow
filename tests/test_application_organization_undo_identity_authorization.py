@@ -86,9 +86,7 @@ class V2UndoAuthorizationTests(unittest.TestCase):
             with self.assertRaises(V2UndoAuthorizationError) as raised:
                 store.require_available(_TOKEN, **kwargs)
             self.assertEqual(raised.exception.code, "binding_mismatch")
-        self.assertEqual(
-            store.snapshot(_TOKEN).state, V2_UNDO_AUTHORIZATION_AVAILABLE
-        )
+        self.assertEqual(store.snapshot(_TOKEN).state, V2_UNDO_AUTHORIZATION_AVAILABLE)
 
         self.assertTrue(store.consume(_TOKEN))
         self.assertFalse(store.consume(_TOKEN))

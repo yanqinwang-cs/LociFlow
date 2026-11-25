@@ -88,7 +88,9 @@ class ApplicationExecutionServiceTests(unittest.TestCase):
                 record = repository.list_records()[0]
                 index = len(observed)
                 self.assertEqual(record.status, "moving")
-                self.assertEqual(record.expected_moves[index].result_state, "attempting")
+                self.assertEqual(
+                    record.expected_moves[index].result_state, "attempting"
+                )
                 observed.append((source, destination))
                 return str(real_move(source, destination))
 
@@ -125,21 +127,30 @@ class ApplicationExecutionServiceTests(unittest.TestCase):
             self.assertEqual(outcome.status, STATUS_VERIFIED)
             self.assertEqual(record.schema_version, 1)
             payload = json.loads(
-                (
-                    repository.directory / f"{record.operation_id}.json"
-                ).read_text(encoding="utf-8")
+                (repository.directory / f"{record.operation_id}.json").read_text(
+                    encoding="utf-8"
+                )
             )
             self.assertNotIn("content_identity", payload["expected_moves"][0])
             self.assertEqual(outcome.files_moved, 2)
             self.assertEqual(record.verification.status, "passed")
-            self.assertEqual([item.result_state for item in record.expected_moves], ["moved", "moved"])
-            self.assertEqual([item.change_id for item in record.expected_moves], ["O1", "O2"])
+            self.assertEqual(
+                [item.result_state for item in record.expected_moves],
+                ["moved", "moved"],
+            )
+            self.assertEqual(
+                [item.change_id for item in record.expected_moves], ["O1", "O2"]
+            )
             self.assertEqual(record.duplicate_actions_deferred, 1)
             self.assertIsNotNone(record.legacy_operation_log)
             self.assertFalse((root / "a.txt").exists())
             self.assertFalse((root / "b.txt").exists())
-            self.assertEqual((root / "Organized" / "a.txt").read_bytes(), b"a.txt-bytes")
-            self.assertEqual((root / "Organized" / "b.txt").read_bytes(), b"b.txt-bytes")
+            self.assertEqual(
+                (root / "Organized" / "a.txt").read_bytes(), b"a.txt-bytes"
+            )
+            self.assertEqual(
+                (root / "Organized" / "b.txt").read_bytes(), b"b.txt-bytes"
+            )
             self.assertNotIn(str(root), json.dumps(outcome.__dict__))
             self.assertEqual(
                 coordinator.runtime_lifecycle.snapshot().active_count,
@@ -165,7 +176,9 @@ class ApplicationExecutionServiceTests(unittest.TestCase):
                 0,
             )
 
-    def test_wrong_confirmation_creates_nothing_consumes_nothing_and_unlocks(self) -> None:
+    def test_wrong_confirmation_creates_nothing_consumes_nothing_and_unlocks(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             plan = _approved_plan(root, ("a.txt",))
@@ -173,13 +186,17 @@ class ApplicationExecutionServiceTests(unittest.TestCase):
             repository = OrganizationOperationRepository(root)
             authorization = issue_movement_authorization(plan, coordinator)
 
-            with self.assertRaisesRegex(OrganizationExecutionError, "confirmation_required"):
+            with self.assertRaisesRegex(
+                OrganizationExecutionError, "confirmation_required"
+            ):
                 _move(plan, root, authorization, coordinator, repository, "yes")
 
             self.assertTrue((root / "a.txt").exists())
             self.assertFalse(repository.directory.exists())
             self.assertEqual(
-                coordinator.authorization_snapshot(authorization.authorization_id).status,
+                coordinator.authorization_snapshot(
+                    authorization.authorization_id
+                ).status,
                 "available",
             )
             self.assertTrue(coordinator.try_acquire())
@@ -192,7 +209,9 @@ class ApplicationExecutionServiceTests(unittest.TestCase):
             coordinator = OrganizationExecutionCoordinator()
             repository = OrganizationOperationRepository(root)
             authorization = issue_movement_authorization(plan, coordinator)
-            with self.assertRaisesRegex(OrganizationExecutionError, "approved_plan_stale"):
+            with self.assertRaisesRegex(
+                OrganizationExecutionError, "approved_plan_stale"
+            ):
                 move_approved_organization(
                     approved_plan=plan,
                     current_scan_generation="new-scan",
@@ -202,11 +221,17 @@ class ApplicationExecutionServiceTests(unittest.TestCase):
                     operation_repository=repository,
                     confirmation=CONFIRM_MOVE_APPROVED_FILES,
                 )
-            with self.assertRaisesRegex(OrganizationExecutionError, "approved_plan_not_found"):
-                issue_movement_authorization(replace(plan, status="in_progress"), coordinator)
+            with self.assertRaisesRegex(
+                OrganizationExecutionError, "approved_plan_not_found"
+            ):
+                issue_movement_authorization(
+                    replace(plan, status="in_progress"), coordinator
+                )
 
             restarted = OrganizationExecutionCoordinator()
-            with self.assertRaisesRegex(OrganizationExecutionError, "approved_plan_not_found"):
+            with self.assertRaisesRegex(
+                OrganizationExecutionError, "approved_plan_not_found"
+            ):
                 _move(plan, root, authorization, restarted, repository)
             self.assertTrue((root / "a.txt").exists())
 
@@ -276,13 +301,17 @@ class ApplicationExecutionServiceTests(unittest.TestCase):
             authorization = issue_movement_authorization(plan, coordinator)
             self.assertTrue(coordinator.try_acquire())
             try:
-                with self.assertRaisesRegex(OrganizationExecutionError, "movement_already_started"):
+                with self.assertRaisesRegex(
+                    OrganizationExecutionError, "movement_already_started"
+                ):
                     _move(plan, root, authorization, coordinator, repository)
             finally:
                 coordinator.release()
             self.assertTrue((root / "a.txt").exists())
 
-    def test_changed_protected_and_occupied_inputs_fail_before_record_or_consumption(self) -> None:
+    def test_changed_protected_and_occupied_inputs_fail_before_record_or_consumption(
+        self,
+    ) -> None:
         cases = ("changed", "protected", "occupied")
         for case in cases:
             with self.subTest(case=case), tempfile.TemporaryDirectory() as directory:
@@ -306,7 +335,9 @@ class ApplicationExecutionServiceTests(unittest.TestCase):
                     _move(plan, root, authorization, coordinator, repository)
                 self.assertFalse(repository.directory.exists())
                 self.assertEqual(
-                    coordinator.authorization_snapshot(authorization.authorization_id).status,
+                    coordinator.authorization_snapshot(
+                        authorization.authorization_id
+                    ).status,
                     "available",
                 )
 
@@ -439,7 +470,9 @@ class ApplicationExecutionServiceTests(unittest.TestCase):
                     ),
                 ),
             )
-            _assert_preflight_error(self, duplicate_destination, root, "approved_plan_stale")
+            _assert_preflight_error(
+                self, duplicate_destination, root, "approved_plan_stale"
+            )
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -460,7 +493,9 @@ class ApplicationExecutionServiceTests(unittest.TestCase):
             )
             _assert_preflight_error(self, move_chain, root, "approved_plan_stale")
 
-    def test_partial_and_zero_success_failures_are_durable_and_not_verified(self) -> None:
+    def test_partial_and_zero_success_failures_are_durable_and_not_verified(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             plan = _approved_plan(root, ("a.txt", "b.txt", "c.txt"))
@@ -494,7 +529,9 @@ class ApplicationExecutionServiceTests(unittest.TestCase):
             coordinator = OrganizationExecutionCoordinator()
             repository = OrganizationOperationRepository(root)
             authorization = issue_movement_authorization(plan, coordinator)
-            with mock.patch("organizer.executor.shutil.move", side_effect=OSError("no")):
+            with mock.patch(
+                "organizer.executor.shutil.move", side_effect=OSError("no")
+            ):
                 outcome = _move(plan, root, authorization, coordinator, repository)
             record = repository.load(outcome.operation_id)
             self.assertEqual(outcome.status, STATUS_MOVEMENT_FAILED)
@@ -504,7 +541,9 @@ class ApplicationExecutionServiceTests(unittest.TestCase):
             )
             self.assertEqual(record.verification.status, "not_run")
 
-    def test_complete_move_with_filesystem_mismatch_becomes_verification_failed(self) -> None:
+    def test_complete_move_with_filesystem_mismatch_becomes_verification_failed(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             plan = _approved_plan(root, ("a.txt",))
@@ -521,7 +560,9 @@ class ApplicationExecutionServiceTests(unittest.TestCase):
                     changed = True
                     (root / "Organized" / "a.txt").write_bytes(b"different-size")
 
-            with mock.patch.object(repository, "save", side_effect=change_after_movement):
+            with mock.patch.object(
+                repository, "save", side_effect=change_after_movement
+            ):
                 outcome = _move(plan, root, authorization, coordinator, repository)
 
             record = repository.load(outcome.operation_id)
@@ -539,18 +580,26 @@ class ApplicationExecutionServiceTests(unittest.TestCase):
             coordinator = OrganizationExecutionCoordinator()
             repository = OrganizationOperationRepository(root)
             authorization = issue_movement_authorization(plan, coordinator)
-            with mock.patch.object(repository, "create", side_effect=OSError("disk full")):
-                with self.assertRaisesRegex(OrganizationExecutionError, "operation_record_failed"):
+            with mock.patch.object(
+                repository, "create", side_effect=OSError("disk full")
+            ):
+                with self.assertRaisesRegex(
+                    OrganizationExecutionError, "operation_record_failed"
+                ):
                     _move(plan, root, authorization, coordinator, repository)
             self.assertTrue((root / "a.txt").exists())
             self.assertEqual(
-                coordinator.authorization_snapshot(authorization.authorization_id).status,
+                coordinator.authorization_snapshot(
+                    authorization.authorization_id
+                ).status,
                 "available",
             )
             self.assertTrue(coordinator.try_acquire())
             coordinator.release()
 
-    def test_recorder_failure_after_move_leaves_attempting_record_for_inspection(self) -> None:
+    def test_recorder_failure_after_move_leaves_attempting_record_for_inspection(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             plan = _approved_plan(root, ("a.txt", "b.txt"))

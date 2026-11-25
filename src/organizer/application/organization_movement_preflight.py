@@ -67,10 +67,9 @@ def preflight_organization_movement(
     fingerprints = approved_plan.source_fingerprints
     if len(reviewed) != len(fingerprints):
         raise OrganizationMovementPreflightError("approved_plan_stale")
-    if (
-        len({item.id for item in reviewed}) != len(reviewed)
-        or len({item.item_id for item in fingerprints}) != len(fingerprints)
-    ):
+    if len({item.id for item in reviewed}) != len(reviewed) or len(
+        {item.item_id for item in fingerprints}
+    ) != len(fingerprints):
         raise OrganizationMovementPreflightError("approved_plan_stale")
     try:
         if find_approved_move_conflicts(list(reviewed), resolved_root):
@@ -120,9 +119,7 @@ def preflight_organization_movement(
             )
             source_relative = resolved_source.relative_to(resolved_root)
             fingerprint_path = _safe_relative_path(fingerprint.relative_path)
-            expected_source = (resolved_root / fingerprint_path).resolve(
-                strict=False
-            )
+            expected_source = (resolved_root / fingerprint_path).resolve(strict=False)
             if resolved_source != expected_source:
                 raise ValueError("approved source changed")
             stat = source.stat()
@@ -144,9 +141,7 @@ def preflight_organization_movement(
                 destination.resolve(strict=False),
                 resolved_root,
             )
-            destination_relative = resolved_destination.relative_to(
-                resolved_root
-            )
+            destination_relative = resolved_destination.relative_to(resolved_root)
             existing_parent = _nearest_existing_parent(destination.parent)
             validate_under_root(existing_parent.resolve(), resolved_root)
             if not existing_parent.is_dir():
@@ -157,9 +152,7 @@ def preflight_organization_movement(
             ):
                 raise ValueError("destination is protected")
         except (OSError, ValueError):
-            raise OrganizationMovementPreflightError(
-                "unsafe_destination"
-            ) from None
+            raise OrganizationMovementPreflightError("unsafe_destination") from None
         if os.path.lexists(destination):
             raise OrganizationMovementPreflightError("overwrite_detected")
 

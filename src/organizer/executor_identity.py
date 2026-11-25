@@ -153,9 +153,7 @@ def validate_identity_move_plan(
         len(set(structural_sources)) != len(items)
         or len(set(structural_destinations)) != len(items)
         or set(structural_sources) & set(structural_destinations)
-        or _has_path_ancestry_overlap(
-            structural_sources + structural_destinations
-        )
+        or _has_path_ancestry_overlap(structural_sources + structural_destinations)
     ):
         raise StrictExecutorError("invalid_strict_plan")
 
@@ -192,9 +190,7 @@ def validate_same_volume_identity_move_plan(
     root: Path,
 ) -> ValidatedIdentityMovePlan:
     plan = validate_identity_move_plan(items, root)
-    if any(
-        item.placement is VolumePlacement.INDETERMINATE for item in plan.items
-    ):
+    if any(item.placement is VolumePlacement.INDETERMINATE for item in plan.items):
         raise StrictExecutorError("destination_volume_indeterminate")
     if any(item.placement is VolumePlacement.CROSS_VOLUME for item in plan.items):
         raise StrictExecutorError("cross_volume_unsupported")

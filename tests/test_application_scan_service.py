@@ -17,9 +17,12 @@ class ScanServiceTests(unittest.TestCase):
             result = scan_root(root)
             report_path = write_scan_report(result)
 
-            self.assertEqual(report_path.name, next(report_path.parent.glob("*_report.json")).name)
+            self.assertEqual(
+                report_path.name, next(report_path.parent.glob("*_report.json")).name
+            )
             self.assertTrue(report_path.is_file())
             self.assertFalse((root / "operation_logs").exists())
+
     def test_deterministic_scan_returns_authoritative_report_and_summary(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -30,8 +33,12 @@ class ScanServiceTests(unittest.TestCase):
             result = scan_root(root)
 
             self.assertEqual(result.root, root.resolve())
-            self.assertEqual(result.summary.file_count, result.report["summary"]["file_count"])
-            self.assertEqual(result.summary.total_bytes, result.report["summary"]["total_bytes"])
+            self.assertEqual(
+                result.summary.file_count, result.report["summary"]["file_count"]
+            )
+            self.assertEqual(
+                result.summary.total_bytes, result.report["summary"]["total_bytes"]
+            )
             self.assertEqual(result.summary.duplicate_group_count, 1)
             self.assertEqual(result.summary.potential_duplicate_bytes, 4)
             self.assertEqual(
@@ -74,12 +81,17 @@ class ScanServiceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "notes.txt").write_text("notes", encoding="utf-8")
-            with mock.patch(
-                "organizer.application.scan_service.scan_directory_with_boundaries",
-                wraps=scan_directory_with_boundaries,
-            ) as scanner, mock.patch(
-                "organizer.reports.scan_directory",
-                side_effect=AssertionError("report builder must reuse scan metadata"),
+            with (
+                mock.patch(
+                    "organizer.application.scan_service.scan_directory_with_boundaries",
+                    wraps=scan_directory_with_boundaries,
+                ) as scanner,
+                mock.patch(
+                    "organizer.reports.scan_directory",
+                    side_effect=AssertionError(
+                        "report builder must reuse scan metadata"
+                    ),
+                ),
             ):
                 result = scan_root(root)
 
@@ -98,7 +110,9 @@ class ScanServiceTests(unittest.TestCase):
             rules.write_text("{not json", encoding="utf-8")
             warning_result = scan_root(root)
             self.assertTrue(warning_result.warnings)
-            self.assertEqual(warning_result.warnings, tuple(warning_result.report["warnings"]))
+            self.assertEqual(
+                warning_result.warnings, tuple(warning_result.report["warnings"])
+            )
             self.assertEqual(warning_result.standards.status, "unavailable")
             self.assertGreaterEqual(warning_result.summary.file_count, 1)
             self.assertEqual(warning_result.summary.organization_suggestion_count, 0)
@@ -116,12 +130,16 @@ class ScanServiceTests(unittest.TestCase):
     def test_default_scan_does_not_prompt_print_or_require_llm(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            with mock.patch(
-                "builtins.input",
-                side_effect=AssertionError("scan service must not prompt"),
-            ), mock.patch(
-                "organizer.reports.refine_project_groups_with_ollama"
-            ) as refine, mock.patch("sys.stdout", new_callable=io.StringIO) as stdout:
+            with (
+                mock.patch(
+                    "builtins.input",
+                    side_effect=AssertionError("scan service must not prompt"),
+                ),
+                mock.patch(
+                    "organizer.reports.refine_project_groups_with_ollama"
+                ) as refine,
+                mock.patch("sys.stdout", new_callable=io.StringIO) as stdout,
+            ):
                 scan_root(root)
 
             refine.assert_not_called()

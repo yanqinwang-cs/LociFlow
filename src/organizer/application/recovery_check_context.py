@@ -64,10 +64,7 @@ class RecoveryCheckContext:
         _uuid(self.operation_id)
         if self.parent_operation_id is not None:
             _uuid(self.parent_operation_id)
-        if (
-            not isinstance(self.browser_session_id, str)
-            or not self.browser_session_id
-        ):
+        if not isinstance(self.browser_session_id, str) or not self.browser_session_id:
             raise ValueError("recovery Check session is invalid")
         if (
             not isinstance(self.configured_root_identity, str)
@@ -92,10 +89,7 @@ class RecoveryCheckContext:
             self.durable_record_digest,
             self.filesystem_observation_digest,
         ):
-            if (
-                not isinstance(digest, str)
-                or _DIGEST.fullmatch(digest) is None
-            ):
+            if not isinstance(digest, str) or _DIGEST.fullmatch(digest) is None:
                 raise ValueError("recovery Check binding is invalid")
         issued = _timestamp(self.issued_at)
         expires = _timestamp(self.expires_at)

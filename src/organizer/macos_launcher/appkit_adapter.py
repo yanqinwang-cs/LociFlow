@@ -65,9 +65,7 @@ class AppKitAdapter:
         bindings = self._bindings
         self._app = bindings.NSApplication.sharedApplication()
         self._emit_diagnostic("native_app_initialized")
-        self._app.setActivationPolicy_(
-            bindings.NSApplicationActivationPolicyRegular
-        )
+        self._app.setActivationPolicy_(bindings.NSApplicationActivationPolicyRegular)
         self._delegate = _delegate_type(bindings).alloc().initWithAdapter_(self)
         self._app.setDelegate_(self._delegate)
         self._emit_diagnostic("delegate_installed")
@@ -265,9 +263,7 @@ class AppKitAdapter:
             "q",
         )
         quit_item.setTarget_(self._app)
-        quit_item.setKeyEquivalentModifierMask_(
-            bindings.NSEventModifierFlagCommand
-        )
+        quit_item.setKeyEquivalentModifierMask_(bindings.NSEventModifierFlagCommand)
         application_menu.addItem_(quit_item)
         application_item.setSubmenu_(application_menu)
         self._app.setMainMenu_(main_menu)

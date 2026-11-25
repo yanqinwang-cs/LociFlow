@@ -86,7 +86,10 @@ class ReviewViewSortTests(unittest.TestCase):
         self.assertEqual(ascending.sort_direction, "asc")
         self.assertEqual(ascending.page, 1)
         self.assertEqual(
-            [item.plan_item.source.name for item in sort_review_rows(items, ascending, root)],
+            [
+                item.plan_item.source.name
+                for item in sort_review_rows(items, ascending, root)
+            ],
             ["a.txt", "b.txt", "c.txt", "same.txt", "same.txt"],
         )
         self.assertEqual(
@@ -169,7 +172,9 @@ class ReviewViewPaginationTests(unittest.TestCase):
 
 
 class ReviewViewCliTests(unittest.TestCase):
-    def test_resumed_session_view_show_hidden_details_and_stable_id_decisions(self) -> None:
+    def test_resumed_session_view_show_hidden_details_and_stable_id_decisions(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             plan = write_reviewed_plan(root)
@@ -288,7 +293,9 @@ def make_items(root: Path) -> list[ReviewedPlanItem]:
 
 def make_many_items(root: Path, count: int) -> list[ReviewedPlanItem]:
     return [
-        make_item(root, f"D{index:03d}", "duplicate", f"file-{index:03d}.txt", "approved")
+        make_item(
+            root, f"D{index:03d}", "duplicate", f"file-{index:03d}.txt", "approved"
+        )
         for index in range(1, count + 1)
     ]
 

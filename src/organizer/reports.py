@@ -197,8 +197,7 @@ def build_scan_report(
             review_candidate_counts_by_category.get(candidate.category, 0) + 1
         )
     organization_suggestion_count = sum(
-        len(suggestion.plan_items)
-        for suggestion in organization_suggestions
+        len(suggestion.plan_items) for suggestion in organization_suggestions
     )
     if _organization_suggestions_are_unusually_broad(
         organization_suggestion_count,
@@ -240,33 +239,28 @@ def build_scan_report(
             "inferred_rule_candidate_count": len(pattern_inference.rule_candidates),
             "refinement_status": refinement_status,
         },
-        "organization_rules": _organization_rules_to_report(organization_rules, resolved_root),
+        "organization_rules": _organization_rules_to_report(
+            organization_rules, resolved_root
+        ),
         "rule_audit": rule_audit_to_report(rule_audit),
         "anchor_decisions": _anchor_decisions_to_report(
             anchor_decisions,
             pattern_inference,
         ),
-        "organization_pattern_inference": _pattern_inference_to_report(pattern_inference),
-        "duplicates": [
-            _duplicate_group_to_report(group)
-            for group in duplicate_groups
-        ],
+        "organization_pattern_inference": _pattern_inference_to_report(
+            pattern_inference
+        ),
+        "duplicates": [_duplicate_group_to_report(group) for group in duplicate_groups],
         "duplicate_review_plan": [
-            _plan_item_to_report(item, resolved_root)
-            for item in duplicate_review_plan
+            _plan_item_to_report(item, resolved_root) for item in duplicate_review_plan
         ],
         "review_candidates": [
-            _review_candidate_to_report(candidate)
-            for candidate in review_candidates
+            _review_candidate_to_report(candidate) for candidate in review_candidates
         ],
         "review_candidate_plan": [
-            _plan_item_to_report(item, resolved_root)
-            for item in review_candidate_plan
+            _plan_item_to_report(item, resolved_root) for item in review_candidate_plan
         ],
-        "project_groups": [
-            _project_group_to_report(group)
-            for group in project_groups
-        ],
+        "project_groups": [_project_group_to_report(group) for group in project_groups],
         "organization_suggestions": [
             _organization_suggestion_to_report(suggestion, resolved_root)
             for suggestion in organization_suggestions
@@ -419,7 +413,6 @@ def validate_report_output_path(path: Path, root: Path) -> Path:
     return resolved_path
 
 
-
 def _nearest_existing_parent(path: Path) -> Path:
     current = path
     while not current.exists():
@@ -434,10 +427,7 @@ def _duplicate_group_to_report(group: DuplicateGroup) -> dict[str, Any]:
     return {
         "sha256": group.sha256,
         "size_bytes": group.size_bytes,
-        "files": [
-            file.relative_path.as_posix()
-            for file in group.files
-        ],
+        "files": [file.relative_path.as_posix() for file in group.files],
     }
 
 
@@ -460,12 +450,18 @@ def _organization_rules_to_report(
         "locked_anchors": sorted(
             rules.anchor_display_names.get(anchor, anchor)
             for anchor in rules.locked_anchors
-        ) if rules is not None else [],
+        )
+        if rules is not None
+        else [],
         "ignored_terms": sorted(rules.ignored_terms - DEFAULT_IGNORED_TERMS)
         if rules is not None
         else [],
-        "anchor_aliases": dict(sorted(rules.anchor_aliases.items())) if rules is not None else {},
-        "preferred_granularities": sorted(rules.preferred_granularities) if rules is not None else [],
+        "anchor_aliases": dict(sorted(rules.anchor_aliases.items()))
+        if rules is not None
+        else {},
+        "preferred_granularities": sorted(rules.preferred_granularities)
+        if rules is not None
+        else [],
     }
 
 
@@ -482,7 +478,9 @@ def _anchor_decisions_to_report(
         needs_decision_items = sorted(
             needs_decision_items,
             key=lambda decision: (
-                _pattern_priority_rank(pattern_priority_for_anchor(decision.anchor, pattern_inference)),
+                _pattern_priority_rank(
+                    pattern_priority_for_anchor(decision.anchor, pattern_inference)
+                ),
                 -decision.file_count,
                 decision.anchor,
             ),
@@ -517,7 +515,10 @@ def _anchor_decision_to_report(
         "file_count": decision.file_count,
         "examples": decision.examples,
     }
-    if pattern_inference is not None and decision.decision == ANCHOR_DECISION_NEEDS_DECISION:
+    if (
+        pattern_inference is not None
+        and decision.decision == ANCHOR_DECISION_NEEDS_DECISION
+    ):
         evidence = pattern_evidence_for_anchor(decision.anchor, pattern_inference)
         if evidence is not None:
             item["pattern_evidence"] = evidence
@@ -539,8 +540,7 @@ def _pattern_inference_to_report(
     rule_candidates = rule_candidates_from_inferred(inference.rule_candidates)
     return {
         "patterns": [
-            _organization_pattern_to_report(pattern)
-            for pattern in inference.patterns
+            _organization_pattern_to_report(pattern) for pattern in inference.patterns
         ],
         "rule_candidates": [
             _inferred_rule_candidate_to_report(candidate)
@@ -616,10 +616,7 @@ def _project_group_to_report(group: ProjectGroup) -> dict[str, Any]:
         "group_name": group.group_name,
         "reason": group.reason,
         "confidence": group.confidence,
-        "files": [
-            file.relative_path.as_posix()
-            for file in group.files
-        ],
+        "files": [file.relative_path.as_posix() for file in group.files],
     }
 
 
@@ -631,8 +628,7 @@ def _organization_suggestion_to_report(
         "group_name": suggestion.group.group_name,
         "suggested_root": _relative_path(suggestion.suggested_root, root),
         "plan_items": [
-            _plan_item_to_report(item, root)
-            for item in suggestion.plan_items
+            _plan_item_to_report(item, root) for item in suggestion.plan_items
         ],
     }
 

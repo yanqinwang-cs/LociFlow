@@ -194,7 +194,9 @@ class ScanJobControllerTests(unittest.TestCase):
                 gate.wait(timeout=2)
                 return _result(path)
 
-            controller = ScanJobController(root, scan=scan, write_report=lambda _: root / "report.json")
+            controller = ScanJobController(
+                root, scan=scan, write_report=lambda _: root / "report.json"
+            )
             controller.start()
             with self.assertRaises(ScanAlreadyRunning):
                 controller.start()

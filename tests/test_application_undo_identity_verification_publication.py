@@ -124,7 +124,9 @@ class IdentityUndoVerificationPublicationTests(unittest.TestCase):
             ):
                 self.assertNotIn(secret, rendered)
 
-    def test_indeterminate_invalid_result_and_unexpected_error_save_nothing(self) -> None:
+    def test_indeterminate_invalid_result_and_unexpected_error_save_nothing(
+        self,
+    ) -> None:
         outcomes = (
             IdentityUndoVerificationResult(
                 IdentityUndoVerificationState.INDETERMINATE,
@@ -287,7 +289,9 @@ class IdentityUndoVerificationPublicationTests(unittest.TestCase):
             )
             self.assertEqual(undos.load(original.undo_id), original)
 
-    def test_logs_are_not_required_and_activity_remains_repository_derived(self) -> None:
+    def test_logs_are_not_required_and_activity_remains_repository_derived(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             operations, undos, parent, original = _stored_pair(
@@ -307,9 +311,15 @@ class IdentityUndoVerificationPublicationTests(unittest.TestCase):
                 operation_repository=operations,
                 undo_repository=undos,
             )
-            before_restore = next(item for item in before.activity if item.id == original.undo_id)
-            after_restore = next(item for item in after.activity if item.id == original.undo_id)
-            parent_entry = next(item for item in after.activity if item.id == parent.operation_id)
+            before_restore = next(
+                item for item in before.activity if item.id == original.undo_id
+            )
+            after_restore = next(
+                item for item in after.activity if item.id == original.undo_id
+            )
+            parent_entry = next(
+                item for item in after.activity if item.id == parent.operation_id
+            )
             self.assertEqual(
                 result.state,
                 IdentityUndoVerificationPublicationState.PUBLISHED_RESTORED,
@@ -343,7 +353,9 @@ class IdentityUndoVerificationPublicationTests(unittest.TestCase):
                 operation_repository=operations,
                 undo_repository=undos,
             )
-            restore = next(item for item in after.activity if item.id == original.undo_id)
+            restore = next(
+                item for item in after.activity if item.id == original.undo_id
+            )
             self.assertEqual(
                 result.state,
                 IdentityUndoVerificationPublicationState.PUBLISHED_VERIFICATION_FAILED,
@@ -388,12 +400,13 @@ class IdentityUndoVerificationPublicationTests(unittest.TestCase):
             self.assertEqual(after, before)
             self.assertEqual(undos.load(original.undo_id), original)
 
-    def test_publisher_is_disconnected_from_routes_activity_and_production_undo(self) -> None:
+    def test_publisher_is_disconnected_from_routes_activity_and_production_undo(
+        self,
+    ) -> None:
         repository_root = Path(__file__).resolve().parents[1]
         source_root = repository_root / "src/organizer"
         publisher = (
-            source_root
-            / "application/undo_identity_verification_publication.py"
+            source_root / "application/undo_identity_verification_publication.py"
         ).read_text(encoding="utf-8")
         protected = (
             source_root / "application/undo_service.py",
@@ -402,9 +415,8 @@ class IdentityUndoVerificationPublicationTests(unittest.TestCase):
         route_references = [
             path
             for path in (source_root / "web/routes").glob("*.py")
-            if "undo_identity_verification_publication" in path.read_text(
-                encoding="utf-8"
-            )
+            if "undo_identity_verification_publication"
+            in path.read_text(encoding="utf-8")
         ]
         self.assertEqual(route_references, [])
         for path in protected:

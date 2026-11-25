@@ -33,9 +33,7 @@ def create_loci_flow_router(templates: Jinja2Templates) -> APIRouter:
                 "csrf_token": csrf_token_for_session(request.session),
                 "recovery_attention": (
                     "true"
-                    if request.app.state.current_recovery_admission_status
-                    .snapshot()
-                    .is_blocked
+                    if request.app.state.current_recovery_admission_status.snapshot().is_blocked
                     else "false"
                 ),
             },

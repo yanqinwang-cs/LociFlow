@@ -239,9 +239,7 @@ def canonical_reverse_evidence_digest(
     payload = {
         "state": eligibility.state.value,
         "reason": None if eligibility.reason is None else eligibility.reason.value,
-        "volume_admission": (
-            "same_volume" if eligibility.eligible else "not_admitted"
-        ),
+        "volume_admission": ("same_volume" if eligibility.eligible else "not_admitted"),
         "pairs": [
             {
                 "source": str(pair.source_relative_path),

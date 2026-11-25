@@ -16,7 +16,9 @@ LOCI = ROOT / "src" / "organizer" / "web" / "static" / "loci_flow"
 
 
 class WebLociFlowStageB3Tests(unittest.IsolatedAsyncioTestCase):
-    def test_production_app_wires_activity_undo_and_confirmed_movement_without_fixture(self) -> None:
+    def test_production_app_wires_activity_undo_and_confirmed_movement_without_fixture(
+        self,
+    ) -> None:
         app = (LOCI / "app.js").read_text(encoding="utf-8")
         api = (LOCI / "api.js").read_text(encoding="utf-8")
         data_source = (LOCI / "data_source.js").read_text(encoding="utf-8")
@@ -68,22 +70,45 @@ class WebLociFlowStageB3Tests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('import("./fixtures.json"', data_source)
         self.assertNotIn('from "./fixtures.json"', data_source)
 
-    def test_activity_is_loaded_on_startup_then_reused_by_activity_navigation(self) -> None:
+    def test_activity_is_loaded_on_startup_then_reused_by_activity_navigation(
+        self,
+    ) -> None:
         app = (LOCI / "app.js").read_text(encoding="utf-8")
-        load_current = app[app.index("async function loadCurrent"):app.index("async function loadActivity")]
-        check_files = app[app.index("async function checkFiles"):app.index("async function handleMutation")]
+        load_current = app[
+            app.index("async function loadCurrent") : app.index(
+                "async function loadActivity"
+            )
+        ]
+        check_files = app[
+            app.index("async function checkFiles") : app.index(
+                "async function handleMutation"
+            )
+        ]
         self.assertNotIn("loadActivity", load_current)
         self.assertNotIn("loadActivity", check_files)
-        self.assertIn('if (route === "activity" && previousRoute !== "activity") loadActivity();', app)
-        self.assertIn('if (nextRoute === "activity" && previousRoute !== "activity") loadActivity();', app)
+        self.assertIn(
+            'if (route === "activity" && previousRoute !== "activity") loadActivity();',
+            app,
+        )
+        self.assertIn(
+            'if (nextRoute === "activity" && previousRoute !== "activity") loadActivity();',
+            app,
+        )
         self.assertIn("loadActivity({ force: true });", app)
         self.assertIn('state.activity.loadStatus === "ready" && !refresh', app)
         self.assertIn("if (activityLoadPromise)", app)
-        self.assertIn('if (previousRoute === "activity" && nextRoute !== "activity") discardActivityPreview();', app)
+        self.assertIn(
+            'if (previousRoute === "activity" && nextRoute !== "activity") discardActivityPreview();',
+            app,
+        )
         self.assertIn('if (action === "retry-activity") return loadActivity();', app)
-        self.assertIn('routeLink?.dataset.route === "activity" && state.route === "activity"', app)
+        self.assertIn(
+            'routeLink?.dataset.route === "activity" && state.route === "activity"', app
+        )
 
-    async def test_real_durable_activity_and_undo_are_visible_through_existing_routes(self) -> None:
+    async def test_real_durable_activity_and_undo_are_visible_through_existing_routes(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             _, _, _, record = _verified_operation(root, 2)
@@ -91,12 +116,14 @@ class WebLociFlowStageB3Tests(unittest.IsolatedAsyncioTestCase):
                 (root / "Documents" / f"file-{index}.txt").read_bytes()
                 for index in range(2)
             ]
-            app = create_app(WebAppConfig(
-                root,
-                session_secret="s" * 32,
-                launch_token="t" * 32,
-                testing=True,
-            ))
+            app = create_app(
+                WebAppConfig(
+                    root,
+                    session_secret="s" * 32,
+                    launch_token="t" * 32,
+                    testing=True,
+                )
+            )
             async with _client(app) as client:
                 csrf = await _authenticate(client)
                 initial = await client.get("/api/activity")
@@ -124,25 +151,36 @@ class WebLociFlowStageB3Tests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(updated.json(), reloaded.json())
             self.assertEqual(updated.headers["cache-control"], "no-store")
             self.assertEqual(updated.json()["activity"][0]["type"], "restore")
-            self.assertFalse(any(entry["undoable"] for entry in updated.json()["activity"]))
+            self.assertFalse(
+                any(entry["undoable"] for entry in updated.json()["activity"])
+            )
             for index, expected in enumerate(moved_bytes):
                 source = root / "Inbox" / f"file-{index}.txt"
                 destination = root / "Documents" / f"file-{index}.txt"
                 self.assertEqual(source.read_bytes(), expected)
                 self.assertFalse(destination.exists())
             serialized = updated.text
-            for forbidden in (str(root), "sha256", "authorization_id", "legacy_operation_log"):
+            for forbidden in (
+                str(root),
+                "sha256",
+                "authorization_id",
+                "legacy_operation_log",
+            ):
                 self.assertNotIn(forbidden, serialized)
 
-    async def test_backend_movement_is_post_only_and_executor_out_of_routes(self) -> None:
+    async def test_backend_movement_is_post_only_and_executor_out_of_routes(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
-            app = create_app(WebAppConfig(
-                root,
-                session_secret="s" * 32,
-                launch_token="t" * 32,
-                testing=True,
-            ))
+            app = create_app(
+                WebAppConfig(
+                    root,
+                    session_secret="s" * 32,
+                    launch_token="t" * 32,
+                    testing=True,
+                )
+            )
             methods_by_path = {
                 route.path: set(route.methods or set())
                 for route in _application_routes(app.routes)
@@ -163,11 +201,11 @@ class WebLociFlowStageB3Tests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn(forbidden, methods_by_path)
         route_code = "\n".join(
             path.read_text(encoding="utf-8")
-            for path in sorted((ROOT / "src" / "organizer" / "web" / "routes").glob("*.py"))
+            for path in sorted(
+                (ROOT / "src" / "organizer" / "web" / "routes").glob("*.py")
+            )
         )
         self.assertNotRegex(route_code, r"(?:from|import)\s+organizer\.executor")
-
-
 
 
 async def _authenticate(client: httpx.AsyncClient) -> str:

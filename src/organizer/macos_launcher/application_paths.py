@@ -51,17 +51,9 @@ class MacOSApplicationPaths:
             locks=locks,
             root_locks=locks / "roots",
             caches=(
-                normalized_home
-                / "Library"
-                / "Caches"
-                / APPLICATION_DIRECTORY_NAME
+                normalized_home / "Library" / "Caches" / APPLICATION_DIRECTORY_NAME
             ),
-            logs=(
-                normalized_home
-                / "Library"
-                / "Logs"
-                / APPLICATION_DIRECTORY_NAME
-            ),
+            logs=(normalized_home / "Library" / "Logs" / APPLICATION_DIRECTORY_NAME),
         )
 
     @property

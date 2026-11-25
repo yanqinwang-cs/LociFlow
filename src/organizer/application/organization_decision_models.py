@@ -62,9 +62,7 @@ class OrganizationApprovalSummary:
             "pending_choices": self.pending_choices,
             "accepted_moves": self.accepted_moves,
             "kept_recommendations": self.kept_recommendations,
-            "duplicate_copies_for_future_bin": (
-                self.duplicate_copies_for_future_bin
-            ),
+            "duplicate_copies_for_future_bin": (self.duplicate_copies_for_future_bin),
             "choices_remaining": self.choices_remaining,
             "ready_for_approval": self.ready_for_approval,
             "files_to_move": self.files_to_move,
@@ -110,4 +108,3 @@ class OrganizationDecisionSession:
     duplicate_decisions: tuple[DuplicateChoiceDecision, ...]
     status: str
     approved_plan: ApprovedOrganizationPlan | None = None
-

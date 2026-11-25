@@ -30,9 +30,7 @@ class ReviewExplorerStoreTests(unittest.TestCase):
             )
             self.assertIsNotNone(completed.session)
 
-            running = store.snapshot(
-                ScanJobSnapshot(status="scanning", job_id="two")
-            )
+            running = store.snapshot(ScanJobSnapshot(status="scanning", job_id="two"))
             self.assertEqual(running.status, "scanning")
             self.assertIsNone(running.session)
 
@@ -60,7 +58,9 @@ class ReviewExplorerStoreTests(unittest.TestCase):
             second_snapshot = store.snapshot(
                 ScanJobSnapshot(status="completed", job_id="two", result=second)
             )
-            self.assertNotEqual(first_snapshot.generation_id, second_snapshot.generation_id)
+            self.assertNotEqual(
+                first_snapshot.generation_id, second_snapshot.generation_id
+            )
             self.assertIsNot(first_snapshot.session, second_snapshot.session)
 
     def test_all_public_review_mutations_reject_without_state_change(self) -> None:
@@ -122,7 +122,9 @@ class ReviewExplorerStoreTests(unittest.TestCase):
             self.assertIn(pending.preview_token, store._pending_page_decisions)
             self.assertEqual(lifecycle.snapshot().active_count, 0)
 
-    def test_admitted_review_save_stays_active_through_write_and_exception(self) -> None:
+    def test_admitted_review_save_stays_active_through_write_and_exception(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             result = scan_root(root)

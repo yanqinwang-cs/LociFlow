@@ -173,10 +173,7 @@ class WebServerTests(unittest.TestCase):
                 [
                     sys.executable,
                     "-c",
-                    (
-                        "from organizer.web.server import main; "
-                        "raise SystemExit(main())"
-                    ),
+                    ("from organizer.web.server import main; raise SystemExit(main())"),
                     "--root",
                     str(self.root),
                     "--no-browser",
@@ -230,9 +227,7 @@ class WebServerTests(unittest.TestCase):
 
     def test_dynamic_address_collision_retries_with_three_fresh_sockets(self) -> None:
         collisions = [
-            _FakeBindingSocket(
-                bind_error=OSError(errno.EADDRINUSE, "address in use")
-            )
+            _FakeBindingSocket(bind_error=OSError(errno.EADDRINUSE, "address in use"))
             for _ in range(server._MAX_DYNAMIC_BIND_ATTEMPTS)
         ]
         socket_constructor = Mock(side_effect=collisions)

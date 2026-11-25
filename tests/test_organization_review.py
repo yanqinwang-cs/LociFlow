@@ -85,11 +85,20 @@ class OrganizationReviewTests(unittest.TestCase):
         )
 
     def test_locked_anchor_risk_thresholds(self) -> None:
-        for file_count, expected in [(10, "low"), (11, "medium"), (50, "medium"), (51, "high")]:
+        for file_count, expected in [
+            (10, "low"),
+            (11, "medium"),
+            (50, "medium"),
+            (51, "high"),
+        ]:
             with self.subTest(file_count=file_count):
                 report = sample_report()
-                report["anchor_decisions"]["suggested_groups"][0]["file_count"] = file_count
-                report["rule_audit"]["rule_effects"][0]["matched_file_count"] = file_count
+                report["anchor_decisions"]["suggested_groups"][0]["file_count"] = (
+                    file_count
+                )
+                report["rule_audit"]["rule_effects"][0]["matched_file_count"] = (
+                    file_count
+                )
                 risks = {
                     item["risk_level"]
                     for item in build_organization_review(report)["items"]
@@ -115,8 +124,7 @@ class OrganizationReviewTests(unittest.TestCase):
         report["rule_audit"]["rule_effects"] = []
 
         risks = {
-            item["risk_level"]
-            for item in build_organization_review(report)["items"]
+            item["risk_level"] for item in build_organization_review(report)["items"]
         }
 
         self.assertEqual(risks, {"low"})
@@ -146,7 +154,9 @@ class OrganizationReviewTests(unittest.TestCase):
                 "warnings": ["No organization rules file found."],
             }
         )
-        report["anchor_decisions"]["suggested_groups"][0]["evidence"] = "year_variant_set"
+        report["anchor_decisions"]["suggested_groups"][0]["evidence"] = (
+            "year_variant_set"
+        )
 
         data = build_organization_review(report)
 
@@ -234,7 +244,10 @@ class OrganizationReviewTests(unittest.TestCase):
             self.assertTrue(output.exists())
 
     def test_optional_output_must_remain_under_root(self) -> None:
-        with tempfile.TemporaryDirectory() as directory, tempfile.TemporaryDirectory() as outside:
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            tempfile.TemporaryDirectory() as outside,
+        ):
             root = Path(directory)
 
             with self.assertRaises(ValueError):
@@ -247,7 +260,10 @@ class OrganizationReviewTests(unittest.TestCase):
     def test_optional_output_rejects_symlink_parent_escape(self) -> None:
         if not hasattr(os, "symlink"):
             self.skipTest("symlinks are not supported")
-        with tempfile.TemporaryDirectory() as directory, tempfile.TemporaryDirectory() as outside:
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            tempfile.TemporaryDirectory() as outside,
+        ):
             root = Path(directory)
             link = root / "linked"
             try:
@@ -303,19 +319,45 @@ class OrganizationReviewTests(unittest.TestCase):
                 {**data["items"][1], "review_id": data["items"][0]["review_id"]},
             ),
             "invalid id": lambda data: data["items"][0].__setitem__("review_id", "O1"),
-            "invalid decision": lambda data: data["items"][0].__setitem__("decision", "accept"),
-            "absolute source": lambda data: data["items"][0].__setitem__("source", "/tmp/a.pdf"),
-            "windows absolute source": lambda data: data["items"][0].__setitem__("source", "C:/tmp/a.pdf"),
-            "traversal source": lambda data: data["items"][0].__setitem__("source", "../a.pdf"),
-            "absolute destination": lambda data: data["items"][0].__setitem__("destination", "/tmp/a.pdf"),
-            "traversal destination": lambda data: data["items"][0].__setitem__("destination", "Organized/../a.pdf"),
-            "wrong namespace": lambda data: data["items"][0].__setitem__("destination", "AI_Review/a.pdf"),
-            "path anchor": lambda data: data["items"][0].__setitem__("anchor", "course/name"),
-            "windows path anchor": lambda data: data["items"][0].__setitem__("anchor", "C:course"),
-            "low confidence": lambda data: data["items"][0].__setitem__("confidence", -1),
-            "high confidence": lambda data: data["items"][0].__setitem__("confidence", 101),
-            "unknown risk": lambda data: data["items"][0].__setitem__("risk_level", "extreme"),
-            "nonboolean overwrite": lambda data: data["items"][0].__setitem__("overwrite_risk", 0),
+            "invalid decision": lambda data: data["items"][0].__setitem__(
+                "decision", "accept"
+            ),
+            "absolute source": lambda data: data["items"][0].__setitem__(
+                "source", "/tmp/a.pdf"
+            ),
+            "windows absolute source": lambda data: data["items"][0].__setitem__(
+                "source", "C:/tmp/a.pdf"
+            ),
+            "traversal source": lambda data: data["items"][0].__setitem__(
+                "source", "../a.pdf"
+            ),
+            "absolute destination": lambda data: data["items"][0].__setitem__(
+                "destination", "/tmp/a.pdf"
+            ),
+            "traversal destination": lambda data: data["items"][0].__setitem__(
+                "destination", "Organized/../a.pdf"
+            ),
+            "wrong namespace": lambda data: data["items"][0].__setitem__(
+                "destination", "AI_Review/a.pdf"
+            ),
+            "path anchor": lambda data: data["items"][0].__setitem__(
+                "anchor", "course/name"
+            ),
+            "windows path anchor": lambda data: data["items"][0].__setitem__(
+                "anchor", "C:course"
+            ),
+            "low confidence": lambda data: data["items"][0].__setitem__(
+                "confidence", -1
+            ),
+            "high confidence": lambda data: data["items"][0].__setitem__(
+                "confidence", 101
+            ),
+            "unknown risk": lambda data: data["items"][0].__setitem__(
+                "risk_level", "extreme"
+            ),
+            "nonboolean overwrite": lambda data: data["items"][0].__setitem__(
+                "overwrite_risk", 0
+            ),
             "malformed note": lambda data: data["items"][0].__setitem__("note", []),
         }
         for name, mutate in cases.items():
@@ -384,9 +426,13 @@ class OrganizationReviewTests(unittest.TestCase):
                 ("--confirm", "ANYTHING"),
             ]:
                 with self.subTest(incompatible=incompatible):
-                    result = run_cli(root, "--export-organization-review", *incompatible)
+                    result = run_cli(
+                        root, "--export-organization-review", *incompatible
+                    )
                     self.assertNotEqual(result.returncode, 0)
-                    self.assertIn("may be combined only with --max-depth", result.stderr)
+                    self.assertIn(
+                        "may be combined only with --max-depth", result.stderr
+                    )
 
     def test_output_flag_requires_export_mode(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -400,7 +446,12 @@ class OrganizationReviewTests(unittest.TestCase):
             self.assertIn("requires --export-organization-review", result.stderr)
 
     def test_module_has_no_movement_dependency(self) -> None:
-        module_path = Path(__file__).resolve().parents[1] / "src" / "organizer" / "organization_review.py"
+        module_path = (
+            Path(__file__).resolve().parents[1]
+            / "src"
+            / "organizer"
+            / "organization_review.py"
+        )
         source = module_path.read_text(encoding="utf-8")
 
         self.assertNotIn("exec" + "utor", source)

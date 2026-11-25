@@ -67,7 +67,9 @@ class WebAppTests(unittest.IsolatedAsyncioTestCase):
                 )
             )
 
-    async def test_concurrent_launch_requests_authenticate_only_one_client(self) -> None:
+    async def test_concurrent_launch_requests_authenticate_only_one_client(
+        self,
+    ) -> None:
         async def launch_once() -> httpx.Response:
             async with _client(self.app) as client:
                 return await client.get(
@@ -211,7 +213,9 @@ class WebAppTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(localhost.status_code, 200)
         self.assertEqual(testing.status_code, 200)
 
-    async def test_security_headers_cover_pages_redirects_errors_and_health(self) -> None:
+    async def test_security_headers_cover_pages_redirects_errors_and_health(
+        self,
+    ) -> None:
         async with _client(self.app) as client:
             responses = [
                 await client.get("/healthz"),

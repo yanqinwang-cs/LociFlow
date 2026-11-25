@@ -51,11 +51,16 @@ class ProjectContextPathTests(unittest.TestCase):
             (project / "notes.txt").write_text("notes", encoding="utf-8")
             metadata = scan_directory(root)
 
-            self.assertTrue(is_project_context_path(Path("project/notes.txt"), metadata))
+            self.assertTrue(
+                is_project_context_path(Path("project/notes.txt"), metadata)
+            )
 
     def test_setup_py_and_cmake_mark_a_code_project(self) -> None:
         for marker in ("setup.py", "setup.cfg", "CMakeLists.txt"):
-            with self.subTest(marker=marker), tempfile.TemporaryDirectory() as directory:
+            with (
+                self.subTest(marker=marker),
+                tempfile.TemporaryDirectory() as directory,
+            ):
                 root = Path(directory)
                 project = root / "project"
                 project.mkdir()
@@ -67,7 +72,9 @@ class ProjectContextPathTests(unittest.TestCase):
                     is_project_context_path(Path("project/notes.txt"), metadata)
                 )
 
-    def test_scan_started_inside_a_repository_subfolder_is_project_context(self) -> None:
+    def test_scan_started_inside_a_repository_subfolder_is_project_context(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             repository = Path(directory)
             (repository / ".git").mkdir()
@@ -104,7 +111,9 @@ class ProjectContextPathTests(unittest.TestCase):
             (project / "notes.txt").write_text("notes", encoding="utf-8")
             metadata = scan_directory(root)
             notes = [
-                item for item in metadata if item.relative_path == Path("project/notes.txt")
+                item
+                for item in metadata
+                if item.relative_path == Path("project/notes.txt")
             ][0]
 
             self.assertFalse(is_actionable_plan_eligible(notes, metadata))
@@ -114,7 +123,9 @@ class ProjectContextPathTests(unittest.TestCase):
             root = Path(directory)
             (root / "notes.txt").write_text("notes", encoding="utf-8")
             metadata = scan_directory(root)
-            notes = [item for item in metadata if item.relative_path == Path("notes.txt")][0]
+            notes = [
+                item for item in metadata if item.relative_path == Path("notes.txt")
+            ][0]
 
             self.assertTrue(is_actionable_plan_eligible(notes, metadata))
 
@@ -127,7 +138,9 @@ class ProjectContextPathTests(unittest.TestCase):
             (project / "notes.txt").write_text("notes", encoding="utf-8")
             metadata = scan_directory(root)
             notes = next(
-                item for item in metadata if item.relative_path == Path("project/notes.txt")
+                item
+                for item in metadata
+                if item.relative_path == Path("project/notes.txt")
             )
 
             evaluation = evaluate_actionable_plan_eligibility(notes, metadata)
@@ -135,7 +148,9 @@ class ProjectContextPathTests(unittest.TestCase):
             self.assertFalse(evaluation.allowed)
             self.assertEqual(evaluation.reason_code, PROJECT_PROTECTION_REASON)
             self.assertEqual(evaluation.standard_id, PROJECT_PROTECTION_STANDARD_ID)
-            self.assertEqual(is_actionable_plan_eligible(notes, metadata), evaluation.allowed)
+            self.assertEqual(
+                is_actionable_plan_eligible(notes, metadata), evaluation.allowed
+            )
 
     def test_submission_and_shared_protections_emit_stable_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -156,7 +171,11 @@ class ProjectContextPathTests(unittest.TestCase):
 
             self.assertEqual(
                 (submission.allowed, submission.reason_code, submission.standard_id),
-                (False, SUBMISSION_PROTECTION_REASON, SUBMISSION_PROTECTION_STANDARD_ID),
+                (
+                    False,
+                    SUBMISSION_PROTECTION_REASON,
+                    SUBMISSION_PROTECTION_STANDARD_ID,
+                ),
             )
             self.assertEqual(
                 (shared.allowed, shared.reason_code, shared.standard_id),
@@ -227,7 +246,9 @@ class GeneratedAndProjectOutputContextTests(unittest.TestCase):
             path.write_text("notes", encoding="utf-8")
             metadata = scan_directory(root)
             file = [
-                item for item in metadata if item.relative_path == Path("course_resources/CS1010X notes.pdf")
+                item
+                for item in metadata
+                if item.relative_path == Path("course_resources/CS1010X notes.pdf")
             ][0]
 
             self.assertTrue(is_actionable_plan_eligible(file, metadata))

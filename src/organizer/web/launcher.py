@@ -301,9 +301,7 @@ def launch(
                 runtime_handle=runtime_handle,
             )
     finally:
-        release_error = (
-            _release_root_lease(lease) if owns_lease else None
-        )
+        release_error = _release_root_lease(lease) if owns_lease else None
     return _apply_release_error(result, release_error)
 
 

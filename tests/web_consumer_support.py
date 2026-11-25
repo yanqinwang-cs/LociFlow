@@ -40,9 +40,7 @@ class ConsumerWebFixture:
         self.controller = ScanJobController(
             self.root,
             scan=lambda _: self.result,
-            write_report=lambda _: (
-                self.root / "AI_Review" / "reports" / "scan.json"
-            ),
+            write_report=lambda _: self.root / "AI_Review" / "reports" / "scan.json",
         )
         self.controller._snapshot = ScanJobSnapshot(
             status="completed",
@@ -87,7 +85,9 @@ class ConsumerWebFixture:
         return snapshot.session
 
     def decision(self, item_id: str) -> str:
-        return next(item.decision for item in self.session().items if item.id == item_id)
+        return next(
+            item.decision for item in self.session().items if item.id == item_id
+        )
 
     def file_snapshot(self) -> dict[str, bytes]:
         return {

@@ -141,7 +141,9 @@ class HtmlReportOutputTests(unittest.TestCase):
             root = Path(directory)
             json_path = root / "AI_Review" / "reports" / "example_report.json"
 
-            html_path = write_html_report(sample_report(), root, json_report_path=json_path)
+            html_path = write_html_report(
+                sample_report(), root, json_report_path=json_path
+            )
 
             self.assertEqual(html_path.parent, root.resolve() / "AI_Review" / "reports")
             self.assertTrue(html_path.name.endswith("_report.html"))
@@ -220,7 +222,9 @@ class HtmlReportCliTests(unittest.TestCase):
             self.assertTrue(html_path.exists())
             self.assertTrue(json_path.exists())
             self.assertEqual(html_path.suffix, ".html")
-            self.assertEqual(json.loads(json_path.read_text(encoding="utf-8"))["schema_version"], 1)
+            self.assertEqual(
+                json.loads(json_path.read_text(encoding="utf-8"))["schema_version"], 1
+            )
             self.assertFalse((root / "AI_Review" / "operation_logs").exists())
             self.assertTrue((root / "a.txt").exists())
             self.assertTrue((root / "subdir" / "b.txt").exists())
@@ -236,7 +240,9 @@ class HtmlReportCliTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn(str(output), result.stdout)
             self.assertTrue(output.exists())
-            self.assertTrue(list((root / "AI_Review" / "reports").glob("*_report.json")))
+            self.assertTrue(
+                list((root / "AI_Review" / "reports").glob("*_report.json"))
+            )
 
     def test_cli_html_report_rejects_incompatible_flags(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -291,7 +297,9 @@ class HtmlReportCliTests(unittest.TestCase):
             report_path = write_report(build_scan_report(root), root)
 
             self.assertEqual(report_path.suffix, ".json")
-            self.assertEqual(json.loads(report_path.read_text(encoding="utf-8"))["schema_version"], 1)
+            self.assertEqual(
+                json.loads(report_path.read_text(encoding="utf-8"))["schema_version"], 1
+            )
 
 
 def sample_report() -> dict[str, object]:
@@ -409,7 +417,7 @@ def sample_report() -> dict[str, object]:
                 "category": "orphan_code",
                 "reason": "isolated code file is outside a detected project context",
                 "confidence": 65,
-            }
+            },
         ],
         "review_candidate_plan": [
             {

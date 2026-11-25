@@ -110,10 +110,9 @@ def build_v2_organization_intent(
         capture = capture_by_id[move.change_id]
         if not isinstance(capture, CapturedRegularFileIdentity):
             raise ValueError("identity capture is invalid")
-        if (
-            not isinstance(capture.content_identity, RegularFileContentIdentity)
-            or not isinstance(capture.stat_fingerprint, RegularFileStatFingerprint)
-        ):
+        if not isinstance(
+            capture.content_identity, RegularFileContentIdentity
+        ) or not isinstance(capture.stat_fingerprint, RegularFileStatFingerprint):
             raise ValueError("identity capture is invalid")
         if capture.stat_fingerprint.file_type != "regular_file":
             raise ValueError("identity capture item type is unsupported")

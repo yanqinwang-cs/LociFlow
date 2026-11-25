@@ -75,17 +75,23 @@ class DuplicateBinMovementServiceTests(unittest.TestCase):
                     filesystem_operation_admission=admission,
                 )
 
-            self.assertEqual(owners.authorizations.path.read_bytes(), authorization_before)
+            self.assertEqual(
+                owners.authorizations.path.read_bytes(), authorization_before
+            )
             self.assertEqual(owners.batches.catalog_path.read_bytes(), catalog_before)
             self.assertEqual(owners.operations.list_records(), ())
             self.assertTrue(
-                all((owners.root / item.previous_relative_path).is_file() for item in owners.batch.items)
+                all(
+                    (owners.root / item.previous_relative_path).is_file()
+                    for item in owners.batch.items
+                )
             )
             self.assertEqual(
                 owners.coordinator.runtime_lifecycle.snapshot().active_count, 0
             )
             self.assertTrue(owners.coordinator.try_acquire())
             owners.coordinator.release()
+
     def test_stopping_rejects_preview_without_superseding_authorization(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             owners = _owners(Path(directory).resolve(), selected=1)

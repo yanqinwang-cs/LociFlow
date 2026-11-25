@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-from pathlib import Path
 import shutil
 import subprocess
 import sys
+from pathlib import Path
 
 from PIL import Image
-
 
 PACKAGING_ROOT = Path(__file__).resolve().parent
 SOURCE_ICON = PACKAGING_ROOT / "icon" / "loci-flow-app-icon-1024.png"
@@ -54,9 +53,7 @@ def generate_icon(
                     "release icon source must be exactly 1024 by 1024"
                 )
             if opened.mode != "RGBA":
-                raise IconGenerationError(
-                    "release icon source must use RGBA colour"
-                )
+                raise IconGenerationError("release icon source must use RGBA colour")
             source = opened.copy()
     except IconGenerationError:
         raise
@@ -90,9 +87,7 @@ def generate_icon(
         )
         with Image.open(destination) as generated:
             if generated.size != (size, size) or generated.mode != "RGBA":
-                raise IconGenerationError(
-                    f"generated icon size is invalid: {filename}"
-                )
+                raise IconGenerationError(f"generated icon size is invalid: {filename}")
 
     completed = subprocess.run(
         [
@@ -137,4 +132,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

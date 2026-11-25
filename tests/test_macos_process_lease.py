@@ -191,9 +191,7 @@ class MacOSProcessLeaseTests(unittest.TestCase):
             now=lambda: datetime(2026, 1, 2, tzinfo=UTC),
             nonce_factory=lambda: "a" * 32,
         ):
-            lock_path = self.paths.root_lock_path(
-                canonical_root_lock_key(self.root)
-            )
+            lock_path = self.paths.root_lock_path(canonical_root_lock_key(self.root))
             before = lock_path.read_bytes()
             self.assertEqual(self._child_attempt("root"), "already_held")
             self.assertEqual(lock_path.read_bytes(), before)
@@ -208,9 +206,7 @@ class MacOSProcessLeaseTests(unittest.TestCase):
             now=lambda: datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC),
             nonce_factory=lambda: "b" * 32,
         ):
-            lock_path = self.paths.root_lock_path(
-                canonical_root_lock_key(self.root)
-            )
+            lock_path = self.paths.root_lock_path(canonical_root_lock_key(self.root))
             raw = lock_path.read_text(encoding="utf-8")
             metadata = json.loads(raw)
 
@@ -357,9 +353,7 @@ class MacOSProcessLeaseTests(unittest.TestCase):
         )
         protected_sources = [
             REPOSITORY_ROOT / "src" / "organizer" / "web" / "app.py",
-            *(
-                REPOSITORY_ROOT / "src" / "organizer" / "web" / "routes"
-            ).glob("*.py"),
+            *(REPOSITORY_ROOT / "src" / "organizer" / "web" / "routes").glob("*.py"),
         ]
         protected_combined = "\n".join(
             path.read_text(encoding="utf-8") for path in protected_sources
@@ -395,11 +389,7 @@ class MacOSProcessLeaseTests(unittest.TestCase):
                 "    print(error.code, flush=True)",
                 "else:",
                 "    print('acquired', flush=True)",
-                (
-                    "    os._exit(0)"
-                    if exit_without_release
-                    else "    lease.release()"
-                ),
+                ("    os._exit(0)" if exit_without_release else "    lease.release()"),
             )
         )
         environment = dict(os.environ)

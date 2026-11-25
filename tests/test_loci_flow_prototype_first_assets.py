@@ -36,8 +36,7 @@ class _StructureParser(HTMLParser):
         attrs: list[tuple[str, str | None]],
     ) -> None:
         if tag == "meta" and any(
-            ("name", name) in attrs
-            for name in ("csrf-token", "recovery-attention")
+            ("name", name) in attrs for name in ("csrf-token", "recovery-attention")
         ):
             return
         normalized = []
@@ -144,10 +143,11 @@ class LociFlowPrototypeFirstAssetTests(unittest.TestCase):
         ):
             self.assertIn(required, views)
 
-    def test_production_frontend_uses_backend_and_retains_explicit_test_fixtures(self) -> None:
+    def test_production_frontend_uses_backend_and_retains_explicit_test_fixtures(
+        self,
+    ) -> None:
         javascript = "\n".join(
-            path.read_text(encoding="utf-8")
-            for path in sorted(LIVE.glob("*.js"))
+            path.read_text(encoding="utf-8") for path in sorted(LIVE.glob("*.js"))
         )
         lower = javascript.lower()
         for forbidden in (
@@ -163,12 +163,16 @@ class LociFlowPrototypeFirstAssetTests(unittest.TestCase):
         ):
             self.assertNotIn(forbidden, lower)
         self.assertTrue((LIVE / "api.js").exists())
-        self.assertIn('const current_organization_url = "/api/organization/current"', lower)
+        self.assertIn(
+            'const current_organization_url = "/api/organization/current"', lower
+        )
         self.assertIn('const scan_url = "/scan?surface=home"', lower)
         data_source = (LIVE / "data_source.js").read_text(encoding="utf-8")
         self.assertIn('import("./fixtures.json"', data_source)
         self.assertNotIn('from "./fixtures.json"', data_source)
-        self.assertNotIn("createFixtureDataSource", (LIVE / "app.js").read_text(encoding="utf-8"))
+        self.assertNotIn(
+            "createFixtureDataSource", (LIVE / "app.js").read_text(encoding="utf-8")
+        )
 
     def test_no_external_assets_or_prohibited_product_language(self) -> None:
         authored = [

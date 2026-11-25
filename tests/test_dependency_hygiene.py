@@ -18,7 +18,9 @@ class DependencyHygieneTests(unittest.TestCase):
         self.assertNotEqual(project["description"], "Add your description here")
         self.assertEqual(project["requires-python"], ">=3.13")
         self.assertFalse(any("openai" in dependency for dependency in dependencies))
-        self.assertFalse(any("python-dotenv" in dependency for dependency in dependencies))
+        self.assertFalse(
+            any("python-dotenv" in dependency for dependency in dependencies)
+        )
         self.assertEqual(
             set(project["optional-dependencies"]),
             {"web", "web-test", "macos-launcher", "macos-build"},
@@ -28,7 +30,9 @@ class DependencyHygieneTests(unittest.TestCase):
             ["pillow==12.3.0", "pyinstaller==6.16.0"],
         )
         self.assertEqual(data["tool"]["setuptools"]["package-dir"], {"": "src"})
-        self.assertEqual(data["tool"]["setuptools"]["packages"]["find"]["where"], ["src"])
+        self.assertEqual(
+            data["tool"]["setuptools"]["packages"]["find"]["where"], ["src"]
+        )
 
     def test_lockfile_has_no_cloud_dependencies(self) -> None:
         lock = (REPOSITORY_ROOT / "uv.lock").read_text(encoding="utf-8").lower()
@@ -70,7 +74,9 @@ class DependencyHygieneTests(unittest.TestCase):
             self.assertNotIn(web_import, non_web_combined)
 
         self.assertTrue((source_root / "web").is_dir())
-        self.assertFalse((source_root / "application" / "preflight_service.py").exists())
+        self.assertFalse(
+            (source_root / "application" / "preflight_service.py").exists()
+        )
 
     def test_no_secret_or_environment_file_is_tracked(self) -> None:
         result = subprocess.run(

@@ -111,7 +111,7 @@ class MacOSSigningContractTests(unittest.TestCase):
                 "identity_wrong_type",
             ),
             (
-                f'  1) {FINGERPRINT} '
+                f"  1) {FINGERPRINT} "
                 '"Developer ID Application: Example (OTHERID123)"\n',
                 "identity_wrong_team",
             ),
@@ -124,9 +124,7 @@ class MacOSSigningContractTests(unittest.TestCase):
                 self.assertEqual(raised.exception.code, expected)
 
     def test_certificate_team_and_expiry_are_validated(self) -> None:
-        self.runner.openssl_output = (
-            _certificate_details("OTHERID123")
-        )
+        self.runner.openssl_output = _certificate_details("OTHERID123")
         with self.assertRaises(SigningContractError) as wrong_team:
             self.sign()
         self.assertEqual(
@@ -134,9 +132,7 @@ class MacOSSigningContractTests(unittest.TestCase):
             "certificate_wrong_team",
         )
 
-        self.runner.openssl_output = (
-            _certificate_details(TEAM_ID)
-        )
+        self.runner.openssl_output = _certificate_details(TEAM_ID)
         self.runner.openssl_returncode = 1
         with self.assertRaises(SigningContractError) as expired:
             self.sign()
@@ -159,9 +155,7 @@ class MacOSSigningContractTests(unittest.TestCase):
 
     def test_safe_errors_redact_fingerprint_and_raw_tool_output(self) -> None:
         self.runner.identity_returncode = 1
-        self.runner.identity_output = (
-            f"{FINGERPRINT} /private/keychain secret-account"
-        )
+        self.runner.identity_output = f"{FINGERPRINT} /private/keychain secret-account"
 
         with self.assertRaises(SigningContractError) as raised:
             self.sign()
@@ -247,11 +241,13 @@ class MacOSSigningContractTests(unittest.TestCase):
 
         self.assertEqual(
             self.runner.commands_for("/usr/bin/ditto"),
-            [[
-                "/usr/bin/ditto",
-                str(self.source.resolve()),
-                result.signed_staging_app_path,
-            ]],
+            [
+                [
+                    "/usr/bin/ditto",
+                    str(self.source.resolve()),
+                    result.signed_staging_app_path,
+                ]
+            ],
         )
         self.assertEqual(_tree_snapshot(self.source), original)
 
@@ -263,10 +259,7 @@ class MacOSSigningContractTests(unittest.TestCase):
             if "--sign" in command
         ]
         expected_nested = [
-            str(
-                Path(result.signed_staging_app_path)
-                / record.relative_path
-            )
+            str(Path(result.signed_staging_app_path) / record.relative_path)
             for record in self.validator.result.macho_files
             if record.relative_path != "Contents/MacOS/Loci Flow"
         ]
@@ -368,21 +361,25 @@ class MacOSSigningContractTests(unittest.TestCase):
         ]
         self.assertEqual(len(entitlement_commands), 13)
         self.assertTrue(
-            all(command[1:4] == ["-d", "--entitlements", ":-"]
-                for command in entitlement_commands)
+            all(
+                command[1:4] == ["-d", "--entitlements", ":-"]
+                for command in entitlement_commands
+            )
         )
         self.assertEqual(self.validator.calls, 3)
         self.assertEqual(
             self.runner.workflow_commands,
-            [[
-                str(
-                    Path(result.signed_staging_app_path)
-                    / "Contents"
-                    / "MacOS"
-                    / "Loci Flow"
-                ),
-                "--packaging-workflow-acceptance",
-            ]],
+            [
+                [
+                    str(
+                        Path(result.signed_staging_app_path)
+                        / "Contents"
+                        / "MacOS"
+                        / "Loci Flow"
+                    ),
+                    "--packaging-workflow-acceptance",
+                ]
+            ],
         )
         self.assertEqual(result.native_code_count, 12)
         self.assertEqual(result.hardened_runtime, "passed")
@@ -417,9 +414,7 @@ class MacOSSigningContractTests(unittest.TestCase):
                         release_staging_root=self.staging_root,
                     )
                 self.assertEqual(raised.exception.code, expected)
-                self.assertFalse(
-                    (self.staging / "Loci Flow.app").exists()
-                )
+                self.assertFalse((self.staging / "Loci Flow.app").exists())
 
     def test_ad_hoc_post_sign_state_cannot_satisfy_acceptance(self) -> None:
         self.runner.post_sign_ad_hoc = True
@@ -448,25 +443,17 @@ class MacOSDeveloperIDAcceptanceTests(unittest.TestCase):
     @unittest.skipUnless(
         os.environ.get("LOCI_FLOW_DEVELOPER_ID_FINGERPRINT")
         and os.environ.get("LOCI_FLOW_DEVELOPER_TEAM_ID")
-        and (
-            PACKAGING_ROOT / "dist" / "Loci Flow.app"
-        ).is_dir(),
+        and (PACKAGING_ROOT / "dist" / "Loci Flow.app").is_dir(),
         "a valid Developer ID identity and fresh P2-B3 app are required",
     )
     def test_real_same_team_identity_with_no_entitlements(self) -> None:
         result = sign_application(
             source_app=PACKAGING_ROOT / "dist" / "Loci Flow.app",
             staging_directory=(
-                PACKAGING_ROOT
-                / "release-staging"
-                / "developer-id-acceptance"
+                PACKAGING_ROOT / "release-staging" / "developer-id-acceptance"
             ),
-            identity_fingerprint=os.environ[
-                "LOCI_FLOW_DEVELOPER_ID_FINGERPRINT"
-            ],
-            expected_team_id=os.environ[
-                "LOCI_FLOW_DEVELOPER_TEAM_ID"
-            ],
+            identity_fingerprint=os.environ["LOCI_FLOW_DEVELOPER_ID_FINGERPRINT"],
+            expected_team_id=os.environ["LOCI_FLOW_DEVELOPER_TEAM_ID"],
         )
 
         self.assertEqual(result.hardened_runtime, "passed")
@@ -520,13 +507,10 @@ class _SigningRunner:
         self.staging = staging
         self.commands: list[list[str]] = []
         self.identity_output = (
-            f'  1) {FINGERPRINT} "{DISPLAY_NAME}"\n'
-            "     1 valid identities found\n"
+            f'  1) {FINGERPRINT} "{DISPLAY_NAME}"\n     1 valid identities found\n'
         )
         self.identity_returncode = 0
-        self.openssl_output = (
-            _certificate_details(TEAM_ID)
-        )
+        self.openssl_output = _certificate_details(TEAM_ID)
         self.openssl_returncode = 0
         self.fail_signing_number: int | None = None
         self.signed_team_id = TEAM_ID
@@ -540,9 +524,7 @@ class _SigningRunner:
         self.workflow_commands: list[list[str]] = []
 
     def commands_for(self, executable: str) -> list[list[str]]:
-        return [
-            command for command in self.commands if command[0] == executable
-        ]
+        return [command for command in self.commands if command[0] == executable]
 
     def __call__(self, command, **_kwargs):
         command = list(command)
@@ -582,10 +564,7 @@ class _SigningRunner:
             return _completed(command)
         if command[0] == "/usr/bin/codesign":
             return self._codesign(command)
-        if (
-            len(command) == 2
-            and command[1] == "--packaging-workflow-acceptance"
-        ):
+        if len(command) == 2 and command[1] == "--packaging-workflow-acceptance":
             self.workflow_commands.append(command)
             return _completed(command)
         if command[0] == "/usr/sbin/spctl":
@@ -595,16 +574,10 @@ class _SigningRunner:
     def _codesign(self, command: list[str]):
         if "--sign" in command:
             self.signing_commands.append(command)
-            if (
-                self.mutate_source_during_signing
-                and len(self.signing_commands) == 1
-            ):
-                (
-                    self.source
-                    / "Contents"
-                    / "Resources"
-                    / "mutable"
-                ).write_text("changed", encoding="utf-8")
+            if self.mutate_source_during_signing and len(self.signing_commands) == 1:
+                (self.source / "Contents" / "Resources" / "mutable").write_text(
+                    "changed", encoding="utf-8"
+                )
             if self.fail_signing_number == len(self.signing_commands):
                 return _completed(command, 1, stderr="private signing error")
             return _completed(command)

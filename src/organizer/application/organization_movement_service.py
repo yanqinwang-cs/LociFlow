@@ -148,9 +148,7 @@ def preview_organization_movement(
                 )
                 blocking = operation_repository.blocking_record()
             except ValueError as error:
-                raise OrganizationMovementError(
-                    "movement_recovery_required"
-                ) from error
+                raise OrganizationMovementError("movement_recovery_required") from error
             if existing is not None:
                 raise OrganizationMovementError("movement_already_started")
             if blocking is not None:
@@ -159,11 +157,8 @@ def preview_organization_movement(
                     if blocking.status == STATUS_INTERRUPTED
                     else "movement_or_undo_in_progress"
                 )
-            admission = (
-                filesystem_operation_admission
-                or FilesystemOperationAdmission(
-                    FilesystemOperationInspector(operation_repository.root)
-                )
+            admission = filesystem_operation_admission or FilesystemOperationAdmission(
+                FilesystemOperationInspector(operation_repository.root)
             )
             if admission.root != operation_repository.root:
                 raise OrganizationMovementError("approved_plan_stale")
@@ -209,9 +204,7 @@ def execute_organization_movement(
     operation_repository: OrganizationOperationRepository,
     filesystem_operation_admission: FilesystemOperationAdmission | None = None,
     volume_admission: OrganizationVolumeAdmission | None = None,
-    identity_execution_service: (
-        OrganizationIdentityExecutionService | None
-    ) = None,
+    identity_execution_service: (OrganizationIdentityExecutionService | None) = None,
     recovery_status: CurrentRecoveryAdmissionStatus | None = None,
 ) -> OrganizationExecutionState:
     """Revalidate server state and execute the identity-safe v2 movement path."""
@@ -248,9 +241,7 @@ def execute_organization_movement(
             )
             blocking = operation_repository.blocking_record()
         except ValueError as error:
-            raise OrganizationMovementError(
-                "movement_recovery_required"
-            ) from error
+            raise OrganizationMovementError("movement_recovery_required") from error
         if existing is not None:
             if existing.authorization_id != authorization.authorization_id:
                 raise OrganizationMovementError("movement_already_started")
@@ -347,8 +338,12 @@ def _record_state(
         status=status or record.status,
         operation_id=record.operation_id,
         files_expected=len(record.expected_moves),
-        files_moved=sum(move.result_state == MOVE_MOVED for move in record.expected_moves),
-        files_failed=sum(move.result_state == MOVE_FAILED for move in record.expected_moves),
+        files_moved=sum(
+            move.result_state == MOVE_MOVED for move in record.expected_moves
+        ),
+        files_failed=sum(
+            move.result_state == MOVE_FAILED for move in record.expected_moves
+        ),
         files_unattempted=sum(
             move.result_state in {MOVE_PENDING, MOVE_UNATTEMPTED}
             for move in record.expected_moves

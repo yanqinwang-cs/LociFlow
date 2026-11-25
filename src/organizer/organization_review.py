@@ -118,13 +118,17 @@ def build_organization_review(report: dict[str, Any]) -> dict[str, Any]:
             if not isinstance(destination, str):
                 raise ValueError("organization suggestion destination must be a string")
             if not isinstance(reason, str) or not reason.strip():
-                raise ValueError("organization suggestion reason must be a non-empty string")
+                raise ValueError(
+                    "organization suggestion reason must be a non-empty string"
+                )
             if type(confidence) is not int or not 0 <= confidence <= 100:
                 raise ValueError(
                     "organization suggestion confidence must be an integer from 0 to 100"
                 )
             if not isinstance(overwrite_risk, bool):
-                raise ValueError("organization suggestion overwrite_risk must be a boolean")
+                raise ValueError(
+                    "organization suggestion overwrite_risk must be a boolean"
+                )
 
             rows.append(
                 {
@@ -169,9 +173,7 @@ def build_organization_review(report: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("report rule_audit.rules_path must be a string or null")
 
     warnings = _string_list(rule_audit.get("warnings", []), "rule_audit.warnings")
-    warnings.extend(
-        _broad_locked_anchor_warnings(locked_counts, anchor_decisions)
-    )
+    warnings.extend(_broad_locked_anchor_warnings(locked_counts, anchor_decisions))
     if not items:
         warnings.append("No organization suggestions were available for review.")
 
@@ -210,9 +212,13 @@ def export_organization_review(
             resolved_root / DEFAULT_ORGANIZATION_REVIEW_PATH
         )
     else:
-        destination = output_path if output_path.is_absolute() else resolved_root / output_path
+        destination = (
+            output_path if output_path.is_absolute() else resolved_root / output_path
+        )
         if os.path.lexists(destination):
-            raise ValueError(f"organization review output already exists: {output_path}")
+            raise ValueError(
+                f"organization review output already exists: {output_path}"
+            )
 
     resolved_destination = validate_report_output_path(destination, resolved_root)
     data = build_organization_review(report)
@@ -248,7 +254,9 @@ def validate_organization_review_data(data: object) -> dict[str, Any]:
     if not isinstance(data, dict):
         raise ValueError("organization review must contain a JSON object")
     _require_exact_fields(data, _TOP_LEVEL_FIELDS, "organization review")
-    if not is_json_version(data.get("schema_version"), ORGANIZATION_REVIEW_SCHEMA_VERSION):
+    if not is_json_version(
+        data.get("schema_version"), ORGANIZATION_REVIEW_SCHEMA_VERSION
+    ):
         raise ValueError("organization review schema_version must be 1")
     if data.get("source") != ORGANIZATION_REVIEW_SOURCE:
         raise ValueError("organization review source is invalid")
@@ -421,7 +429,9 @@ def _validate_timestamp(value: object) -> None:
     try:
         timestamp = datetime.fromisoformat(value)
     except ValueError as error:
-        raise ValueError("organization review generated_at must be an ISO timestamp") from error
+        raise ValueError(
+            "organization review generated_at must be an ISO timestamp"
+        ) from error
     if timestamp.tzinfo is None:
         raise ValueError("organization review generated_at must include a timezone")
 
@@ -480,7 +490,9 @@ def _require_exact_fields(
         raise ValueError(f"{label} is missing field(s): {', '.join(sorted(missing))}")
     unknown = set(data) - expected
     if unknown:
-        raise ValueError(f"{label} has unsupported field(s): {', '.join(sorted(unknown))}")
+        raise ValueError(
+            f"{label} has unsupported field(s): {', '.join(sorted(unknown))}"
+        )
 
 
 def _collision_safe_path(path: Path) -> Path:

@@ -131,9 +131,7 @@ def _preview_duplicate_bin_movement(
         if not batch.can_receive_authorization:
             raise DuplicateBinMovementError("duplicate_batch_not_approved")
         if operation_repository.find_for_batch(batch_id) is not None:
-            raise DuplicateBinMovementError(
-                "duplicate_bin_movement_already_started"
-            )
+            raise DuplicateBinMovementError("duplicate_bin_movement_already_started")
         admission = filesystem_operation_admission or FilesystemOperationAdmission(
             FilesystemOperationInspector(batch_repository.root)
         )

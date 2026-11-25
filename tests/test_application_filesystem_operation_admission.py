@@ -114,10 +114,11 @@ class FilesystemOperationInspectorTests(unittest.TestCase):
             self.assertEqual(tuple(root.iterdir()), ())
 
     def test_ordinary_movement_clear_terminal_states_remain_clear(self) -> None:
-        for status in sorted(
-            REPLAYABLE_TERMINAL_STATUSES - {STATUS_PARTIAL_MOVEMENT}
-        ):
-            with self.subTest(status=status), tempfile.TemporaryDirectory() as directory:
+        for status in sorted(REPLAYABLE_TERMINAL_STATUSES - {STATUS_PARTIAL_MOVEMENT}):
+            with (
+                self.subTest(status=status),
+                tempfile.TemporaryDirectory() as directory,
+            ):
                 root = Path(directory).resolve()
                 repository, record = _ordinary_operation(root)
                 repository.save(replace(record, status=status))
@@ -145,7 +146,10 @@ class FilesystemOperationInspectorTests(unittest.TestCase):
             STATUS_MOVED_UNVERIFIED,
             STATUS_INTERRUPTED,
         ):
-            with self.subTest(status=status), tempfile.TemporaryDirectory() as directory:
+            with (
+                self.subTest(status=status),
+                tempfile.TemporaryDirectory() as directory,
+            ):
                 root = Path(directory).resolve()
                 repository, record = _ordinary_operation(root)
                 repository.save(
@@ -172,7 +176,10 @@ class FilesystemOperationInspectorTests(unittest.TestCase):
             UNDO_INTERRUPTED,
         )
         for status in terminal + unfinished:
-            with self.subTest(status=status), tempfile.TemporaryDirectory() as directory:
+            with (
+                self.subTest(status=status),
+                tempfile.TemporaryDirectory() as directory,
+            ):
                 root = Path(directory).resolve()
                 operation_repository, operation = _ordinary_operation(root)
                 undo_repository, undo = _ordinary_undo(root, operation)
@@ -187,7 +194,9 @@ class FilesystemOperationInspectorTests(unittest.TestCase):
                     FilesystemOperationInspector(root).inspect().state,
                     expected,
                 )
-                self.assertEqual(operation_repository.load(operation.operation_id), operation)
+                self.assertEqual(
+                    operation_repository.load(operation.operation_id), operation
+                )
 
     def test_partial_undo_is_terminal_but_blocks_new_filesystem_work(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -321,8 +330,12 @@ class FilesystemOperationInspectorTests(unittest.TestCase):
                 for path in root.rglob("*")
                 if path.is_dir() and "operations" in path.parts
             }
-            self.assertIn("AI_Review/duplicate_bin/restores/operations", durable_directories)
-            self.assertNotIn("AI_Review/duplicate_bin/activity_undo", durable_directories)
+            self.assertIn(
+                "AI_Review/duplicate_bin/restores/operations", durable_directories
+            )
+            self.assertNotIn(
+                "AI_Review/duplicate_bin/activity_undo", durable_directories
+            )
 
     def test_malformed_record_in_each_family_fails_closed(self) -> None:
         locations = (
@@ -332,7 +345,10 @@ class FilesystemOperationInspectorTests(unittest.TestCase):
             Path("AI_Review/duplicate_bin/restores/operations"),
         )
         for relative in locations:
-            with self.subTest(relative=relative), tempfile.TemporaryDirectory() as directory:
+            with (
+                self.subTest(relative=relative),
+                tempfile.TemporaryDirectory() as directory,
+            ):
                 root = Path(directory).resolve()
                 target = root / relative / f"{uuid.uuid4()}.json"
                 target.parent.mkdir(parents=True)
@@ -393,7 +409,10 @@ class FilesystemOperationInspectorTests(unittest.TestCase):
             self.assertEqual(tuple(snapshot.__dataclass_fields__), ("state",))
 
     def test_wrong_root_and_symlinked_records_fail_closed(self) -> None:
-        with tempfile.TemporaryDirectory() as first, tempfile.TemporaryDirectory() as second:
+        with (
+            tempfile.TemporaryDirectory() as first,
+            tempfile.TemporaryDirectory() as second,
+        ):
             first_root = Path(first).resolve()
             second_root = Path(second).resolve()
             repository, operation = _ordinary_operation(first_root)
@@ -418,14 +437,18 @@ class FilesystemOperationInspectorTests(unittest.TestCase):
                 RecoveryAdmissionState.BLOCKED_MALFORMED_OPERATION_STATE,
             )
 
-    def test_duplicate_operation_batch_and_authorization_mismatches_are_inconsistent(self) -> None:
+    def test_duplicate_operation_batch_and_authorization_mismatches_are_inconsistent(
+        self,
+    ) -> None:
         for field in ("batch_id", "authorization_operation"):
             with self.subTest(field=field), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory).resolve()
                 owners = _moved(root)
                 operation = owners.operations.list_records()[0]
                 if field == "batch_id":
-                    path = owners.operations.directory / f"{operation.operation_id}.json"
+                    path = (
+                        owners.operations.directory / f"{operation.operation_id}.json"
+                    )
                     data = json.loads(path.read_text(encoding="utf-8"))
                     data["batch_id"] = str(uuid.uuid4())
                 else:
@@ -464,7 +487,9 @@ class FilesystemOperationInspectorTests(unittest.TestCase):
                 RecoveryAdmissionState.BLOCKED_UNFINISHED_OPERATION,
             )
 
-    def test_ordinary_unfinished_inspection_does_not_mark_or_rewrite_record(self) -> None:
+    def test_ordinary_unfinished_inspection_does_not_mark_or_rewrite_record(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             repository, operation = _ordinary_operation(root, status=STATUS_MOVING)
@@ -478,9 +503,13 @@ class FilesystemOperationInspectorTests(unittest.TestCase):
                 RecoveryAdmissionState.BLOCKED_UNFINISHED_OPERATION,
             )
             self.assertEqual((path.read_bytes(), path.stat().st_mtime_ns), before)
-            self.assertEqual(repository.load(operation.operation_id).status, STATUS_MOVING)
+            self.assertEqual(
+                repository.load(operation.operation_id).status, STATUS_MOVING
+            )
 
-    def test_inspection_does_not_repair_fully_restored_batch_or_change_tokens(self) -> None:
+    def test_inspection_does_not_repair_fully_restored_batch_or_change_tokens(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             owners = _moved(root)
@@ -489,7 +518,9 @@ class FilesystemOperationInspectorTests(unittest.TestCase):
                 current.batch_id,
                 expected_version=current.batch_version,
                 status=BATCH_MOVED,
-                items=tuple(replace(item, state=ITEM_RESTORED) for item in current.items),
+                items=tuple(
+                    replace(item, state=ITEM_RESTORED) for item in current.items
+                ),
                 updated_at="2026-07-16T11:00:00+00:00",
             )
             catalog_before = owners.batches.catalog_path.read_bytes()
@@ -506,20 +537,31 @@ class FilesystemOperationInspectorTests(unittest.TestCase):
             )
 
             self.assertEqual(owners.batches.catalog_path.read_bytes(), catalog_before)
-            self.assertEqual(owners.authorizations.path.read_bytes(), authorization_before)
+            self.assertEqual(
+                owners.authorizations.path.read_bytes(), authorization_before
+            )
             self.assertEqual(
                 app.state.recovery_admission_snapshot.state,
                 RecoveryAdmissionState.BLOCKED_INCONSISTENT_OPERATION_STATE,
             )
 
-    def test_multiple_roots_are_isolated_and_app_construction_publishes_snapshot(self) -> None:
-        with tempfile.TemporaryDirectory() as first, tempfile.TemporaryDirectory() as second:
+    def test_multiple_roots_are_isolated_and_app_construction_publishes_snapshot(
+        self,
+    ) -> None:
+        with (
+            tempfile.TemporaryDirectory() as first,
+            tempfile.TemporaryDirectory() as second,
+        ):
             first_root = Path(first).resolve()
             second_root = Path(second).resolve()
             _ordinary_operation(first_root, status=STATUS_INTERRUPTED)
 
-            self.assertTrue(FilesystemOperationInspector(first_root).inspect().is_blocked)
-            self.assertFalse(FilesystemOperationInspector(second_root).inspect().is_blocked)
+            self.assertTrue(
+                FilesystemOperationInspector(first_root).inspect().is_blocked
+            )
+            self.assertFalse(
+                FilesystemOperationInspector(second_root).inspect().is_blocked
+            )
 
             malformed = second_root / "AI_Review/duplicate_bin/catalog.json"
             malformed.parent.mkdir(parents=True)
@@ -552,8 +594,14 @@ class FilesystemOperationAdmissionTests(unittest.TestCase):
             inspector.inspect.return_value = _snapshot(RecoveryAdmissionState.CLEAR)
             admission = FilesystemOperationAdmission(inspector)
 
-            self.assertEqual(admission.inspect_and_require_clear().state, RecoveryAdmissionState.CLEAR)
-            self.assertEqual(admission.inspect_and_require_clear().state, RecoveryAdmissionState.CLEAR)
+            self.assertEqual(
+                admission.inspect_and_require_clear().state,
+                RecoveryAdmissionState.CLEAR,
+            )
+            self.assertEqual(
+                admission.inspect_and_require_clear().state,
+                RecoveryAdmissionState.CLEAR,
+            )
 
             self.assertEqual(inspector.inspect.call_count, 2)
 
@@ -593,7 +641,10 @@ class FilesystemOperationAdmissionTests(unittest.TestCase):
             self.assertIsInstance(raised.exception.__cause__, OSError)
 
     def test_app_owns_one_admission_bound_to_its_inspector_and_root(self) -> None:
-        with tempfile.TemporaryDirectory() as first, tempfile.TemporaryDirectory() as second:
+        with (
+            tempfile.TemporaryDirectory() as first,
+            tempfile.TemporaryDirectory() as second,
+        ):
             first_app = create_app(
                 WebAppConfig(
                     Path(first),

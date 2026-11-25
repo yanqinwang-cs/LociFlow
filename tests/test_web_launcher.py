@@ -221,9 +221,7 @@ class WebLauncherTests(unittest.TestCase):
     ) -> None:
         handle = LaunchRuntimeHandle(LaunchStopController())
         errors: list[str] = []
-        waiter = Thread(
-            target=lambda: _capture_runtime_wait_error(handle, errors)
-        )
+        waiter = Thread(target=lambda: _capture_runtime_wait_error(handle, errors))
         waiter.start()
 
         handle.finish_lifecycle_publication()
@@ -433,9 +431,7 @@ class WebLauncherTests(unittest.TestCase):
             server_factory=dependencies.server_factory,
             readiness_factory=readiness_factory,
             manual_browser_bootstrap=dependencies.manual_browser_bootstrap,
-            root_lease_factory=mock.Mock(
-                side_effect=ProcessLeaseError("already_held")
-            ),
+            root_lease_factory=mock.Mock(side_effect=ProcessLeaseError("already_held")),
         )
 
         result = launch(lambda: self.root, dependencies=dependencies)
@@ -669,9 +665,7 @@ class WebLauncherTests(unittest.TestCase):
     def test_server_failure_is_safe_terminal_and_leaks_no_launch_secret(self) -> None:
         self.server = _Server(
             self.events,
-            RuntimeError(
-                "private detail " + "t" * 32 + " " + "s" * 32
-            ),
+            RuntimeError("private detail " + "t" * 32 + " " + "s" * 32),
         )
 
         result = launch(lambda: self.root, dependencies=self.dependencies())
@@ -685,10 +679,12 @@ class WebLauncherTests(unittest.TestCase):
         self.assertTrue(self.socket.closed)
 
     def test_launcher_does_not_create_or_manage_child_processes(self) -> None:
-        source = Path(__import__(
-            "organizer.web.launcher",
-            fromlist=["__file__"],
-        ).__file__).read_text(encoding="utf-8")
+        source = Path(
+            __import__(
+                "organizer.web.launcher",
+                fromlist=["__file__"],
+            ).__file__
+        ).read_text(encoding="utf-8")
 
         self.assertNotIn("subprocess", source)
         self.assertNotIn("multiprocessing", source)

@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
-from dataclasses import asdict, dataclass
 import json
 import os
-from pathlib import Path
 import platform
 import plistlib
 import stat
 import subprocess
 import sys
+from collections.abc import Callable, Sequence
+from dataclasses import asdict, dataclass
+from pathlib import Path
 from typing import Final
 
 from release_metadata import (
@@ -21,7 +21,6 @@ from release_metadata import (
     SEMANTIC_VERSION,
     SUPPORTED_ARCHITECTURE,
 )
-
 
 _EXPECTED_ARCHITECTURES: Final = ("arm64",)
 _FORBIDDEN_PARTS: Final = frozenset(
@@ -122,15 +121,9 @@ def validate_app_bundle(
     if not native_files:
         raise BundleValidationError("native_closure_missing")
     executable_relative = executable.relative_to(bundle).as_posix()
-    if not any(
-        record.relative_path == executable_relative
-        for record in native_files
-    ):
+    if not any(record.relative_path == executable_relative for record in native_files):
         raise BundleValidationError("primary_executable_not_native")
-    if any(
-        record.architectures != _EXPECTED_ARCHITECTURES
-        for record in native_files
-    ):
+    if any(record.architectures != _EXPECTED_ARCHITECTURES for record in native_files):
         raise BundleValidationError("architecture_mismatch")
 
     smoke_result = "not_run"
@@ -144,12 +137,7 @@ def validate_app_bundle(
         smoke_result = "passed"
 
     architecture_sets = tuple(
-        sorted(
-            {
-                "+".join(record.architectures)
-                for record in native_files
-            }
-        )
+        sorted({"+".join(record.architectures) for record in native_files})
     )
     return BundleValidationResult(
         report=BundleValidationReport(

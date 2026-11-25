@@ -88,19 +88,25 @@ def create_home_router(templates: Jinja2Templates) -> APIRouter:
         try:
             surface = _scan_surface(request)
         except ValueError as error:
-            raise HTTPException(status_code=400, detail="scan request unavailable") from error
+            raise HTTPException(
+                status_code=400, detail="scan request unavailable"
+            ) from error
         try:
             form = await read_urlencoded_form(
                 request,
                 allowed_fields={"csrf_token"},
             )
         except FormDataError as error:
-            raise HTTPException(status_code=400, detail="scan request unavailable") from error
+            raise HTTPException(
+                status_code=400, detail="scan request unavailable"
+            ) from error
         try:
             validate_same_origin(request)
             validate_csrf_token(request.session, form.get("csrf_token"))
         except ValueError as error:
-            raise HTTPException(status_code=403, detail="scan request unavailable") from error
+            raise HTTPException(
+                status_code=403, detail="scan request unavailable"
+            ) from error
 
         controller: ScanJobController = request.app.state.scan_jobs
         explorer: ReviewExplorerStore = request.app.state.review_explorer
@@ -143,7 +149,9 @@ def create_home_router(templates: Jinja2Templates) -> APIRouter:
             response.headers["Cache-Control"] = "no-store"
             return response
         except ScanAlreadyRunning as error:
-            raise HTTPException(status_code=409, detail="scan already running") from error
+            raise HTTPException(
+                status_code=409, detail="scan already running"
+            ) from error
         except ApplicationStoppingError as error:
             return Response(
                 content=str(error),
@@ -169,7 +177,9 @@ def create_home_router(templates: Jinja2Templates) -> APIRouter:
         try:
             surface = _scan_surface(request)
         except ValueError as error:
-            raise HTTPException(status_code=400, detail="scan request unavailable") from error
+            raise HTTPException(
+                status_code=400, detail="scan request unavailable"
+            ) from error
         response = templates.TemplateResponse(
             request=request,
             name="scan_panel.html",
@@ -195,9 +205,11 @@ def _scan_context(
     snapshot = controller.snapshot()
     relative_report_path = None
     if snapshot.report_path is not None:
-        relative_report_path = snapshot.report_path.resolve().relative_to(
-            request.app.state.web_config.root
-        ).as_posix()
+        relative_report_path = (
+            snapshot.report_path.resolve()
+            .relative_to(request.app.state.web_config.root)
+            .as_posix()
+        )
     explorer = request.app.state.review_explorer.snapshot(snapshot)
     plan_summary = None
     card_counts = None

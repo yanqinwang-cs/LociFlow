@@ -18,9 +18,7 @@ from generate_icon import (  # noqa: E402
     generate_icon,
 )
 
-SOURCE_ICON = (
-    PACKAGING_ROOT / "icon" / "loci-flow-app-icon-1024.png"
-)
+SOURCE_ICON = PACKAGING_ROOT / "icon" / "loci-flow-app-icon-1024.png"
 AUTHORITATIVE_MARK = (
     REPOSITORY_ROOT
     / "src"
@@ -52,9 +50,7 @@ class MacOSIconGenerationTests(unittest.TestCase):
         self.assertNotIn("gradient", decoded)
 
     def test_release_raster_is_exact_metadata_free_rgba_source(self) -> None:
-        generator = (
-            PACKAGING_ROOT / "generate_icon.py"
-        ).read_text(encoding="utf-8")
+        generator = (PACKAGING_ROOT / "generate_icon.py").read_text(encoding="utf-8")
         self.assertNotIn("ImageFont", generator)
         self.assertNotIn("font", generator.lower())
         with Image.open(SOURCE_ICON) as image:
@@ -158,10 +154,7 @@ def _output_hashes(build: Path, icns: Path) -> dict[str, str]:
     iconset = build / "LociFlow.iconset"
     paths = [iconset / name for name, _size in ICONSET_FILES]
     paths.append(icns)
-    return {
-        path.name: hashlib.sha256(path.read_bytes()).hexdigest()
-        for path in paths
-    }
+    return {path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in paths}
 
 
 if __name__ == "__main__":

@@ -147,16 +147,14 @@ class _native_modules:
         coordinator_type: object,
         diagnostic_sink: object | None = None,
     ) -> None:
-        self.adapter_module = ModuleType(
-            "organizer.macos_launcher.appkit_adapter"
-        )
+        self.adapter_module = ModuleType("organizer.macos_launcher.appkit_adapter")
         self.adapter_module.AppKitAdapter = adapter_type  # type: ignore[attr-defined]
-        self.coordinator_module = ModuleType(
-            "organizer.macos_launcher.coordinator"
-        )
+        self.coordinator_module = ModuleType("organizer.macos_launcher.coordinator")
         self.coordinator_module.NativeLauncherCoordinator = coordinator_type
         self.coordinator_module.NativeDiagnostic = NativeDiagnostic
-        self.coordinator_module.development_diagnostic_sink = diagnostic_sink or mock.Mock(return_value=None)
+        self.coordinator_module.development_diagnostic_sink = (
+            diagnostic_sink or mock.Mock(return_value=None)
+        )
         self.patch = mock.patch.dict(
             sys.modules,
             {

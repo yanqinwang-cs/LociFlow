@@ -45,9 +45,7 @@ def format_local_time(
         return "Not available"
     try:
         local_value = value.astimezone()
-        local_now = (now or datetime.now().astimezone()).astimezone(
-            local_value.tzinfo
-        )
+        local_now = (now or datetime.now().astimezone()).astimezone(local_value.tzinfo)
     except (OSError, OverflowError, ValueError):
         return "Not available"
 

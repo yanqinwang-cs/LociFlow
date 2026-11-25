@@ -297,7 +297,9 @@ def main() -> int:
         if organization_rules is None:
             parser.error(organization_rules_result.message)
         if project_groups is None:
-            project_groups = find_project_groups(metadata_items, rules=organization_rules)
+            project_groups = find_project_groups(
+                metadata_items, rules=organization_rules
+            )
         suggestions = build_organization_suggestions(project_groups, args.folder)
         _print_organization_suggestions(suggestions)
         plan_items = _flatten_plan_items(suggestions)
@@ -327,7 +329,9 @@ def main() -> int:
             parser.error(organization_rules_result.message)
         _validate_llm_args(parser, args.llm_provider, args.llm_model)
         if project_groups is None:
-            project_groups = find_project_groups(metadata_items, rules=organization_rules)
+            project_groups = find_project_groups(
+                metadata_items, rules=organization_rules
+            )
         client = OllamaClient(
             model=args.llm_model,
             host=args.ollama_host or DEFAULT_OLLAMA_HOST,
@@ -470,7 +474,9 @@ def _handle_review_plans(
         print("Review state ignored for this session.")
     else:
         if state is not None and state.decisions:
-            print(f"Review state loaded: {len(state.decisions)} remembered decision(s).")
+            print(
+                f"Review state loaded: {len(state.decisions)} remembered decision(s)."
+            )
         else:
             print("No review state found; starting with new suggestions.")
 
@@ -596,11 +602,23 @@ def _run_review_session(
                 _print_review_session_help()
             elif action == "show" and len(command) == 1:
                 _print_review_view_rows(items, view_state, root)
-            elif action == "show" and len(command) == 2 and command[1].lower() == "duplicates":
+            elif (
+                action == "show"
+                and len(command) == 2
+                and command[1].lower() == "duplicates"
+            ):
                 _print_review_session_rows(items, "duplicate", root)
-            elif action == "show" and len(command) == 2 and command[1].lower() == "organization":
+            elif (
+                action == "show"
+                and len(command) == 2
+                and command[1].lower() == "organization"
+            ):
                 _print_review_session_rows(items, "organization", root)
-            elif action == "show" and len(command) == 2 and command[1].lower() == "review-candidates":
+            elif (
+                action == "show"
+                and len(command) == 2
+                and command[1].lower() == "review-candidates"
+            ):
                 _print_review_session_rows(items, "review_candidate", root)
             elif action == "summary" and len(command) == 1:
                 _print_review_session_summary(items, root)
@@ -653,11 +671,15 @@ def _run_review_session(
                 _print_review_view_state(
                     items, view_state, root, has_unsaved_decision_changes
                 )
-            elif action in {
-                "approve-page",
-                "reject-page",
-                "undecide-page",
-            } and len(command) == 1:
+            elif (
+                action
+                in {
+                    "approve-page",
+                    "reject-page",
+                    "undecide-page",
+                }
+                and len(command) == 1
+            ):
                 decision = {
                     "approve-page": DECISION_APPROVED,
                     "reject-page": DECISION_REJECTED,
@@ -855,7 +877,9 @@ def _handle_apply_reviewed_plan(
         return 0
 
     try:
-        plan_items = load_reviewed_plan_move_items(args.apply_reviewed_plan, args.folder)
+        plan_items = load_reviewed_plan_move_items(
+            args.apply_reviewed_plan, args.folder
+        )
         print(f"Reviewed plan approved moves: {len(plan_items)}")
         if not plan_items:
             print("No approved moves to apply.")
@@ -895,7 +919,9 @@ def _handle_export_rule_candidates(
         or args.llm_provider is not None
         or args.llm_model is not None
     ):
-        parser.error("--export-rule-candidates cannot be combined with other report, planning, apply, review, undo, LLM, or confirmation flags")
+        parser.error(
+            "--export-rule-candidates cannot be combined with other report, planning, apply, review, undo, LLM, or confirmation flags"
+        )
 
     try:
         report = build_scan_report(args.folder, max_depth=args.max_depth)
@@ -910,7 +936,9 @@ def _handle_export_rule_candidates(
 
     print(f"Rule candidates exported: {output_path}")
     print(f"Candidates: {len(candidates)}")
-    print("Review the file manually, then apply accepted decisions with exact confirmation.")
+    print(
+        "Review the file manually, then apply accepted decisions with exact confirmation."
+    )
     return 0
 
 
@@ -1130,7 +1158,9 @@ def _handle_apply_rule_decisions(
         or args.llm_provider is not None
         or args.llm_model is not None
     ):
-        parser.error("--apply-rule-decisions cannot be combined with scan, display, planning, apply, review, undo, report, or LLM flags")
+        parser.error(
+            "--apply-rule-decisions cannot be combined with scan, display, planning, apply, review, undo, report, or LLM flags"
+        )
 
     if args.confirm != CONFIRM_APPLY_ORGANIZATION_RULES:
         print(
@@ -1195,7 +1225,9 @@ def _print_review_session_help() -> None:
     print("  page-size <number>")
     print("")
     print("Session actions")
-    print("  save                                  write review decisions; no files move")
+    print(
+        "  save                                  write review decisions; no files move"
+    )
     print("  apply                                 exact-confirm approved file moves")
     print("  quit                                  exit the review session")
     print("  help                                  display this command list")
@@ -1301,9 +1333,7 @@ def _confirm_quit_without_saving() -> bool:
     print("Use 'save' first, or confirm that you want to quit without saving.")
     print("This affects review decisions only. No files will be moved.")
     try:
-        confirmation = input(
-            f"Type {CONFIRM_QUIT_WITHOUT_SAVING} to continue: "
-        )
+        confirmation = input(f"Type {CONFIRM_QUIT_WITHOUT_SAVING} to continue: ")
     except (EOFError, KeyboardInterrupt, StopIteration):
         print("")
         print("Quit cancelled. The review session remains open.")
@@ -1327,16 +1357,13 @@ def _confirm_page_decision_change(
         return items, state, False
     if not preview.change_ids:
         print(
-            f"All target rows are already {preview.decision}. "
-            "No changes are required."
+            f"All target rows are already {preview.decision}. No changes are required."
         )
         return items, state, False
 
     print("This changes review decisions only. It does not move files.")
     try:
-        confirmation = input(
-            f"Type {preview.confirmation} to continue: "
-        )
+        confirmation = input(f"Type {preview.confirmation} to continue: ")
     except (EOFError, KeyboardInterrupt):
         print("")
         print("Page decision change cancelled. No decisions changed.")
@@ -1347,25 +1374,21 @@ def _confirm_page_decision_change(
 
     updated_items = apply_page_decision_change(items, preview)
     updated_state = clamp_review_page(state, updated_items, root)
-    print(
-        f"Updated {len(preview.change_ids)} review rows to {preview.decision}."
-    )
-    print(
-        f"{preview.already_count} rows were already {preview.decision}."
-    )
+    print(f"Updated {len(preview.change_ids)} review rows to {preview.decision}.")
+    print(f"{preview.already_count} rows were already {preview.decision}.")
     print("No files were moved.")
     return updated_items, updated_state, True
 
 
 def _print_page_decision_preview(preview: PageDecisionPreview) -> None:
-    decision_counts = ", ".join(
-        f"{decision}={count}"
-        for decision, count in preview.decision_counts
-    ) or "none"
-    category_counts = ", ".join(
-        f"{category}={count}"
-        for category, count in preview.category_counts
-    ) or "none"
+    decision_counts = (
+        ", ".join(f"{decision}={count}" for decision, count in preview.decision_counts)
+        or "none"
+    )
+    category_counts = (
+        ", ".join(f"{category}={count}" for category, count in preview.category_counts)
+        or "none"
+    )
     target_ids = ", ".join(preview.target_ids) or "none"
     print("")
     print("Current-page decision preview")
@@ -1388,9 +1411,7 @@ def _print_review_view_state(
     has_unsaved_decision_changes: bool,
 ) -> None:
     view = build_review_view(items, state, root)
-    filters = ", ".join(
-        f"{field}={value}" for field, value in state.filters
-    ) or "none"
+    filters = ", ".join(f"{field}={value}" for field, value in state.filters) or "none"
     print("")
     print("View")
     print(f"  filters: {filters}")
@@ -1401,8 +1422,7 @@ def _print_review_view_state(
     print(f"  total session rows: {view.total_count}")
     print(f"  rows shown: {len(view.rows)}")
     print(
-        "  unsaved decision changes: "
-        f"{'yes' if has_unsaved_decision_changes else 'no'}"
+        f"  unsaved decision changes: {'yes' if has_unsaved_decision_changes else 'no'}"
     )
 
 
@@ -1485,8 +1505,12 @@ def _print_review_session_summary(
     print("Review summary")
     print(f"  duplicate approved moves: {summary['duplicate_approved_move_count']}")
     print(f"  duplicate rejected moves: {summary['duplicate_rejected_move_count']}")
-    print(f"  organization approved moves: {summary['organization_approved_move_count']}")
-    print(f"  organization rejected moves: {summary['organization_rejected_move_count']}")
+    print(
+        f"  organization approved moves: {summary['organization_approved_move_count']}"
+    )
+    print(
+        f"  organization rejected moves: {summary['organization_rejected_move_count']}"
+    )
     print(
         "  review candidate approved moves: "
         f"{summary['review_candidate_approved_move_count']}"
@@ -1499,11 +1523,17 @@ def _print_review_session_summary(
     print(f"  total rejected moves: {summary['rejected_move_count']}")
     print(f"  total undecided moves: {summary['undecided_move_count']}")
     print(f"  approved source conflicts: {summary['approved_source_conflict_count']}")
-    print(f"  approved destination conflicts: {summary['approved_destination_conflict_count']}")
+    print(
+        f"  approved destination conflicts: {summary['approved_destination_conflict_count']}"
+    )
     print(f"  approved move conflicts: {summary['approved_move_conflict_count']}")
     print(f"  new suggestions: {summary['memory_new_suggestion_count']}")
-    print(f"  remembered rejected decisions: {summary['memory_rejected_remembered_count']}")
-    print(f"  remembered approved decisions: {summary['memory_approved_remembered_count']}")
+    print(
+        f"  remembered rejected decisions: {summary['memory_rejected_remembered_count']}"
+    )
+    print(
+        f"  remembered approved decisions: {summary['memory_approved_remembered_count']}"
+    )
     print(f"  stale prior decisions: {summary['memory_stale_prior_decision_count']}")
     if summary["approved_move_conflict_count"]:
         print("  final apply is blocked until conflicts are resolved")
@@ -1540,7 +1570,9 @@ def _print_review_session_conflicts(
             print("")
             print(f"Destination conflict: {conflict.relative_path}")
             print(f"Duplicate approved destination: {conflict.relative_path}")
-            guidance = "Reject all but one approved move targeting the same destination."
+            guidance = (
+                "Reject all but one approved move targeting the same destination."
+            )
         for item in conflict.items:
             plan_item = item.plan_item
             conflict_path = (
@@ -1581,7 +1613,9 @@ def _handle_report(
         or args.plan_organization
         or args.plan_refined_organization
     ):
-        parser.error("--report cannot be combined with display, planning, apply, undo, or confirmation flags")
+        parser.error(
+            "--report cannot be combined with display, planning, apply, undo, or confirmation flags"
+        )
 
     if args.refine_groups:
         _validate_llm_args(parser, args.llm_provider, args.llm_model)
@@ -1591,7 +1625,9 @@ def _handle_report(
         )
     else:
         if args.llm_provider is not None or args.llm_model is not None:
-            parser.error("--llm-provider and --llm-model require --refine-groups in report mode")
+            parser.error(
+                "--llm-provider and --llm-model require --refine-groups in report mode"
+            )
         client = None
 
     try:
@@ -1649,7 +1685,9 @@ def _handle_html_report(
         )
     else:
         if args.llm_provider is not None or args.llm_model is not None:
-            parser.error("--llm-provider and --llm-model require --refine-groups in HTML report mode")
+            parser.error(
+                "--llm-provider and --llm-model require --refine-groups in HTML report mode"
+            )
         client = None
 
     try:
@@ -1661,7 +1699,9 @@ def _handle_html_report(
             output_path=args.html_report_output,
         )
         if html_report_path == json_report_path:
-            raise ValueError("HTML report output must be different from JSON report output")
+            raise ValueError(
+                "HTML report output must be different from JSON report output"
+            )
         scan_result = scan_root(
             args.folder,
             max_depth=args.max_depth,
@@ -1712,7 +1752,9 @@ def _print_review_candidates(candidates: list[ReviewCandidate]) -> None:
         return
 
     for index, candidate in enumerate(candidates, start=1):
-        print(f"Candidate for review {index}: {candidate.file.relative_path.as_posix()}")
+        print(
+            f"Candidate for review {index}: {candidate.file.relative_path.as_posix()}"
+        )
         print(f"  category: {candidate.category}")
         print(f"  reason: {candidate.reason}")
         print(f"  confidence: {candidate.confidence}")
@@ -1821,11 +1863,7 @@ def _print_refined_organization_suggestions(
 def _flatten_plan_items(
     suggestions: list[OrganizationSuggestion],
 ) -> list[MovePlanItem]:
-    return [
-        item
-        for suggestion in suggestions
-        for item in suggestion.plan_items
-    ]
+    return [item for suggestion in suggestions for item in suggestion.plan_items]
 
 
 def _apply_plan_items(plan_items: list[MovePlanItem], root: Path) -> int:

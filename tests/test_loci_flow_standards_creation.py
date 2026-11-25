@@ -84,7 +84,7 @@ class LociFlowStandardsCreationTests(unittest.TestCase):
             await saveStandardCreation({previewToken:"opaque-preview-token",expectedRevision:7},fetchImpl,"csrf");
             console.log(JSON.stringify(calls));
             """,
-            f'import {{ getStandardsCreationContext,previewStandardCreation,saveStandardCreation }} from {json.dumps((LOCI / "api.js").as_uri())};',
+            f"import {{ getStandardsCreationContext,previewStandardCreation,saveStandardCreation }} from {json.dumps((LOCI / 'api.js').as_uri())};",
         )
         self.assertEqual(
             result,
@@ -130,7 +130,9 @@ class LociFlowStandardsCreationTests(unittest.TestCase):
         for forbidden in ("path", "parameters", "destination", "regex", "json"):
             self.assertNotIn(forbidden, serialized.lower())
 
-    def test_list_refresh_preserves_context_and_revision_change_invalidates_it(self) -> None:
+    def test_list_refresh_preserves_context_and_revision_change_invalidates_it(
+        self,
+    ) -> None:
         result = self.run_node(
             """
             let revision=7;let contextCalls=0;let previewCalls=0;
@@ -151,15 +153,20 @@ class LociFlowStandardsCreationTests(unittest.TestCase):
             try{await source.previewStandardCreation({presetId:"keep_folder_unchanged",scopeId:"scope-root"},8);}catch(error){stale=error.code;}
             console.log(JSON.stringify({contextCalls,previewCalls,stale}));
             """,
-            f'import {{ createBackendDataSource }} from {json.dumps((LOCI / "data_source.js").as_uri())};',
+            f"import {{ createBackendDataSource }} from {json.dumps((LOCI / 'data_source.js').as_uri())};",
         )
-        self.assertEqual(result, {
-            "contextCalls": 1,
-            "previewCalls": 1,
-            "stale": "invalid_standards_contract",
-        })
+        self.assertEqual(
+            result,
+            {
+                "contextCalls": 1,
+                "previewCalls": 1,
+                "stale": "invalid_standards_contract",
+            },
+        )
 
-    def test_add_standard_requests_one_context_and_failure_does_not_open_dialog(self) -> None:
+    def test_add_standard_requests_one_context_and_failure_does_not_open_dialog(
+        self,
+    ) -> None:
         app_source = (LOCI / "app.js").read_text(encoding="utf-8")
         result = self.run_node(
             """
@@ -197,7 +204,9 @@ class LociFlowStandardsCreationTests(unittest.TestCase):
         self.assertFalse(result["failure"]["open"])
         self.assertEqual(result["failure"]["error"], "application_stopping")
 
-    def test_data_source_validates_preview_save_and_blocks_double_submission(self) -> None:
+    def test_data_source_validates_preview_save_and_blocks_double_submission(
+        self,
+    ) -> None:
         result = self.run_node(
             """
             let releasePreview; let releaseSave;
@@ -229,7 +238,7 @@ class LociFlowStandardsCreationTests(unittest.TestCase):
             try{validateStandardPreviewResponse(malformed);}catch(error){malformedError=error.code;}
             console.log(JSON.stringify({calls,preview,saved,secondPreview,secondSave,malformedError,pending:source.isStandardsMutationPending()}));
             """,
-            f'import {{ createBackendDataSource,validateStandardPreviewResponse }} from {json.dumps((LOCI / "data_source.js").as_uri())};',
+            f"import {{ createBackendDataSource,validateStandardPreviewResponse }} from {json.dumps((LOCI / 'data_source.js').as_uri())};",
         )
         self.assertEqual(
             [call[0] for call in result["calls"]],
@@ -266,15 +275,21 @@ class LociFlowStandardsCreationTests(unittest.TestCase):
             """,
             "\n".join(
                 [
-                    f'import {{ validateOrganizationResponse }} from {json.dumps((LOCI / "data_source.js").as_uri())};',
-                    f'import {{ buildProductionStageB1Contract,buildStandardsViewModel,buildDialogViewModel }} from {json.dumps((LOCI / "view_models.js").as_uri())};',
-                    f'import {{ renderRoute,renderDialog }} from {json.dumps((LOCI / "views.js").as_uri())};',
+                    f"import {{ validateOrganizationResponse }} from {json.dumps((LOCI / 'data_source.js').as_uri())};",
+                    f"import {{ buildProductionStageB1Contract,buildStandardsViewModel,buildDialogViewModel }} from {json.dumps((LOCI / 'view_models.js').as_uri())};",
+                    f"import {{ renderRoute,renderDialog }} from {json.dumps((LOCI / 'views.js').as_uri())};",
                 ]
             ),
         )
-        self.assertIn('data-action="open-standard-builder"', result["available"]["page"])
-        self.assertIn("Keep a folder unchanged", result["available"]["dialog"]["content"])
-        self.assertIn("Keep matching files together", result["available"]["dialog"]["content"])
+        self.assertIn(
+            'data-action="open-standard-builder"', result["available"]["page"]
+        )
+        self.assertIn(
+            "Keep a folder unchanged", result["available"]["dialog"]["content"]
+        )
+        self.assertIn(
+            "Keep matching files together", result["available"]["dialog"]["content"]
+        )
         self.assertNotIn("Exact code", result["available"]["dialog"]["content"])
         self.assertIn("Course code", result["matchingDialog"]["content"])
         self.assertIn("Project code", result["matchingDialog"]["content"])
@@ -297,7 +312,9 @@ class LociFlowStandardsCreationTests(unittest.TestCase):
         ):
             self.assertNotIn(forbidden, combined.lower())
 
-    def test_conflict_is_safe_and_not_retried_and_error_messages_are_concrete(self) -> None:
+    def test_conflict_is_safe_and_not_retried_and_error_messages_are_concrete(
+        self,
+    ) -> None:
         result = self.run_node(
             """
             let saveCalls=0;
@@ -318,8 +335,8 @@ class LociFlowStandardsCreationTests(unittest.TestCase):
             """,
             "\n".join(
                 [
-                    f'import {{ LociFlowApiError }} from {json.dumps((LOCI / "api.js").as_uri())};',
-                    f'import {{ createBackendDataSource,standardsErrorMessage }} from {json.dumps((LOCI / "data_source.js").as_uri())};',
+                    f"import {{ LociFlowApiError }} from {json.dumps((LOCI / 'api.js').as_uri())};",
+                    f"import {{ createBackendDataSource,standardsErrorMessage }} from {json.dumps((LOCI / 'data_source.js').as_uri())};",
                 ]
             ),
         )
@@ -330,7 +347,9 @@ class LociFlowStandardsCreationTests(unittest.TestCase):
         self.assertIn("newer preview", result["messages"]["preview_superseded"])
         self.assertIn("Check files again", result["messages"]["folder_scope_stale"])
         self.assertIn("Finish or restart", result["messages"]["active_plan_conflict"])
-        self.assertIn("valid course or project code", result["messages"]["invalid_matcher"])
+        self.assertIn(
+            "valid course or project code", result["messages"]["invalid_matcher"]
+        )
 
     def test_fixture_mode_cannot_preview_or_save_live_standards(self) -> None:
         result = self.run_node(
@@ -345,7 +364,7 @@ class LociFlowStandardsCreationTests(unittest.TestCase):
             }
             console.log(JSON.stringify(codes));
             """,
-            f'import {{ createFixtureDataSource }} from {json.dumps((LOCI / "data_source.js").as_uri())};',
+            f"import {{ createFixtureDataSource }} from {json.dumps((LOCI / 'data_source.js').as_uri())};",
         )
         self.assertEqual(result, ["standards_unavailable", "standards_unavailable"])
 
@@ -426,7 +445,9 @@ class LociFlowStandardsCreationTests(unittest.TestCase):
             """,
             f"const appSource={json.dumps(app_source)};",
         )
-        self.assertEqual(result["sequential"], {"value": "CS1010X", "caret": 7, "sameNode": True})
+        self.assertEqual(
+            result["sequential"], {"value": "CS1010X", "caret": 7, "sameNode": True}
+        )
         self.assertEqual(result["middle"], {"value": "CS1010X", "caret": 6})
         self.assertEqual(result["statedStartVariant"], {"value": "CS1010X", "caret": 5})
         self.assertEqual(result["backed"], {"value": "CS101X", "caret": 5})
@@ -434,7 +455,9 @@ class LociFlowStandardsCreationTests(unittest.TestCase):
         self.assertEqual(result["replaced"], {"value": "CS2020X", "caret": 6})
         self.assertEqual(result["emptyButtons"], {"preview": True, "save": True})
         self.assertEqual(result["pasted"], {"value": "PRJ-204", "caret": 7})
-        self.assertEqual(result["selectAllReplacement"], {"value": "BootAI", "caret": 6})
+        self.assertEqual(
+            result["selectAllReplacement"], {"value": "BootAI", "caret": 6}
+        )
         self.assertEqual(result["composition"], {"value": "課程", "caret": 2})
         self.assertEqual(result["previewCalls"], 0)
         self.assertEqual(result["saveCalls"], 0)
@@ -470,13 +493,23 @@ class LociFlowStandardsCreationTests(unittest.TestCase):
             """,
             f"const appSource={json.dumps(app_source)};",
         )
-        self.assertEqual(result["afterClose"], {"token": None, "open": False, "resets": 1})
+        self.assertEqual(
+            result["afterClose"], {"token": None, "open": False, "resets": 1}
+        )
         self.assertEqual(
             result["afterRoute"],
-            {"token": None, "open": False, "resets": 1, "route": "home", "dialog": None},
+            {
+                "token": None,
+                "open": False,
+                "resets": 1,
+                "route": "home",
+                "dialog": None,
+            },
         )
 
-    def test_app_invalidates_fields_and_coalesces_preview_and_save_without_scan(self) -> None:
+    def test_app_invalidates_fields_and_coalesces_preview_and_save_without_scan(
+        self,
+    ) -> None:
         app_source = (LOCI / "app.js").read_text(encoding="utf-8")
         result = self.run_node(
             """

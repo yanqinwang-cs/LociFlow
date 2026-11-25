@@ -47,7 +47,9 @@ class WebRecoveryApiTests(unittest.IsolatedAsyncioTestCase):
             post = await client.post("/api/recovery/current")
 
         self.assertEqual(unauthenticated.status_code, 403)
-        self.assertEqual(unauthenticated.json()["error"]["code"], "authentication_required")
+        self.assertEqual(
+            unauthenticated.json()["error"]["code"], "authentication_required"
+        )
         self.assertEqual(valid.status_code, 200)
         self.assertEqual(valid.json()["state"], "clear")
         self.assertEqual(query.status_code, 400)
@@ -78,7 +80,9 @@ class WebRecoveryApiTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertTrue(first.json()["can_check_result"])
 
-    async def test_home_uses_current_coarse_status_without_detail_inspection(self) -> None:
+    async def test_home_uses_current_coarse_status_without_detail_inspection(
+        self,
+    ) -> None:
         service = mock.Mock()
         service.current.return_value = BrowserRecoveryProjection(
             "clear", "Clear", "Nothing to review.", 0, False
@@ -116,7 +120,9 @@ class WebRecoveryApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn(str(self.root), response.text)
         self.assertNotIn("secret.json", response.text)
 
-    async def test_actual_inspection_writes_nothing_and_calls_no_activity_or_executor(self) -> None:
+    async def test_actual_inspection_writes_nothing_and_calls_no_activity_or_executor(
+        self,
+    ) -> None:
         before = _root_files(self.root)
         with (
             mock.patch("organizer.executor.apply_move_plan") as executor,
@@ -191,7 +197,9 @@ class WebRecoveryApiTests(unittest.IsolatedAsyncioTestCase):
         ):
             self.assertNotIn(secret, serialized)
 
-    async def test_post_security_fields_methods_and_stopping_precede_service(self) -> None:
+    async def test_post_security_fields_methods_and_stopping_precede_service(
+        self,
+    ) -> None:
         service = mock.Mock()
         service.create_context.return_value = RecoveryCheckContextResponse(
             case_id="11111111-1111-4111-8111-111111111111",

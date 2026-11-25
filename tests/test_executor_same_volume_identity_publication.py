@@ -118,9 +118,7 @@ class SameVolumeIdentityPublicationTests(unittest.TestCase):
                     ),
                     self.assertRaises(StrictExecutorError) as raised,
                 ):
-                    executor._execute_same_volume_identity_batch(
-                        (first, second), root
-                    )
+                    executor._execute_same_volume_identity_batch((first, second), root)
                 self.assertEqual(raised.exception.code, code)
                 self.assertTrue(first.plan_item.source.exists())
                 self.assertTrue(second.plan_item.source.exists())
@@ -167,7 +165,10 @@ class SameVolumeIdentityPublicationTests(unittest.TestCase):
     def test_identity_replacements_symlink_and_missing_source_reject(self) -> None:
         mutations = ("replacement", "same_inode", "symlink", "missing")
         for mutation in mutations:
-            with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as directory:
+            with (
+                self.subTest(mutation=mutation),
+                tempfile.TemporaryDirectory() as directory,
+            ):
                 root = Path(directory)
                 item = _item(root, "O1", "source", "Dest/source")
                 source = item.plan_item.source
@@ -339,7 +340,9 @@ class SameVolumeIdentityPublicationTests(unittest.TestCase):
             self.assertFalse(item.plan_item.destination.exists())
             self.assertTrue(item.plan_item.destination.parent.exists())
 
-    def test_source_disappearing_after_batch_prevalidation_fails_before_publication(self) -> None:
+    def test_source_disappearing_after_batch_prevalidation_fails_before_publication(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             item = _item(root, "O1", "source", "Dest/source")
@@ -365,7 +368,9 @@ class SameVolumeIdentityPublicationTests(unittest.TestCase):
             )
             self.assertFalse(item.plan_item.destination.exists())
 
-    def test_source_parent_symlink_substitution_after_prevalidation_rejects(self) -> None:
+    def test_source_parent_symlink_substitution_after_prevalidation_rejects(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             item = _item(root, "O1", "Inbox/source", "Dest/source")
@@ -393,7 +398,9 @@ class SameVolumeIdentityPublicationTests(unittest.TestCase):
             self.assertTrue(root.joinpath("Actual/source").exists())
             self.assertFalse(item.plan_item.destination.exists())
 
-    def test_postpublication_failures_remain_recovery_required_without_cleanup(self) -> None:
+    def test_postpublication_failures_remain_recovery_required_without_cleanup(
+        self,
+    ) -> None:
         cases = ("verify", "fsync", "unlink", "source_remains", "final_verify")
         for case in cases:
             with self.subTest(case=case), tempfile.TemporaryDirectory() as directory:
@@ -466,7 +473,9 @@ class SameVolumeIdentityPublicationTests(unittest.TestCase):
                 else:
                     self.assertTrue(item.plan_item.source.exists())
 
-    def test_keyboard_interrupt_after_publication_is_annotated_and_closes_descriptors(self) -> None:
+    def test_keyboard_interrupt_after_publication_is_annotated_and_closes_descriptors(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             item = _item(root, "O1", "source", "Dest/source")
@@ -496,7 +505,9 @@ class SameVolumeIdentityPublicationTests(unittest.TestCase):
                 with self.assertRaises(OSError):
                     os.fstat(descriptor)
 
-    def test_keyboard_interrupt_after_unlink_leaves_destination_only_evidence(self) -> None:
+    def test_keyboard_interrupt_after_unlink_leaves_destination_only_evidence(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             item = _item(root, "O1", "source", "Dest/source")
@@ -570,7 +581,9 @@ class SameVolumeIdentityPublicationTests(unittest.TestCase):
             self.assertEqual(raised.exception.code, "unsupported_item")
             self.assertFalse(root.joinpath("Dest").exists())
 
-    def test_private_engine_has_no_recorder_log_activity_or_production_caller(self) -> None:
+    def test_private_engine_has_no_recorder_log_activity_or_production_caller(
+        self,
+    ) -> None:
         repository = Path(__file__).resolve().parents[1]
         for relative in (
             "src/organizer/application/execution_service.py",

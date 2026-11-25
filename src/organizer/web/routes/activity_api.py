@@ -136,7 +136,9 @@ def create_activity_api_router() -> APIRouter:
                 403,
             )
         except (FormDataError, TypeError, ValueError):
-            return _error_response("invalid_request", "The Undo request is invalid.", 400)
+            return _error_response(
+                "invalid_request", "The Undo request is invalid.", 400
+            )
         return _json_response(preview.to_dict())
 
     @router.post("/api/activity/{operation_id}/undo", include_in_schema=False)
@@ -220,7 +222,9 @@ def create_activity_api_router() -> APIRouter:
                 403,
             )
         except (FormDataError, StopIteration, TypeError, ValueError):
-            return _error_response("invalid_request", "The Undo request is invalid.", 400)
+            return _error_response(
+                "invalid_request", "The Undo request is invalid.", 400
+            )
         return _json_response({"undo": outcome.to_dict(), "activity": entry.to_dict()})
 
     return router

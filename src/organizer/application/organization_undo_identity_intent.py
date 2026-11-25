@@ -82,7 +82,9 @@ def build_v2_organization_undo_intent(
     for capture in captures:
         if capture.change_id in capture_by_id:
             raise ValueError("Undo identity captures contain a duplicate")
-        if not isinstance(capture.observed_content_identity, RegularFileContentIdentity):
+        if not isinstance(
+            capture.observed_content_identity, RegularFileContentIdentity
+        ):
             raise ValueError("Undo identity capture is invalid")
         if not isinstance(capture.stat_fingerprint, RegularFileStatFingerprint):
             raise ValueError("Undo identity capture is invalid")

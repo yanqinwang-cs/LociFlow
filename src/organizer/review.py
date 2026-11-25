@@ -132,9 +132,5 @@ def _is_empty_candidate(metadata: FileMetadata) -> bool:
 
 
 def _is_backup_or_copy(stem: str) -> bool:
-    tokens = [
-        token
-        for token in re.split(r"[^a-z0-9]+", stem.lower())
-        if token
-    ]
+    tokens = [token for token in re.split(r"[^a-z0-9]+", stem.lower()) if token]
     return any(token in BACKUP_OR_COPY_TOKENS for token in tokens)

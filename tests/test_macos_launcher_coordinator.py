@@ -121,7 +121,9 @@ class _Adapter:
             try:
                 callback = self.callbacks.get(timeout=2)
             except Empty as error:
-                raise AssertionError("native event loop received no callback") from error
+                raise AssertionError(
+                    "native event loop received no callback"
+                ) from error
             callback()
 
     def stop_event_loop(self) -> None:
@@ -246,7 +248,9 @@ class _InterruptingAdapter(_Adapter):
             try:
                 callback = self.callbacks.get(timeout=2)
             except Empty as error:
-                raise AssertionError("native event loop received no callback") from error
+                raise AssertionError(
+                    "native event loop received no callback"
+                ) from error
             callback()
             if self.interrupt_after is not None and self.interrupt_after.is_set():
                 raise KeyboardInterrupt
@@ -355,7 +359,9 @@ class _PreRootSignalAdapter(_Adapter):
         try:
             callback = self.callbacks.get(timeout=2)
         except Empty as error:
-            raise AssertionError("pre-root signal callback was not delivered") from error
+            raise AssertionError(
+                "pre-root signal callback was not delivered"
+            ) from error
         callback()
         self.chooser_active = False
         return None if self.chooser_cancellations else self.selected
@@ -374,7 +380,9 @@ class _SignalThenQuitAdapter(_PreRootSignalAdapter):
         try:
             callback = self.callbacks.get(timeout=2)
         except Empty as error:
-            raise AssertionError("pre-root signal callback was not delivered") from error
+            raise AssertionError(
+                "pre-root signal callback was not delivered"
+            ) from error
         callback()
         if self.termination_handler is None:
             raise AssertionError("pre-root termination handler was not installed")
@@ -547,9 +555,7 @@ class MacOSLauncherCoordinatorTests(unittest.TestCase):
         config_factory = mock.Mock()
         dependencies_factory = mock.Mock()
         diagnostics = []
-        development_dependencies = build_launcher_dependencies(
-            application_paths=paths
-        )
+        development_dependencies = build_launcher_dependencies(application_paths=paths)
         assert development_dependencies.root_lease_factory is not None
         with development_dependencies.root_lease_factory(self.root):
             result = NativeLauncherCoordinator(
@@ -687,7 +693,9 @@ class MacOSLauncherCoordinatorTests(unittest.TestCase):
         self.assertEqual(self.server.runs, 1)
         self.assertEqual(events.count("adapter.dispatch"), 2)
         self.assertEqual(adapter.dispatched_callbacks.count("_complete_on_main"), 1)
-        self.assertLess(events.index("adapter.run_loop"), events.index("worker.started"))
+        self.assertLess(
+            events.index("adapter.run_loop"), events.index("worker.started")
+        )
 
     def test_native_idle_quit_uses_exact_app_lifecycle_and_worker_result_owner(
         self,
@@ -795,7 +803,9 @@ class MacOSLauncherCoordinatorTests(unittest.TestCase):
         self.assertNotIn("adapter.browser", adapter.events)
         self.assertNotIn("adapter.run_loop", adapter.events)
 
-    def test_pre_root_signals_abort_chooser_and_create_no_root_side_effects(self) -> None:
+    def test_pre_root_signals_abort_chooser_and_create_no_root_side_effects(
+        self,
+    ) -> None:
         for signal_number, expected_code in (
             (signal.SIGINT, 130),
             (signal.SIGTERM, 143),
@@ -821,7 +831,9 @@ class MacOSLauncherCoordinatorTests(unittest.TestCase):
                 self.assertNotIn("adapter.run_loop", adapter.events)
                 self.assertEqual(adapter.messages, [])
 
-    def test_native_quit_during_chooser_wins_without_fake_runtime_shutdown(self) -> None:
+    def test_native_quit_during_chooser_wins_without_fake_runtime_shutdown(
+        self,
+    ) -> None:
         adapter = _PreRootQuitAdapter(str(self.root))
         config_factory = mock.Mock()
         dependencies_factory = mock.Mock()
@@ -1102,9 +1114,9 @@ class MacOSLauncherCoordinatorTests(unittest.TestCase):
         dependencies = self.dependencies()
         dependencies = LauncherDependencies(
             config_factory=dependencies.config_factory,
-            socket_binder=mock.Mock(side_effect=RuntimeError(
-                "private traceback token-should-not-appear"
-            )),
+            socket_binder=mock.Mock(
+                side_effect=RuntimeError("private traceback token-should-not-appear")
+            ),
             app_factory=dependencies.app_factory,
             server_factory=dependencies.server_factory,
             readiness_factory=dependencies.readiness_factory,
@@ -1122,7 +1134,9 @@ class MacOSLauncherCoordinatorTests(unittest.TestCase):
         self.assertNotIn("private traceback", adapter.messages[0].message)
         self.assertEqual(adapter.events.count("adapter.dispatch"), 2)
 
-    def test_event_loop_services_browser_dispatch_before_worker_completion(self) -> None:
+    def test_event_loop_services_browser_dispatch_before_worker_completion(
+        self,
+    ) -> None:
         adapter = _Adapter(str(self.root))
         server = _BlockingServer()
 
@@ -1262,7 +1276,9 @@ class MacOSLauncherCoordinatorTests(unittest.TestCase):
         result = coordinator.run()
 
         self.assertEqual(result, 1)
-        self.assertEqual(adapter.messages[-1].message, "Loci Flow couldn’t open your browser.")
+        self.assertEqual(
+            adapter.messages[-1].message, "Loci Flow couldn’t open your browser."
+        )
         self.assertTrue(self.socket.closed)
         self.assertEqual(server.exit_requests, 1)
         self.assertIsNotNone(coordinator._worker)
@@ -1371,9 +1387,7 @@ class MacOSLauncherCoordinatorTests(unittest.TestCase):
             RuntimeError("private shutdown detail"),
         )
 
-        content = (paths.logs_directory / "launcher.log").read_text(
-            encoding="ascii"
-        )
+        content = (paths.logs_directory / "launcher.log").read_text(encoding="ascii")
         payloads = [json.loads(line) for line in content.splitlines()]
         self.assertEqual(
             [payload["code"] for payload in payloads],
@@ -1480,11 +1494,15 @@ class MacOSLauncherCoordinatorTests(unittest.TestCase):
                 for private in forbidden:
                     self.assertNotIn(private, projection.message)
 
-    def test_coordinator_source_has_no_child_process_or_product_owner_import(self) -> None:
-        source = Path(__import__(
-            "organizer.macos_launcher.coordinator",
-            fromlist=["__file__"],
-        ).__file__).read_text(encoding="utf-8")
+    def test_coordinator_source_has_no_child_process_or_product_owner_import(
+        self,
+    ) -> None:
+        source = Path(
+            __import__(
+                "organizer.macos_launcher.coordinator",
+                fromlist=["__file__"],
+            ).__file__
+        ).read_text(encoding="utf-8")
         for forbidden in (
             "subprocess",
             "organizer.scanner",

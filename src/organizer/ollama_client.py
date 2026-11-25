@@ -29,7 +29,9 @@ class OllamaClient:
             method="POST",
         )
         try:
-            with request.urlopen(http_request, timeout=self.timeout_seconds) as response:
+            with request.urlopen(
+                http_request, timeout=self.timeout_seconds
+            ) as response:
                 response_body = response.read()
         except TimeoutError as exc:
             # A stalled response raises TimeoutError from read(), not URLError.

@@ -132,9 +132,7 @@ class RecoveryCheckEligibilityInspector:
         self._evidence_inspector = evidence_inspector
         self._operation_repository = operation_repository
         self._undo_repository = undo_repository
-        self.configured_root_identity = (
-            operation_repository.configured_root_identity
-        )
+        self.configured_root_identity = operation_repository.configured_root_identity
 
     def inspect(self) -> RecoveryCheckCandidate:
         evidence = self._evidence_inspector.inspect()
@@ -146,13 +144,8 @@ class RecoveryCheckEligibilityInspector:
             raise RecoveryCheckError("check_unavailable")
         case = evidence.case
         try:
-            if (
-                case.family
-                is RecoveryOperationFamily.ORGANIZATION_MOVEMENT
-            ):
-                record = self._operation_repository.load(
-                    case.record_identity
-                )
+            if case.family is RecoveryOperationFamily.ORGANIZATION_MOVEMENT:
+                record = self._operation_repository.load(case.record_identity)
                 require_identity_organization_verification_eligible(
                     record,
                     self._operation_repository.root,
@@ -160,17 +153,13 @@ class RecoveryCheckEligibilityInspector:
                 if case.durable_status != record.status:
                     raise RecoveryCheckError("check_unavailable")
                 return RecoveryCheckCandidate(
-                    target_family=(
-                        RecoveryCheckFamily.ORGANIZATION_MOVEMENT
-                    ),
+                    target_family=(RecoveryCheckFamily.ORGANIZATION_MOVEMENT),
                     operation_id=record.operation_id,
                     parent_operation_id=None,
                     durable_record_digest=_canonical_digest(
                         {"movement": asdict(record)}
                     ),
-                    filesystem_observation_digest=(
-                        _observation_digest(case.items)
-                    ),
+                    filesystem_observation_digest=(_observation_digest(case.items)),
                 )
             if case.family is RecoveryOperationFamily.ORGANIZATION_UNDO:
                 undo = self._undo_repository.load(case.record_identity)
@@ -192,9 +181,7 @@ class RecoveryCheckEligibilityInspector:
                             "parent": asdict(parent),
                         }
                     ),
-                    filesystem_observation_digest=(
-                        _observation_digest(case.items)
-                    ),
+                    filesystem_observation_digest=(_observation_digest(case.items)),
                 )
         except RecoveryCheckError:
             raise
@@ -224,10 +211,7 @@ class RecoveryCheckService:
     ) -> None:
         if coordinator.runtime_lifecycle is not runtime_lifecycle:
             raise ValueError("recovery Check lifecycle ownership is invalid")
-        if (
-            contexts.configured_root_identity
-            != eligibility.configured_root_identity
-        ):
+        if contexts.configured_root_identity != eligibility.configured_root_identity:
             raise ValueError("recovery Check root ownership is invalid")
         self._runtime_lifecycle = runtime_lifecycle
         self._coordinator = coordinator
@@ -293,9 +277,7 @@ class RecoveryCheckService:
                 try:
                     candidate = self._eligibility.inspect()
                 except RecoveryCheckError as error:
-                    raise RecoveryCheckError(
-                        "recovery_details_changed"
-                    ) from error
+                    raise RecoveryCheckError("recovery_details_changed") from error
                 if not _same_binding(context, candidate):
                     raise RecoveryCheckError("recovery_details_changed")
                 state, title, message = self._publish(context)
@@ -317,9 +299,7 @@ class RecoveryCheckService:
                 case_id=case_id,
                 action_id=action_id,
                 browser_session_id=browser_session_id,
-                configured_root_identity=(
-                    self._eligibility.configured_root_identity
-                ),
+                configured_root_identity=(self._eligibility.configured_root_identity),
             )
         except (RecoveryCheckContextError, ValueError) as error:
             raise RecoveryCheckError("context_unavailable") from error
@@ -328,17 +308,9 @@ class RecoveryCheckService:
         self,
         context: RecoveryCheckContext,
     ) -> tuple[RecoveryCheckResultState, str, str]:
-        if (
-            context.target_family
-            is RecoveryCheckFamily.ORGANIZATION_MOVEMENT
-        ):
-            result = self._movement_publication.publish(
-                context.operation_id
-            )
-            if (
-                result.state
-                is IdentityVerificationPublicationState.PUBLISHED_VERIFIED
-            ):
+        if context.target_family is RecoveryCheckFamily.ORGANIZATION_MOVEMENT:
+            result = self._movement_publication.publish(context.operation_id)
+            if result.state is IdentityVerificationPublicationState.PUBLISHED_VERIFIED:
                 return (
                     RecoveryCheckResultState.CONFIRMED,
                     "Check complete",
@@ -361,10 +333,7 @@ class RecoveryCheckService:
             raise RecoveryCheckError("recovery_details_changed")
 
         result = self._undo_publication.publish(context.operation_id)
-        if (
-            result.state
-            is IdentityUndoVerificationPublicationState.PUBLISHED_RESTORED
-        ):
+        if result.state is IdentityUndoVerificationPublicationState.PUBLISHED_RESTORED:
             return (
                 RecoveryCheckResultState.CONFIRMED,
                 "Check complete",
@@ -402,8 +371,7 @@ def _same_binding(
         context.target_family is candidate.target_family
         and context.operation_id == candidate.operation_id
         and context.parent_operation_id == candidate.parent_operation_id
-        and context.durable_record_digest
-        == candidate.durable_record_digest
+        and context.durable_record_digest == candidate.durable_record_digest
         and context.filesystem_observation_digest
         == candidate.filesystem_observation_digest
     )
@@ -416,8 +384,7 @@ def _observation_digest(items: tuple[object, ...]) -> str:
             "items": [
                 {
                     "observations": [
-                        observation.value
-                        for observation in item.observations
+                        observation.value for observation in item.observations
                     ],
                     "disposition": item.disposition.value,
                     "fingerprint": item.evidence_fingerprint,

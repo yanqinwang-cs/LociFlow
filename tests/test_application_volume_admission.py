@@ -48,11 +48,7 @@ class ApplicationVolumeAdmissionTests(unittest.TestCase):
             source = root / "Documents" / "a.txt"
             source.parent.mkdir()
             source.write_bytes(b"a")
-            pairs = (
-                OrganizationVolumePathPair(
-                    "Documents/a.txt", "Inbox/a.txt"
-                ),
-            )
+            pairs = (OrganizationVolumePathPair("Documents/a.txt", "Inbox/a.txt"),)
 
             result = OrganizationVolumeAdmission(root).inspect_path_pairs(pairs)
 
@@ -71,9 +67,7 @@ class ApplicationVolumeAdmissionTests(unittest.TestCase):
             first.write_bytes(b"a")
             second.write_bytes(b"b")
             pairs = tuple(
-                OrganizationVolumePathPair(
-                    f"Documents/{name}.txt", f"Inbox/{name}.txt"
-                )
+                OrganizationVolumePathPair(f"Documents/{name}.txt", f"Inbox/{name}.txt")
                 for name in ("a", "b")
             )
             root_device = os.lstat(root).st_dev
@@ -89,9 +83,7 @@ class ApplicationVolumeAdmissionTests(unittest.TestCase):
                 cross.require_same_volume_path_pairs(pairs)
             self.assertFalse((root / "Inbox").exists())
 
-            unsafe = (
-                OrganizationVolumePathPair("../outside", "Inbox/a.txt"),
-            )
+            unsafe = (OrganizationVolumePathPair("../outside", "Inbox/a.txt"),)
             self.assertEqual(
                 OrganizationVolumeAdmission(root).inspect_path_pairs(unsafe).state,
                 VolumeAdmissionState.UNSAFE,
@@ -103,9 +95,9 @@ class ApplicationVolumeAdmissionTests(unittest.TestCase):
                 return os.lstat(path)
 
             self.assertEqual(
-                OrganizationVolumeAdmission(
-                    root, lstat_reader=unreadable
-                ).inspect_path_pairs(pairs).state,
+                OrganizationVolumeAdmission(root, lstat_reader=unreadable)
+                .inspect_path_pairs(pairs)
+                .state,
                 VolumeAdmissionState.INDETERMINATE,
             )
 
@@ -199,7 +191,9 @@ class ApplicationVolumeAdmissionTests(unittest.TestCase):
             self.assertEqual(raised.exception.code, "unsafe_volume_path")
             self.assertNotIn(str(root), str(raised.exception))
 
-    def test_authorization_rejection_issues_no_capability_or_durable_state(self) -> None:
+    def test_authorization_rejection_issues_no_capability_or_durable_state(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             plan = _approved_plan(root, ("a.txt", "b.txt"))
@@ -213,9 +207,7 @@ class ApplicationVolumeAdmissionTests(unittest.TestCase):
                     "issue_authorization",
                     wraps=coordinator.issue_authorization,
                 ) as issue,
-                self.assertRaisesRegex(
-                    OrganizationMovementError, "cross_volume_plan"
-                ),
+                self.assertRaisesRegex(OrganizationMovementError, "cross_volume_plan"),
             ):
                 preview_organization_movement(
                     approved_plan=plan,
@@ -251,9 +243,7 @@ class ApplicationVolumeAdmissionTests(unittest.TestCase):
                     "issue_authorization",
                     wraps=coordinator.issue_authorization,
                 ) as issue,
-                self.assertRaisesRegex(
-                    OrganizationExecutionError, "cross_volume_plan"
-                ),
+                self.assertRaisesRegex(OrganizationExecutionError, "cross_volume_plan"),
             ):
                 issue_movement_authorization(
                     plan,
@@ -265,7 +255,9 @@ class ApplicationVolumeAdmissionTests(unittest.TestCase):
                 )
             issue.assert_not_called()
 
-    def test_confirmation_rechecks_topology_consumes_token_and_moves_nothing(self) -> None:
+    def test_confirmation_rechecks_topology_consumes_token_and_moves_nothing(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             plan = _approved_plan(root, ("a.txt", "b.txt"))
@@ -283,9 +275,7 @@ class ApplicationVolumeAdmissionTests(unittest.TestCase):
                 mock.patch(
                     "organizer.application.execution_service.apply_move_plan"
                 ) as executor,
-                self.assertRaisesRegex(
-                    OrganizationExecutionError, "cross_volume_plan"
-                ),
+                self.assertRaisesRegex(OrganizationExecutionError, "cross_volume_plan"),
             ):
                 move_approved_organization(
                     approved_plan=plan,

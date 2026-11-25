@@ -62,9 +62,7 @@ def main(
     return NativeLauncherCoordinator(
         adapter,
         diagnostic_sink=selected_sink,
-        application_paths=(
-            application_paths or MacOSApplicationPaths.for_home()
-        ),
+        application_paths=(application_paths or MacOSApplicationPaths.for_home()),
     ).run()
 
 

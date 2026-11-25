@@ -28,7 +28,9 @@ def make_group(root: Path) -> ProjectGroup:
     (root / "evosim_notes.txt").write_text("notes", encoding="utf-8")
     (root / "results" / "evosim_output.csv").parent.mkdir()
     (root / "results" / "evosim_output.csv").write_text("value", encoding="utf-8")
-    files_by_path = {file.relative_path.as_posix(): file for file in scan_directory(root)}
+    files_by_path = {
+        file.relative_path.as_posix(): file for file in scan_directory(root)
+    }
     return ProjectGroup(
         group_name="Evosim",
         files=[
@@ -47,8 +49,7 @@ def valid_response_for(group: ProjectGroup) -> str:
             "confidence": 82,
             "reason": "suggested grouping based on provided paths",
             "subfolders": {
-                file.relative_path.as_posix(): "notes"
-                for file in group.files
+                file.relative_path.as_posix(): "notes" for file in group.files
             },
             "warnings": ["review suggested folder name before applying later"],
         }
@@ -124,7 +125,11 @@ class ParseValidateTests(unittest.TestCase):
                 {"folder_name": "../bad"},
                 {"confidence": 101},
                 {"subfolders": {"invented.txt": "notes"}},
-                {"subfolders": {file.relative_path.as_posix(): "bad" for file in group.files}},
+                {
+                    "subfolders": {
+                        file.relative_path.as_posix(): "bad" for file in group.files
+                    }
+                },
                 {"reason": "safe to delete later"},
                 {"warnings": ["ok", 123]},
             ]
@@ -150,11 +155,19 @@ class RefinedSuggestionTests(unittest.TestCase):
     def test_refinement_does_not_mutate_original_group(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             group = make_group(Path(directory))
-            before = (group.group_name, group.reason, group.confidence, list(group.files))
+            before = (
+                group.group_name,
+                group.reason,
+                group.confidence,
+                list(group.files),
+            )
 
             refine_group_with_response(group, valid_response_for(group))
 
-            self.assertEqual(before, (group.group_name, group.reason, group.confidence, list(group.files)))
+            self.assertEqual(
+                before,
+                (group.group_name, group.reason, group.confidence, list(group.files)),
+            )
 
     def test_refined_suggestion_keeps_original_group_and_uses_refinement(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -166,7 +179,9 @@ class RefinedSuggestionTests(unittest.TestCase):
             item = suggestion.plan_items[0]
 
             self.assertIs(suggestion.group, group)
-            self.assertEqual(suggestion.suggested_root, root / "Organized" / "EvoSim_Project")
+            self.assertEqual(
+                suggestion.suggested_root, root / "Organized" / "EvoSim_Project"
+            )
             self.assertEqual(item.operation, "dry-run move")
             self.assertEqual(item.confidence, 82)
             self.assertTrue(item.reason.startswith("LLM refinement:"))
@@ -179,7 +194,9 @@ class RefinedSuggestionTests(unittest.TestCase):
             (root / "b").mkdir()
             (root / "a" / "evosim.py").write_text("a", encoding="utf-8")
             (root / "b" / "evosim.py").write_text("b", encoding="utf-8")
-            files_by_path = {file.relative_path.as_posix(): file for file in scan_directory(root)}
+            files_by_path = {
+                file.relative_path.as_posix(): file for file in scan_directory(root)
+            }
             group = ProjectGroup(
                 group_name="Evosim",
                 files=[files_by_path["a/evosim.py"], files_by_path["b/evosim.py"]],
@@ -211,14 +228,16 @@ class OllamaClientTests(unittest.TestCase):
     def test_chat_returns_message_content_for_valid_response(self) -> None:
         fake_response = FakeResponse(
             200,
-            json.dumps({"message": {"content": "{\"ok\": true}"}}).encode("utf-8"),
+            json.dumps({"message": {"content": '{"ok": true}'}}).encode("utf-8"),
         )
-        with mock.patch("organizer.ollama_client.request.urlopen", return_value=fake_response) as mocked:
+        with mock.patch(
+            "organizer.ollama_client.request.urlopen", return_value=fake_response
+        ) as mocked:
             content = OllamaClient("model").chat([{"role": "user", "content": "hi"}])
 
         request_object = mocked.call_args.args[0]
         body = json.loads(request_object.data.decode("utf-8"))
-        self.assertEqual(content, "{\"ok\": true}")
+        self.assertEqual(content, '{"ok": true}')
         self.assertEqual(body["model"], "model")
         self.assertFalse(body["stream"])
         self.assertEqual(body["options"]["temperature"], 0)
@@ -259,7 +278,9 @@ class OllamaTimeoutTests(unittest.TestCase):
             "organizer.ollama_client.request.urlopen",
             return_value=stalled,
         ):
-            with self.assertRaisesRegex(RuntimeError, "did not answer within 5 seconds"):
+            with self.assertRaisesRegex(
+                RuntimeError, "did not answer within 5 seconds"
+            ):
                 OllamaClient("model", timeout_seconds=5).chat([])
 
     def test_connection_dropped_mid_response_raises_runtime_error(self) -> None:
@@ -285,8 +306,9 @@ class RefinementValueTests(unittest.TestCase):
         # "safe to delete" contains "delete"; the reported phrase must not
         # depend on the iteration order of the phrase collection.
         for order in (["delete", "safe to delete"], ["safe to delete", "delete"]):
-            with self.subTest(order=order), mock.patch(
-                "organizer.llm_refinement.FORBIDDEN_OUTPUT_WORDS", order
+            with (
+                self.subTest(order=order),
+                mock.patch("organizer.llm_refinement.FORBIDDEN_OUTPUT_WORDS", order),
             ):
                 with self.assertRaisesRegex(ValueError, "phrase: delete$"):
                     _reject_forbidden_text(["this is safe to delete"])
@@ -300,7 +322,10 @@ class RefinementOrchestrationTests(unittest.TestCase):
 
             refinements = refine_project_groups_with_ollama([group, group], client)
 
-            self.assertEqual([refinement.original_group_name for refinement in refinements], ["Evosim", "Evosim"])
+            self.assertEqual(
+                [refinement.original_group_name for refinement in refinements],
+                ["Evosim", "Evosim"],
+            )
             self.assertEqual(len(client.messages), 2)
 
     def test_invalid_client_response_raises_value_error(self) -> None:

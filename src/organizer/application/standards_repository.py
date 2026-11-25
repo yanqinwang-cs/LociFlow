@@ -88,7 +88,9 @@ class StandardsRepository:
                 data = standards_catalog_to_data(catalog)
                 validated = standards_catalog_from_data(data)
             except ValueError as error:
-                raise StandardsRepositoryError("standards_storage_unavailable") from error
+                raise StandardsRepositoryError(
+                    "standards_storage_unavailable"
+                ) from error
             if validated != catalog:
                 raise StandardsRepositoryError("standards_storage_unavailable")
             self._atomic_write(data)
@@ -108,7 +110,10 @@ class StandardsRepository:
         if result.status == ORGANIZATION_RULES_STATUS_MISSING:
             return StandardsStorageSnapshot(result, None)
         catalog = result.catalog
-        if catalog is not None and catalog.configured_root_identity != self.configured_root_identity:
+        if (
+            catalog is not None
+            and catalog.configured_root_identity != self.configured_root_identity
+        ):
             raise StandardsRepositoryError("wrong_root_scope")
         return StandardsStorageSnapshot(result, catalog)
 
@@ -127,7 +132,9 @@ class StandardsRepository:
             if self.directory.is_symlink() or not self.directory.is_dir():
                 raise ValueError("unsafe Standards directory")
             validate_under_root(self.directory.resolve(strict=True), self.root)
-            if os.path.lexists(self.path) and (self.path.is_symlink() or not self.path.is_file()):
+            if os.path.lexists(self.path) and (
+                self.path.is_symlink() or not self.path.is_file()
+            ):
                 raise ValueError("unsafe Standards file")
         except (OSError, ValueError) as error:
             raise StandardsRepositoryError("standards_storage_unavailable") from error

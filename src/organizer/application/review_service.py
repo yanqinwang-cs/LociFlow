@@ -225,9 +225,7 @@ def dirty_review_modules(
     session: ReviewApplicationSession,
 ) -> tuple[ReviewModule, ...]:
     return tuple(
-        module
-        for module in ReviewModule
-        if review_module_is_dirty(session, module)
+        module for module in ReviewModule if review_module_is_dirty(session, module)
     )
 
 
@@ -400,14 +398,10 @@ def change_review_decisions(
         raise ValueError(f"unsupported review decision: {decision}")
 
     changed_ids = tuple(
-        item_id
-        for item_id in normalized_ids
-        if before[item_id] != decision
+        item_id for item_id in normalized_ids if before[item_id] != decision
     )
     idempotent_ids = tuple(
-        item_id
-        for item_id in normalized_ids
-        if before[item_id] == decision
+        item_id for item_id in normalized_ids if before[item_id] == decision
     )
     view_state = clamp_review_page(
         session.view_state,
@@ -454,9 +448,7 @@ def apply_current_page_decision(
         session,
         items=tuple(updated_items),
         view_state=view_state,
-        saved_plan_path=(
-            None if preview.change_ids else session.saved_plan_path
-        ),
+        saved_plan_path=(None if preview.change_ids else session.saved_plan_path),
     )
     idempotent_ids = tuple(
         item_id
@@ -578,9 +570,7 @@ def _new_session(
         review_state=review_state,
         persist_review_state=persist_review_state,
         review_state_ignored=review_state_ignored,
-        saved_decisions=tuple(
-            sorted((item.id, item.decision) for item in item_tuple)
-        ),
+        saved_decisions=tuple(sorted((item.id, item.decision) for item in item_tuple)),
         metadata_items=tuple(metadata_items),
     )
 

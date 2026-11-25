@@ -96,8 +96,10 @@ class WebScanDashboardTests(unittest.IsolatedAsyncioTestCase):
         async with _client(self.app) as client:
             await client.get(f"/launch/{self.token}")
             page = await client.get("/")
-            self.app.state.scan_jobs._snapshot = self.app.state.scan_jobs._snapshot.__class__(
-                status="scanning", job_id="active"
+            self.app.state.scan_jobs._snapshot = (
+                self.app.state.scan_jobs._snapshot.__class__(
+                    status="scanning", job_id="active"
+                )
             )
             response = await client.post(
                 "/scan",

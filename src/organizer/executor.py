@@ -417,12 +417,7 @@ def _require_strict_platform_support() -> None:
 
 
 def _open_root_directory(root: Path) -> int:
-    flags = (
-        os.O_RDONLY
-        | os.O_DIRECTORY
-        | os.O_NOFOLLOW
-        | getattr(os, "O_CLOEXEC", 0)
-    )
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
     try:
         descriptor = os.open(root, flags)
         if not stat.S_ISDIR(os.fstat(descriptor).st_mode):
@@ -473,12 +468,7 @@ def _open_directory_chain(
 ) -> tuple[int, bool]:
     current = os.dup(root_descriptor)
     created = False
-    flags = (
-        os.O_RDONLY
-        | os.O_DIRECTORY
-        | os.O_NOFOLLOW
-        | getattr(os, "O_CLOEXEC", 0)
-    )
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
     try:
         for part in parts:
             try:
@@ -546,9 +536,8 @@ def _require_source_binding(
             not stat.S_ISREG(path_stat.st_mode)
             or not stat.S_ISREG(descriptor_stat.st_mode)
             or _inode_identity(path_stat) != _inode_identity(descriptor_stat)
-            or _stable_stat_evidence(path_stat) != _stable_stat_evidence(
-                descriptor_stat
-            )
+            or _stable_stat_evidence(path_stat)
+            != _stable_stat_evidence(descriptor_stat)
             or descriptor_stat.st_nlink != expected_link_count
             or path_stat.st_nlink != expected_link_count
             or (
@@ -636,9 +625,7 @@ def _publish_hard_link(
         ) from None
     except OSError as error:
         if _leaf_exists(destination_parent_descriptor, destination_leaf):
-            raise _recovery_failure(
-                "filesystem_changed_recovery_required"
-            ) from None
+            raise _recovery_failure("filesystem_changed_recovery_required") from None
         code = (
             "cross_volume_unsupported"
             if error.errno == errno.EXDEV
@@ -812,9 +799,7 @@ def apply_move_plan(
     recorder: MovementRecorder | None = None,
 ) -> OperationLog:
     resolved_root = root.resolve()
-    validated_items = [
-        _validate_plan_item(item, resolved_root) for item in plan_items
-    ]
+    validated_items = [_validate_plan_item(item, resolved_root) for item in plan_items]
     _reject_colliding_batch_paths(validated_items)
 
     operations: list[MoveResult] = []
@@ -1155,9 +1140,7 @@ def _move_without_replacing(source: Path, destination: Path) -> None:
     only our own empty placeholder.
     """
     try:
-        descriptor = os.open(
-            destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600
-        )
+        descriptor = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     except FileExistsError:
         raise FileExistsError(f"destination already exists: {destination}") from None
     os.close(descriptor)

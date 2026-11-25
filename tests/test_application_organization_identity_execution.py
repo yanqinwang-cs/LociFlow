@@ -96,7 +96,10 @@ class OrganizationIdentityExecutionTests(unittest.TestCase):
                     ORGANIZATION_OPERATION_SCHEMA_VERSION_V2,
                 )
                 self.assertTrue(
-                    all(item.content_identity is not None for item in durable.expected_moves)
+                    all(
+                        item.content_identity is not None
+                        for item in durable.expected_moves
+                    )
                 )
                 consumed = True
                 return True
@@ -157,7 +160,10 @@ class OrganizationIdentityExecutionTests(unittest.TestCase):
             self.assertEqual(captures, ["alpha.txt", "beta.txt"])
             self.assertEqual(result.state, IdentityOrganizationExecutionState.VERIFIED)
             self.assertEqual(durable.status, STATUS_VERIFIED)
-            self.assertEqual([item.result_state for item in durable.expected_moves], [MOVE_MOVED, MOVE_MOVED])
+            self.assertEqual(
+                [item.result_state for item in durable.expected_moves],
+                [MOVE_MOVED, MOVE_MOVED],
+            )
             self.assertEqual(result.files_moved, 2)
             self.assertTrue((root / "Documents/alpha.txt").is_file())
             self.assertTrue((root / "Documents/beta.txt").is_file())
@@ -312,7 +318,9 @@ class OrganizationIdentityExecutionTests(unittest.TestCase):
                 executor=executor,
             ).execute(approved_plan=plan, authorization=authorization)
             durable = repository.load(_OPERATION_ID)
-            self.assertEqual(result.state, IdentityOrganizationExecutionState.INTERRUPTED)
+            self.assertEqual(
+                result.state, IdentityOrganizationExecutionState.INTERRUPTED
+            )
             self.assertEqual(durable.status, STATUS_INTERRUPTED)
             self.assertEqual(durable.expected_moves[0].result_state, MOVE_PENDING)
             self.assertEqual(durable.failure_code, "movement_recovery_required")
@@ -335,7 +343,9 @@ class OrganizationIdentityExecutionTests(unittest.TestCase):
                     consume=mock.Mock(return_value=False),
                 ).execute(approved_plan=plan, authorization=authorization)
 
-            self.assertEqual(result.state, IdentityOrganizationExecutionState.INTERRUPTED)
+            self.assertEqual(
+                result.state, IdentityOrganizationExecutionState.INTERRUPTED
+            )
             durable = repository.load(_OPERATION_ID)
             self.assertEqual(durable.status, STATUS_PREPARED)
             self.assertEqual(durable.expected_moves[0].result_state, MOVE_PENDING)
@@ -576,9 +586,7 @@ class OrganizationIdentityExecutionTests(unittest.TestCase):
             )
 
         owner = (
-            source_root
-            / "application"
-            / "organization_identity_execution.py"
+            source_root / "application" / "organization_identity_execution.py"
         ).read_text(encoding="utf-8")
         self.assertIn("apply_same_volume_identity_move_plan", owner)
         for forbidden in (

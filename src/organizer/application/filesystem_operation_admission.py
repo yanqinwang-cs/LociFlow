@@ -153,8 +153,7 @@ class FilesystemOperationInspector:
         organization_operations: OrganizationOperationRepository | None = None,
         organization_undos: OrganizationUndoRepository | None = None,
         duplicate_bin_batches: DuplicateBinRepository | None = None,
-        duplicate_bin_authorizations: DuplicateBinAuthorizationRepository
-        | None = None,
+        duplicate_bin_authorizations: DuplicateBinAuthorizationRepository | None = None,
         duplicate_bin_operations: DuplicateBinOperationRepository | None = None,
         duplicate_bin_restores: DuplicateBinRestoreRepository | None = None,
     ) -> None:
@@ -200,9 +199,7 @@ class FilesystemOperationInspector:
             catalog = self.duplicate_bin_batches.read_catalog()
             move_authorizations = self.duplicate_bin_authorizations.list_records()
             duplicate_moves = self.duplicate_bin_operations.list_records()
-            restore_authorizations = (
-                self.duplicate_bin_restores.list_authorizations()
-            )
+            restore_authorizations = self.duplicate_bin_restores.list_authorizations()
             restores = self.duplicate_bin_restores.list_operations()
         except (OSError, UnicodeError, ValueError):
             return RecoveryAdmissionSnapshot(
@@ -211,8 +208,7 @@ class FilesystemOperationInspector:
 
         has_blocking_state = (
             any(
-                item.status
-                in BLOCKING_OPERATION_STATUSES | _MOVEMENT_BLOCKING_TERMINAL
+                item.status in BLOCKING_OPERATION_STATUSES | _MOVEMENT_BLOCKING_TERMINAL
                 for item in organization
             )
             or any(
@@ -287,9 +283,7 @@ class FilesystemOperationInspector:
         self, batches, authorizations, operations
     ) -> None:
         batches_by_id = {item.batch_id: item for item in batches}
-        authorizations_by_id = {
-            item.authorization_id: item for item in authorizations
-        }
+        authorizations_by_id = {item.authorization_id: item for item in authorizations}
         operations_by_id = {item.operation_id: item for item in operations}
         operations_by_batch = {item.batch_id: item for item in operations}
 
@@ -299,8 +293,7 @@ class FilesystemOperationInspector:
                 authorization.configured_root_identity
                 != self.duplicate_bin_batches.configured_root_identity
                 or batch is None
-                or authorization.approved_batch_digest
-                != approved_batch_digest(batch)
+                or authorization.approved_batch_digest != approved_batch_digest(batch)
                 or authorization.selected_bin_item_ids
                 != tuple(sorted(item.bin_item_id for item in batch.items))
             ):
@@ -349,11 +342,15 @@ class FilesystemOperationInspector:
                     raise _InconsistentOperationState
 
         for batch in batches:
-            if batch.status not in {
-                BATCH_APPROVED,
-                BATCH_SUPERSEDED,
-                BATCH_CANCELLED,
-            } and batch.batch_id not in operations_by_batch:
+            if (
+                batch.status
+                not in {
+                    BATCH_APPROVED,
+                    BATCH_SUPERSEDED,
+                    BATCH_CANCELLED,
+                }
+                and batch.batch_id not in operations_by_batch
+            ):
                 raise _InconsistentOperationState
 
     def _validate_duplicate_bin_restore(
@@ -361,12 +358,8 @@ class FilesystemOperationInspector:
     ) -> None:
         batches_by_id = {item.batch_id: item for item in batches}
         movements_by_id = {item.operation_id: item for item in movement_operations}
-        authorizations_by_id = {
-            item.authorization_id: item for item in authorizations
-        }
-        operations_by_id = {
-            item.restore_operation_id: item for item in operations
-        }
+        authorizations_by_id = {item.authorization_id: item for item in authorizations}
+        operations_by_id = {item.restore_operation_id: item for item in operations}
         for authorization in authorizations:
             if (
                 authorization.configured_root_identity
@@ -402,8 +395,7 @@ class FilesystemOperationInspector:
             if (
                 authorization is None
                 or authorization.status != RESTORE_AUTH_CONSUMED
-                or authorization.restore_operation_id
-                != operation.restore_operation_id
+                or authorization.restore_operation_id != operation.restore_operation_id
                 or operation.configured_root_identity
                 != self.duplicate_bin_restores.configured_root_identity
                 or authorization.selected_bin_item_ids

@@ -163,9 +163,7 @@ class OrganizationIdentityUndoOrchestrationTests(unittest.TestCase):
                 tempfile.TemporaryDirectory() as directory,
             ):
                 root = Path(directory).resolve()
-                service, store, _operations, undos, parent = _service(
-                    root, (b"alpha",)
-                )
+                service, store, _operations, undos, parent = _service(root, (b"alpha",))
                 preview = service.preview(
                     parent_operation_id=parent.operation_id,
                     browser_session_id="session",
@@ -241,17 +239,14 @@ class OrganizationIdentityUndoOrchestrationTests(unittest.TestCase):
                     Path(directory).resolve(), (b"alpha",)
                 )
                 publisher = mock.Mock()
-                publisher.publish.return_value = (
-                    IdentityUndoVerificationPublicationResult(
-                        state=publication_state,
-                        published=(
-                            publication_state
-                            is (
-                                IdentityUndoVerificationPublicationState
-                                .PUBLISHED_VERIFICATION_FAILED
-                            )
-                        ),
-                    )
+                publisher.publish.return_value = IdentityUndoVerificationPublicationResult(
+                    state=publication_state,
+                    published=(
+                        publication_state
+                        is (
+                            IdentityUndoVerificationPublicationState.PUBLISHED_VERIFICATION_FAILED
+                        )
+                    ),
                 )
                 service.verification_publisher = publisher
                 preview = service.preview(
@@ -311,9 +306,7 @@ class OrganizationIdentityUndoOrchestrationTests(unittest.TestCase):
                 real_create(record)
                 raise OSError("directory durability uncertain")
 
-            with mock.patch.object(
-                undos, "create", side_effect=publish_then_fail
-            ):
+            with mock.patch.object(undos, "create", side_effect=publish_then_fail):
                 result = service.confirm(
                     parent_operation_id=parent.operation_id,
                     authorization_id=preview.authorization_id,
@@ -370,9 +363,7 @@ class OrganizationIdentityUndoOrchestrationTests(unittest.TestCase):
         activity_route = (
             repository_root / "src/organizer/web/routes/activity_api.py"
         ).read_text(encoding="utf-8")
-        self.assertNotIn(
-            "organization_undo_identity_orchestration", activity_route
-        )
+        self.assertNotIn("organization_undo_identity_orchestration", activity_route)
         activity = (
             repository_root / "src/organizer/application/activity_service.py"
         ).read_text(encoding="utf-8")

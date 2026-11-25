@@ -163,9 +163,7 @@ def _eligible_root(
         raise IdentityUndoVerificationEligibilityError() from None
     if not stat.S_ISDIR(root_stat.st_mode):
         raise IdentityUndoVerificationEligibilityError()
-    root_identity = hashlib.sha256(
-        str(resolved_root).encode("utf-8")
-    ).hexdigest()
+    root_identity = hashlib.sha256(str(resolved_root).encode("utf-8")).hexdigest()
     if (
         not isinstance(undo_record, OrganizationUndoRecord)
         or not isinstance(parent_record, OrganizationOperationRecord)
@@ -218,8 +216,7 @@ def _validate_records(
             or undo_item.moved_from != parent_item.destination
             or undo_item.restore_target != parent_item.source
             or undo_item.baseline_size_bytes != parent_item.source_size_bytes
-            or undo_item.baseline_modified_time
-            != parent_item.source_modified_time
+            or undo_item.baseline_modified_time != parent_item.source_modified_time
             or undo_item.content_identity != parent_item.content_identity
         ):
             raise IdentityUndoVerificationEligibilityError()
@@ -325,9 +322,7 @@ def _verify_restored_target(
     try:
         parent = _open_parent(root_descriptor, parts[:-1])
     except FileNotFoundError:
-        raise _Mismatch(
-            IdentityUndoMismatchCategory.RESTORED_TARGET_MISSING
-        ) from None
+        raise _Mismatch(IdentityUndoMismatchCategory.RESTORED_TARGET_MISSING) from None
     except OSError as error:
         if error.errno in {errno.ELOOP, errno.ENOTDIR}:
             raise _Mismatch(
@@ -339,23 +334,15 @@ def _verify_restored_target(
     try:
         initial_path_stat = _target_lstat(parent, parts[-1])
         if stat.S_ISLNK(initial_path_stat.st_mode):
-            raise _Mismatch(
-                IdentityUndoMismatchCategory.RESTORED_TARGET_SYMLINK
-            )
+            raise _Mismatch(IdentityUndoMismatchCategory.RESTORED_TARGET_SYMLINK)
         if not stat.S_ISREG(initial_path_stat.st_mode):
-            raise _Mismatch(
-                IdentityUndoMismatchCategory.RESTORED_TARGET_NOT_REGULAR
-            )
+            raise _Mismatch(IdentityUndoMismatchCategory.RESTORED_TARGET_NOT_REGULAR)
         descriptor = _open_target(parent, parts[-1])
         initial_descriptor_stat = os.fstat(descriptor)
         if not stat.S_ISREG(initial_descriptor_stat.st_mode):
-            raise _Mismatch(
-                IdentityUndoMismatchCategory.RESTORED_TARGET_NOT_REGULAR
-            )
+            raise _Mismatch(IdentityUndoMismatchCategory.RESTORED_TARGET_NOT_REGULAR)
         if not _same_path_object(initial_path_stat, initial_descriptor_stat):
-            raise _Mismatch(
-                IdentityUndoMismatchCategory.RESTORED_IDENTITY_MISMATCH
-            )
+            raise _Mismatch(IdentityUndoMismatchCategory.RESTORED_IDENTITY_MISMATCH)
 
         digest = _hash_descriptor(descriptor, chunk_size)
         final_descriptor_stat = os.fstat(descriptor)
@@ -367,9 +354,7 @@ def _verify_restored_target(
         if not _same_path_object(final_path_stat, final_descriptor_stat):
             raise _InspectionUnavailable()
         if digest != expected_digest:
-            raise _Mismatch(
-                IdentityUndoMismatchCategory.RESTORED_IDENTITY_MISMATCH
-            )
+            raise _Mismatch(IdentityUndoMismatchCategory.RESTORED_IDENTITY_MISMATCH)
     except (KeyboardInterrupt, SystemExit):
         raise
     except (_Mismatch, _InspectionUnavailable):
@@ -386,9 +371,7 @@ def _target_lstat(parent: int, leaf: str) -> os.stat_result:
     try:
         return os.stat(leaf, dir_fd=parent, follow_symlinks=False)
     except FileNotFoundError:
-        raise _Mismatch(
-            IdentityUndoMismatchCategory.RESTORED_TARGET_MISSING
-        ) from None
+        raise _Mismatch(IdentityUndoMismatchCategory.RESTORED_TARGET_MISSING) from None
     except OSError:
         raise _InspectionUnavailable() from None
 

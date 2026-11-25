@@ -469,9 +469,7 @@ def _batch_from_dict(data: object) -> ApprovedDuplicateBatch:
     items = tuple(_item_from_dict(item) for item in items_data)
     if not groups or not items:
         raise ValueError("duplicate bin approved batch must contain selections")
-    if status == BATCH_COMPLETED and any(
-        item.state != ITEM_RESTORED for item in items
-    ):
+    if status == BATCH_COMPLETED and any(item.state != ITEM_RESTORED for item in items):
         raise ValueError("completed duplicate bin batch contains unresolved items")
     if (
         all(item.state == ITEM_RESTORED for item in items)

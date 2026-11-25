@@ -53,10 +53,7 @@ class RecoveryContinueContextService:
     ) -> None:
         if coordinator.runtime_lifecycle is not runtime_lifecycle:
             raise ValueError("Continue lifecycle ownership is invalid")
-        if (
-            eligibility.configured_root_identity
-            != contexts.configured_root_identity
-        ):
+        if eligibility.configured_root_identity != contexts.configured_root_identity:
             raise ValueError("Continue root ownership is invalid")
         self._runtime_lifecycle = runtime_lifecycle
         self._coordinator = coordinator

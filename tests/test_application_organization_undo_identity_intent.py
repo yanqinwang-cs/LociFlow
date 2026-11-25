@@ -28,7 +28,9 @@ class OrganizationUndoIdentityIntentTests(unittest.TestCase):
             parent_before = parent
             captures_before = eligible.captures
 
-            intent = _build(parent, operations.configured_root_identity, eligible.captures)
+            intent = _build(
+                parent, operations.configured_root_identity, eligible.captures
+            )
 
             self.assertEqual(intent.record.schema_version, 2)
             self.assertEqual(intent.record.status, "prepared")
@@ -62,13 +64,17 @@ class OrganizationUndoIdentityIntentTests(unittest.TestCase):
             with self.assertRaises(FrozenInstanceError):
                 intent.executor_evidence[0].change_id = "changed"
 
-    def test_builder_is_deterministic_and_round_trips_existing_v2_repository(self) -> None:
+    def test_builder_is_deterministic_and_round_trips_existing_v2_repository(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             operations, undos, parent = _stored_parent(root, (b"alpha", b"beta"))
-            captures = OrganizationUndoIdentityEligibilityInspector(
-                operations, undos
-            ).inspect(parent.operation_id).captures
+            captures = (
+                OrganizationUndoIdentityEligibilityInspector(operations, undos)
+                .inspect(parent.operation_id)
+                .captures
+            )
 
             first = _build(parent, operations.configured_root_identity, captures)
             second = _build(parent, operations.configured_root_identity, captures)
@@ -78,16 +84,23 @@ class OrganizationUndoIdentityIntentTests(unittest.TestCase):
             self.assertEqual(undos.load(first.record.undo_id), first.record)
             self.assertEqual(undos.linked_records(parent.operation_id), (first.record,))
             self.assertTrue(
-                all(item.content_identity is not None for item in first.record.expected_restores)
+                all(
+                    item.content_identity is not None
+                    for item in first.record.expected_restores
+                )
             )
 
-    def test_capture_identity_may_not_rebase_authoritative_parent_identity(self) -> None:
+    def test_capture_identity_may_not_rebase_authoritative_parent_identity(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             operations, undos, parent = _stored_parent(root, (b"alpha",))
-            captures = OrganizationUndoIdentityEligibilityInspector(
-                operations, undos
-            ).inspect(parent.operation_id).captures
+            captures = (
+                OrganizationUndoIdentityEligibilityInspector(operations, undos)
+                .inspect(parent.operation_id)
+                .captures
+            )
             changed = replace(
                 captures[0],
                 observed_content_identity=RegularFileContentIdentity(
@@ -107,9 +120,11 @@ class OrganizationUndoIdentityIntentTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             operations, undos, parent = _stored_parent(root, (b"alpha", b"beta"))
-            captures = OrganizationUndoIdentityEligibilityInspector(
-                operations, undos
-            ).inspect(parent.operation_id).captures
+            captures = (
+                OrganizationUndoIdentityEligibilityInspector(operations, undos)
+                .inspect(parent.operation_id)
+                .captures
+            )
             extra = replace(captures[0], change_id="O3")
             cases = (
                 captures[:1],
@@ -124,9 +139,11 @@ class OrganizationUndoIdentityIntentTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             operations, undos, parent = _stored_parent(root, (b"alpha",))
-            captures = OrganizationUndoIdentityEligibilityInspector(
-                operations, undos
-            ).inspect(parent.operation_id).captures
+            captures = (
+                OrganizationUndoIdentityEligibilityInspector(operations, undos)
+                .inspect(parent.operation_id)
+                .captures
+            )
             invalid_parent = replace(
                 parent,
                 expected_moves=(
@@ -138,17 +155,23 @@ class OrganizationUndoIdentityIntentTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 _build(parent, "not-a-root", captures)
             with self.assertRaises(ValueError):
-                _build(parent, operations.configured_root_identity, captures, undo_id="bad")
+                _build(
+                    parent, operations.configured_root_identity, captures, undo_id="bad"
+                )
             with self.assertRaises(ValueError):
-                _build(parent, operations.configured_root_identity, captures, created_at="")
+                _build(
+                    parent, operations.configured_root_identity, captures, created_at=""
+                )
 
     def test_builder_performs_no_io_hashing_repository_write_or_execution(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             operations, undos, parent = _stored_parent(root, (b"alpha",))
-            captures = OrganizationUndoIdentityEligibilityInspector(
-                operations, undos
-            ).inspect(parent.operation_id).captures
+            captures = (
+                OrganizationUndoIdentityEligibilityInspector(operations, undos)
+                .inspect(parent.operation_id)
+                .captures
+            )
             original_records = undos.list_records()
 
             with (

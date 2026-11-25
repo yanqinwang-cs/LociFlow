@@ -17,7 +17,7 @@ class ConsumerHomeTests(ConsumerWebFixture, unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.text.count("<h1"), 1)
-        self.assertIn("<h1 id=\"scans-heading\">Scan this folder</h1>", response.text)
+        self.assertIn('<h1 id="scans-heading">Scan this folder</h1>', response.text)
         self.assertIn("Selected folder", response.text)
         self.assertIn(self.root.name, response.text)
         self.assertNotIn(str(self.root), response.text)
@@ -26,7 +26,9 @@ class ConsumerHomeTests(ConsumerWebFixture, unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("review-table", response.text)
         self.assertNotIn("Stable ID", response.text)
 
-    async def test_completed_legacy_scans_surface_uses_consolidated_counts(self) -> None:
+    async def test_completed_legacy_scans_surface_uses_consolidated_counts(
+        self,
+    ) -> None:
         client = await self.authenticated_client()
         try:
             response = await client.get("/scans")

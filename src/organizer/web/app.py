@@ -149,10 +149,8 @@ def create_app(config: WebAppConfig) -> FastAPI:
         duplicate_bin_operations=app.state.duplicate_bin_operations,
         duplicate_bin_restores=app.state.duplicate_bin_restores,
     )
-    app.state.current_recovery_admission_status = (
-        CurrentRecoveryAdmissionStatus(
-            app.state.filesystem_operation_inspector
-        )
+    app.state.current_recovery_admission_status = CurrentRecoveryAdmissionStatus(
+        app.state.filesystem_operation_inspector
     )
     app.state.recovery_admission_snapshot = (
         app.state.current_recovery_admission_status.snapshot()
@@ -163,29 +161,19 @@ def create_app(config: WebAppConfig) -> FastAPI:
     app.state.filesystem_operation_admission = FilesystemOperationAdmission(
         app.state.filesystem_operation_inspector
     )
-    app.state.organization_identity_execution = (
-        OrganizationIdentityExecutionService(
-            app.state.organization_operations,
-            consume_authorization=app.state.organization_execution.consume,
-            refresh_recovery_status=(
-                app.state.current_recovery_admission_status.refresh
-            ),
-        )
+    app.state.organization_identity_execution = OrganizationIdentityExecutionService(
+        app.state.organization_operations,
+        consume_authorization=app.state.organization_execution.consume,
+        refresh_recovery_status=(app.state.current_recovery_admission_status.refresh),
     )
-    app.state.organization_identity_undo_authorizations = (
-        V2UndoAuthorizationStore(
-            app.state.organization_operations.configured_root_identity
-        )
+    app.state.organization_identity_undo_authorizations = V2UndoAuthorizationStore(
+        app.state.organization_operations.configured_root_identity
     )
-    app.state.organization_identity_undo = (
-        OrganizationIdentityUndoOrchestrationService(
-            app.state.organization_operations,
-            app.state.organization_undos,
-            app.state.organization_identity_undo_authorizations,
-            refresh_recovery_status=(
-                app.state.current_recovery_admission_status.refresh
-            ),
-        )
+    app.state.organization_identity_undo = OrganizationIdentityUndoOrchestrationService(
+        app.state.organization_operations,
+        app.state.organization_undos,
+        app.state.organization_identity_undo_authorizations,
+        refresh_recovery_status=(app.state.current_recovery_admission_status.refresh),
     )
     app.state.recovery_check_contexts = RecoveryCheckContextStore(
         app.state.organization_operations.configured_root_identity

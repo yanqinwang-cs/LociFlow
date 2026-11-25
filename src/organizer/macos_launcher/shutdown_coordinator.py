@@ -266,9 +266,7 @@ class NativeShutdownCoordinator:
             }:
                 return
             self._state = NativeShutdownState.FAILED
-            should_reply = (
-                self._termination_reply_expected and not self._reply_sent
-            )
+            should_reply = self._termination_reply_expected and not self._reply_sent
             if should_reply:
                 self._reply_sent = True
         try:

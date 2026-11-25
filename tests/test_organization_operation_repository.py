@@ -39,7 +39,9 @@ class OrganizationOperationRepositoryTests(unittest.TestCase):
             self.assertEqual(loaded, record)
             self.assertEqual(data["schema_version"], 1)
             self.assertEqual(data["record_type"], "loci_flow_organization_operation")
-            self.assertEqual(uuid.UUID(data["operation_id"]), uuid.UUID(record.operation_id))
+            self.assertEqual(
+                uuid.UUID(data["operation_id"]), uuid.UUID(record.operation_id)
+            )
             self.assertEqual(data["expected_moves"][0]["source"], "inbox/a.txt")
             self.assertNotIn("content_identity", data["expected_moves"][0])
             self.assertEqual(
@@ -81,7 +83,10 @@ class OrganizationOperationRepositoryTests(unittest.TestCase):
             payload = json.loads(first)
             self.assertEqual(payload["schema_version"], 2)
             self.assertEqual(
-                [item["content_identity"]["digest"] for item in payload["expected_moves"]],
+                [
+                    item["content_identity"]["digest"]
+                    for item in payload["expected_moves"]
+                ],
                 ["a" * 64, "b" * 64],
             )
 
@@ -111,15 +116,21 @@ class OrganizationOperationRepositoryTests(unittest.TestCase):
             invalid_payloads.append(uppercase)
 
             unsupported_kind = copy.deepcopy(valid)
-            unsupported_kind["expected_moves"][0]["content_identity"]["kind"] = "directory"
+            unsupported_kind["expected_moves"][0]["content_identity"]["kind"] = (
+                "directory"
+            )
             invalid_payloads.append(unsupported_kind)
 
             unsupported_algorithm = copy.deepcopy(valid)
-            unsupported_algorithm["expected_moves"][0]["content_identity"]["algorithm"] = "sha512"
+            unsupported_algorithm["expected_moves"][0]["content_identity"][
+                "algorithm"
+            ] = "sha512"
             invalid_payloads.append(unsupported_algorithm)
 
             unexpected_identity = copy.deepcopy(valid)
-            unexpected_identity["expected_moves"][0]["content_identity"]["path"] = "Inbox/a.txt"
+            unexpected_identity["expected_moves"][0]["content_identity"]["path"] = (
+                "Inbox/a.txt"
+            )
             invalid_payloads.append(unexpected_identity)
 
             unsupported_item = copy.deepcopy(valid)
@@ -215,7 +226,9 @@ class OrganizationOperationRepositoryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             repository = OrganizationOperationRepository(root)
-            with self.assertRaisesRegex(ValueError, "invalid organization operation ID"):
+            with self.assertRaisesRegex(
+                ValueError, "invalid organization operation ID"
+            ):
                 repository.load("../outside")
 
             record = _record(repository)
@@ -284,18 +297,14 @@ def _v2_record(
     first = _record(repository)
     first_move = replace(
         first.expected_moves[0],
-        content_identity=RegularFileContentIdentity(
-            "regular_file", "sha256", "a" * 64
-        ),
+        content_identity=RegularFileContentIdentity("regular_file", "sha256", "a" * 64),
     )
     second_move = replace(
         first_move,
         change_id="O2",
         source="inbox/b.txt",
         destination="Organized/b.txt",
-        content_identity=RegularFileContentIdentity(
-            "regular_file", "sha256", "b" * 64
-        ),
+        content_identity=RegularFileContentIdentity("regular_file", "sha256", "b" * 64),
     )
     return replace(
         first,

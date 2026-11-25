@@ -99,10 +99,7 @@ def preview_organization_undo(
             raise OrganizationUndoError("movement_or_undo_in_progress")
         try:
             record = _load_operation(operation_id, operation_repository)
-            if (
-                record.schema_version
-                == ORGANIZATION_OPERATION_SCHEMA_VERSION_V2
-            ):
+            if record.schema_version == ORGANIZATION_OPERATION_SCHEMA_VERSION_V2:
                 if identity_orchestration_service is None:
                     raise OrganizationUndoError("operation_not_undoable")
                 try:
@@ -111,16 +108,12 @@ def preview_organization_undo(
                         browser_session_id=browser_session_id,
                     )
                 except V2UndoAuthorizationError as error:
-                    raise OrganizationUndoError(
-                        "operation_not_undoable"
-                    ) from error
+                    raise OrganizationUndoError("operation_not_undoable") from error
                 if (
                     preview.state is not IdentityUndoPreviewState.READY
                     or preview.authorization_id is None
                 ):
-                    raise OrganizationUndoError(
-                        _identity_preview_error(preview.reason)
-                    )
+                    raise OrganizationUndoError(_identity_preview_error(preview.reason))
                 return UndoPreview(
                     operation_id=operation_id,
                     files_to_restore=preview.item_count,
@@ -138,11 +131,8 @@ def preview_organization_undo(
                 raise OrganizationUndoError(
                     eligibility.error_code or "operation_not_undoable"
                 )
-            admission = (
-                filesystem_operation_admission
-                or FilesystemOperationAdmission(
-                    FilesystemOperationInspector(operation_repository.root)
-                )
+            admission = filesystem_operation_admission or FilesystemOperationAdmission(
+                FilesystemOperationInspector(operation_repository.root)
             )
             if admission.root != operation_repository.root:
                 raise OrganizationUndoError("operation_not_undoable")
@@ -211,9 +201,7 @@ def undo_organization_operation(
             if identity_result.undo_id is None:
                 raise OrganizationUndoError("undo_failed")
             try:
-                return _safe_outcome(
-                    undo_repository.load(identity_result.undo_id)
-                )
+                return _safe_outcome(undo_repository.load(identity_result.undo_id))
             except ValueError as error:
                 raise OrganizationUndoError("undo_failed") from error
         if record.schema_version != ORGANIZATION_OPERATION_SCHEMA_VERSION:
@@ -562,12 +550,10 @@ def _safe_outcome(record: OrganizationUndoRecord) -> OrganizationUndoOutcome:
         completed_at=record.completed_at,
         files_expected=len(record.expected_restores),
         files_restored=sum(
-            item.result_state == UNDO_ITEM_RESTORED
-            for item in record.expected_restores
+            item.result_state == UNDO_ITEM_RESTORED for item in record.expected_restores
         ),
         files_failed=sum(
-            item.result_state == UNDO_ITEM_FAILED
-            for item in record.expected_restores
+            item.result_state == UNDO_ITEM_FAILED for item in record.expected_restores
         ),
         files_unattempted=sum(
             item.result_state in {UNDO_ITEM_PENDING, UNDO_ITEM_UNATTEMPTED}
@@ -594,7 +580,11 @@ def _load_operation(
 
 
 def _relative(path: Path, root: Path) -> str:
-    return validate_under_root(path.resolve(strict=False), root).relative_to(root).as_posix()
+    return (
+        validate_under_root(path.resolve(strict=False), root)
+        .relative_to(root)
+        .as_posix()
+    )
 
 
 def _utc_timestamp() -> str:

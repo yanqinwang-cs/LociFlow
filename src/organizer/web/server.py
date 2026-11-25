@@ -297,6 +297,7 @@ def build_launcher_dependencies(
 ) -> LauncherDependencies:
     if root_lease_factory is _DEFAULT_ROOT_LEASE_FACTORY:
         paths = application_paths or MacOSApplicationPaths.for_home()
+
         def effective_root_lease_factory(root):
             return acquire_root_process_lease(paths, root)
 

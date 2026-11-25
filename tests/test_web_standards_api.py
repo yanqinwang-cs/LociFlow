@@ -46,7 +46,9 @@ class WebStandardsApiTests(unittest.IsolatedAsyncioTestCase):
         result = service.save_preview(preview.preview_id, expected_revision=0)
         return result.standard.id, result.catalog_revision
 
-    async def test_authenticated_list_is_no_store_and_exposes_only_safe_projection(self) -> None:
+    async def test_authenticated_list_is_no_store_and_exposes_only_safe_projection(
+        self,
+    ) -> None:
         self._saved_standard()
         async with _client(self.app) as client:
             unauthenticated = await client.get("/api/standards")
@@ -60,8 +62,11 @@ class WebStandardsApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             set(response.json()),
             {
-                "revision", "items", "presets",
-                "creation_available", "creation_message",
+                "revision",
+                "items",
+                "presets",
+                "creation_available",
+                "creation_message",
             },
         )
         self.assertEqual(
@@ -97,7 +102,9 @@ class WebStandardsApiTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn(forbidden, response.text)
         self.assertEqual(query.status_code, 400)
 
-    async def test_state_route_is_strict_authenticated_same_origin_urlencoded_form(self) -> None:
+    async def test_state_route_is_strict_authenticated_same_origin_urlencoded_form(
+        self,
+    ) -> None:
         standard_id, revision = self._saved_standard()
         path = "/api/standards/state"
         async with _client(self.app) as client:
@@ -170,10 +177,14 @@ class WebStandardsApiTests(unittest.IsolatedAsyncioTestCase):
             {"revision", "items", "fresh_scan_required"},
         )
         self.assertTrue(success.json()["fresh_scan_required"])
-        saved = next(item for item in success.json()["items"] if item["id"] == standard_id)
+        saved = next(
+            item for item in success.json()["items"] if item["id"] == standard_id
+        )
         self.assertFalse(saved["active"])
 
-    async def test_state_shutdown_rejection_follows_security_and_writes_nothing(self) -> None:
+    async def test_state_shutdown_rejection_follows_security_and_writes_nothing(
+        self,
+    ) -> None:
         standard_id, revision = self._saved_standard()
         path = "/api/standards/state"
         self.app.state.runtime_lifecycle.begin_shutdown()
@@ -225,7 +236,9 @@ class WebStandardsApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(snapshot.revision, revision)
         self.assertTrue(snapshot.catalog.standards[0].active)  # type: ignore[union-attr]
 
-    async def test_typed_application_errors_are_safe_and_do_not_write_activity(self) -> None:
+    async def test_typed_application_errors_are_safe_and_do_not_write_activity(
+        self,
+    ) -> None:
         standard_id, revision = self._saved_standard()
         cases = {
             "standard_revision_mismatch": (409, "Standards changed."),
@@ -242,10 +255,13 @@ class WebStandardsApiTests(unittest.IsolatedAsyncioTestCase):
         async with _client(self.app) as client:
             csrf = await _authenticate(client, self.token)
             for code, (status, message) in cases.items():
-                with self.subTest(code=code), patch.object(
-                    self.app.state.standards,
-                    "set_active",
-                    side_effect=StandardsApplicationError(code),
+                with (
+                    self.subTest(code=code),
+                    patch.object(
+                        self.app.state.standards,
+                        "set_active",
+                        side_effect=StandardsApplicationError(code),
+                    ),
                 ):
                     response = await client.post(
                         "/api/standards/state",
@@ -305,7 +321,9 @@ class WebStandardsApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(stale.status_code, 409)
         self.assertEqual(stale.json()["error"]["code"], "standard_revision_mismatch")
 
-    async def test_v1_saved_standard_is_mutable_and_pause_state_survives_restart(self) -> None:
+    async def test_v1_saved_standard_is_mutable_and_pause_state_survives_restart(
+        self,
+    ) -> None:
         path = self.root / ORGANIZATION_RULES_RELATIVE_PATH
         path.parent.mkdir(parents=True)
         path.write_text(
@@ -327,7 +345,8 @@ class WebStandardsApiTests(unittest.IsolatedAsyncioTestCase):
             built_ins = [
                 item
                 for item in initial.json()["items"]
-                if item["preset_type"] in {"built_in_protection", "existing_folder_policy"}
+                if item["preset_type"]
+                in {"built_in_protection", "existing_folder_policy"}
             ]
             paused = await client.post(
                 "/api/standards/state",
@@ -342,7 +361,9 @@ class WebStandardsApiTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(saved["active"])
         self.assertTrue(saved["mutable"])
-        self.assertTrue(all(item["active"] and not item["mutable"] for item in built_ins))
+        self.assertTrue(
+            all(item["active"] and not item["mutable"] for item in built_ins)
+        )
         paused_saved = next(
             item for item in paused.json()["items"] if item["id"] == saved["id"]
         )

@@ -44,9 +44,7 @@ class RecoveryContinueContextServiceTests(unittest.TestCase):
             eligibility = RecoveryContinueEligibilityInspector(
                 FilesystemOperationInspector(root)
             )
-            contexts = RecoveryContinueContextStore(
-                repository.configured_root_identity
-            )
+            contexts = RecoveryContinueContextStore(repository.configured_root_identity)
             service = RecoveryContinueContextService(
                 lifecycle,
                 coordinator,

@@ -40,7 +40,9 @@ class LeaveWarningTests(ConsumerWebFixture, unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("onbeforeunload", "".join(page.text for page in pages))
         self.assertIn("htmx:afterSwap", script.text)
 
-    async def test_server_still_blocks_scan_while_dirty_and_save_is_explicit(self) -> None:
+    async def test_server_still_blocks_scan_while_dirty_and_save_is_explicit(
+        self,
+    ) -> None:
         client = await self.authenticated_client()
         try:
             csrf = await self.csrf(client, "/duplicates")

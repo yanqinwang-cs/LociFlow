@@ -93,7 +93,9 @@ class StandardsCreationStore:
                 ),
             )
         )
-        for item in sorted(metadata_items, key=lambda value: value.relative_path.as_posix()):
+        for item in sorted(
+            metadata_items, key=lambda value: value.relative_path.as_posix()
+        ):
             if not _safe_folder(item, self._root):
                 continue
             relative = item.relative_path.as_posix()
@@ -173,7 +175,8 @@ class StandardsCreationStore:
             (
                 item
                 for item in metadata_items
-                if item.is_dir and item.relative_path.as_posix() == binding.relative_path
+                if item.is_dir
+                and item.relative_path.as_posix() == binding.relative_path
             ),
             None,
         )

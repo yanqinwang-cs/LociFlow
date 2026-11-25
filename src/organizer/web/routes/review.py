@@ -177,10 +177,7 @@ def create_review_router(templates: Jinja2Templates) -> APIRouter:
                     else None
                 ),
                 queue_module=consumer_module,
-                defer=(
-                    consumer_module is not None
-                    and decision == "undecided"
-                ),
+                defer=(consumer_module is not None and decision == "undecided"),
                 project=(
                     (
                         lambda session: _consumer_projection(
@@ -194,9 +191,7 @@ def create_review_router(templates: Jinja2Templates) -> APIRouter:
                 ),
             )
             updated_query = (
-                _clamped_query(change.session, query)
-                if query is not None
-                else None
+                _clamped_query(change.session, query) if query is not None else None
             )
         except ReviewItemNotFound:
             return _review_error(
@@ -412,9 +407,7 @@ def create_review_router(templates: Jinja2Templates) -> APIRouter:
                 ),
             )
             updated_query = (
-                _clamped_query(result.session, query)
-                if query is not None
-                else None
+                _clamped_query(result.session, query) if query is not None else None
             )
         except ReviewSessionUnavailable:
             return _review_error(
@@ -724,9 +717,7 @@ def _review_context(
         for category in _CATEGORY_LABELS
     }
     previous_url = (
-        _review_url({**query, "page": str(view.page - 1)})
-        if view.page > 1
-        else None
+        _review_url({**query, "page": str(view.page - 1)}) if view.page > 1 else None
     )
     next_url = (
         _review_url({**query, "page": str(view.page + 1)})
@@ -736,9 +727,11 @@ def _review_context(
     saved_plan_relative = None
     if base_session.saved_plan_path is not None:
         try:
-            saved_plan_relative = base_session.saved_plan_path.resolve().relative_to(
-                base_session.root
-            ).as_posix()
+            saved_plan_relative = (
+                base_session.saved_plan_path.resolve()
+                .relative_to(base_session.root)
+                .as_posix()
+            )
         except ValueError:
             saved_plan_relative = None
     return {
@@ -757,8 +750,7 @@ def _review_context(
         "conflicts": conflicts,
         "warning_count": len(explorer.warnings),
         "row_metadata": {
-            row.id: get_review_item_metadata(session, row.id)
-            for row in view.rows
+            row.id: get_review_item_metadata(session, row.id) for row in view.rows
         },
         "csrf_token": csrf_token_for_session(request.session),
         "view_query_string": query_string,

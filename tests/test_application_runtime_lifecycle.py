@@ -27,9 +27,7 @@ class RuntimeLifecycleTests(unittest.TestCase):
     def test_operation_kinds_and_simultaneous_registrations_are_counted(self) -> None:
         lifecycle = RuntimeLifecycle()
         scan = lifecycle.begin_operation(RuntimeOperationKind.SCAN)
-        movement = lifecycle.begin_operation(
-            RuntimeOperationKind.ORGANIZATION_MOVEMENT
-        )
+        movement = lifecycle.begin_operation(RuntimeOperationKind.ORGANIZATION_MOVEMENT)
         second_movement = lifecycle.begin_operation(
             RuntimeOperationKind.ORGANIZATION_MOVEMENT
         )
@@ -111,7 +109,9 @@ class RuntimeLifecycleTests(unittest.TestCase):
         self.assertEqual(lifecycle.snapshot().active_count, 1)
         self.assertTrue(second.finish())
 
-    def test_wait_until_idle_returns_immediately_when_idle_or_already_finished(self) -> None:
+    def test_wait_until_idle_returns_immediately_when_idle_or_already_finished(
+        self,
+    ) -> None:
         lifecycle = RuntimeLifecycle()
 
         self.assertEqual(lifecycle.wait_until_idle().active_count, 0)
@@ -211,7 +211,9 @@ class RuntimeLifecycleTests(unittest.TestCase):
 
         self.assertEqual(lifecycle.snapshot().active_count, 0)
 
-    def test_execution_coordinator_admits_before_lock_and_releases_after_unlock(self) -> None:
+    def test_execution_coordinator_admits_before_lock_and_releases_after_unlock(
+        self,
+    ) -> None:
         lifecycle = RuntimeLifecycle()
         coordinator = OrganizationExecutionCoordinator(lifecycle)
 

@@ -68,9 +68,7 @@ class ScanJobController:
 
     def start(self) -> ScanJobSnapshot:
         job_id = secrets.token_urlsafe(18)
-        lease = self._runtime_lifecycle.begin_operation(
-            RuntimeOperationKind.SCAN
-        )
+        lease = self._runtime_lifecycle.begin_operation(RuntimeOperationKind.SCAN)
         with self._lock:
             if self._snapshot.status == "scanning":
                 lease.finish()

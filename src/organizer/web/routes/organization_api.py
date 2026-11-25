@@ -413,9 +413,7 @@ def create_organization_api_router() -> APIRouter:
                 identity_execution_service=(
                     request.app.state.organization_identity_execution
                 ),
-                recovery_status=(
-                    request.app.state.current_recovery_admission_status
-                ),
+                recovery_status=(request.app.state.current_recovery_admission_status),
             )
         except FilesystemOperationBlockedError as error:
             return _error_response(error.code, str(error), 409)

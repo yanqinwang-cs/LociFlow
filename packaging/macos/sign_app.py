@@ -1,18 +1,18 @@
 from __future__ import annotations
 
 import argparse
-from collections.abc import Callable, Sequence
-from dataclasses import asdict, dataclass
-from datetime import UTC, datetime
 import hashlib
 import json
 import os
-from pathlib import Path
 import re
 import shutil
 import stat
 import subprocess
 import sys
+from collections.abc import Callable, Sequence
+from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import Final
 
 from release_metadata import (
@@ -27,7 +27,6 @@ from validate_app_bundle import (
     BundleValidationResult,
     validate_app_bundle,
 )
-
 
 PACKAGING_ROOT: Final = Path(__file__).resolve().parent
 RELEASE_STAGING_ROOT: Final = PACKAGING_ROOT / "release-staging"
@@ -45,17 +44,13 @@ _IDENTITY_LINE = re.compile(
     r'^\s*\d+\)\s+([0-9A-Fa-f]{40})\s+"([^"]+)"\s*$',
     re.MULTILINE,
 )
-_DEVELOPER_ID_NAME = re.compile(
-    r"^Developer ID Application: .+ \(([A-Z0-9]{10})\)$"
-)
+_DEVELOPER_ID_NAME = re.compile(r"^Developer ID Application: .+ \(([A-Z0-9]{10})\)$")
 _CERTIFICATE_BLOCK = re.compile(
     r"SHA-1 hash:\s*([0-9A-Fa-f]{40}).*?"
     r"(-----BEGIN CERTIFICATE-----.*?-----END CERTIFICATE-----)",
     re.DOTALL,
 )
-_SUBJECT_TEAM_ID = re.compile(
-    r"(?:^|[,/]\s*)OU\s*=\s*([A-Z0-9]{10})(?:[,/]|$)"
-)
+_SUBJECT_TEAM_ID = re.compile(r"(?:^|[,/]\s*)OU\s*=\s*([A-Z0-9]{10})(?:[,/]|$)")
 _CERTIFICATE_DATE = re.compile(
     r"^(notBefore|notAfter)=(.+ GMT)$",
     re.MULTILINE,
@@ -405,9 +400,7 @@ def _require_expected_native_closure(
     executable = f"Contents/MacOS/{APP_NAME}"
     if (
         len(result.macho_files) != EXPECTED_NATIVE_CODE_COUNT
-        or executable not in {
-            record.relative_path for record in result.macho_files
-        }
+        or executable not in {record.relative_path for record in result.macho_files}
         or any(
             record.architectures != (SUPPORTED_ARCHITECTURE,)
             for record in result.macho_files
@@ -422,10 +415,7 @@ def _require_unsigned_input(
     *,
     command_runner: CommandRunner,
 ) -> None:
-    inspected = [
-        source / record.relative_path
-        for record in validation.macho_files
-    ]
+    inspected = [source / record.relative_path for record in validation.macho_files]
     inspected.append(source)
     for item in inspected:
         signature = _run_command(
@@ -543,9 +533,7 @@ def _verify_signed_closure(
         )
         if entitlements.returncode != 0:
             raise SigningContractError("entitlement_inspection_failed")
-        entitlement_output = (
-            f"{entitlements.stdout}\n{entitlements.stderr}"
-        )
+        entitlement_output = f"{entitlements.stdout}\n{entitlements.stderr}"
         if (
             "<plist" in entitlement_output
             or "com.apple.security." in entitlement_output
@@ -621,9 +609,7 @@ def _parse_arguments(argv: Sequence[str]) -> argparse.Namespace:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    arguments = _parse_arguments(
-        tuple(sys.argv[1:] if argv is None else argv)
-    )
+    arguments = _parse_arguments(tuple(sys.argv[1:] if argv is None else argv))
     try:
         result = sign_application(
             source_app=arguments.source_app,
