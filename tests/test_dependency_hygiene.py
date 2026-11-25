@@ -37,15 +37,9 @@ class DependencyHygieneTests(unittest.TestCase):
         self.assertNotIn('name = "python-dotenv"', lock)
         self.assertIn('name = "bootai"', lock)
 
-    def test_legacy_assistant_is_archived_outside_packaged_source(self) -> None:
-        legacy = REPOSITORY_ROOT / "legacy" / "openrouter_code_assistant"
-        self.assertTrue((legacy / "main.py").is_file())
-        self.assertTrue((legacy / "call_function.py").is_file())
-        self.assertTrue((legacy / "functions").is_dir())
-        self.assertTrue((legacy / "calculator").is_dir())
-        self.assertTrue((legacy / "README.md").is_file())
+    def test_course_code_assistant_is_removed_from_the_repository(self) -> None:
+        self.assertFalse((REPOSITORY_ROOT / "legacy").exists())
         self.assertFalse((REPOSITORY_ROOT / "main.py").exists())
-        self.assertIn("openrouter", (legacy / "main.py").read_text(encoding="utf-8").lower())
 
     def test_organizer_source_has_no_cloud_runtime_imports(self) -> None:
         source_root = REPOSITORY_ROOT / "src" / "organizer"

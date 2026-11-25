@@ -78,7 +78,7 @@ Stages 1 through 10.14 and Stages 11.0 through 11.5.2 are complete. The consumer
 - Do not claim that moving files on the same filesystem saves or recovers storage.
 - Stage 11.0 adds documentation only: no production code, dependencies, schemas, CLI flags, templates, routes, assets, launchers, or packaging.
 - Stage 11.1 adds no server, web package, preflight service, execution service, web dependency, new CLI flag, future artifact parser, or movement change.
-- Core mandatory dependencies contain no cloud SDK or dotenv package. Cloud/OpenRouter references are permitted only in `legacy/openrouter_code_assistant/`, which is excluded from packaging and runtime.
+- Core mandatory dependencies contain no cloud SDK or dotenv package. Cloud/OpenRouter references are not permitted anywhere in the repository; the former course assistant was removed and remains only in Git history.
 - `application/__init__.py` contains public exports only; services reuse `safety.py` and owner validators rather than implementing shared path validation.
 - Stage 11.2 optional dependency pins and bundled vendor hashes are exact. Do not silently upgrade, fetch from a CDN, re-minify, or remove required license notices.
 - The launcher exposes only `--root`, `--no-browser`, and `--port`; never add `--host`. It passes one already-bound `127.0.0.1` socket to one Uvicorn worker with access logs and proxy headers disabled.

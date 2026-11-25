@@ -509,7 +509,7 @@ Web UI → same application service
 
 Preserve existing CLI behavior and tests during each extraction. CLI and web flows must not develop separate scan, review, preflight, execution, or restore implementations.
 
-Stage 11.1 removed the former mandatory `openai` and `python-dotenv` dependencies and their transitive lockfile packages. Core dependencies remain empty and package discovery remains restricted to `src/`. The historical OpenRouter assistant is preserved only under `legacy/openrouter_code_assistant/`, outside bootAI packaging and runtime. Stage 11.2 adds only the isolated optional `web` and `web-test` groups.
+Stage 11.1 removed the former mandatory `openai` and `python-dotenv` dependencies and their transitive lockfile packages. Core dependencies remain empty and package discovery remains restricted to `src/`. The historical OpenRouter course assistant was removed from the repository; Git history keeps it. Stage 11.2 adds only the isolated optional `web` and `web-test` groups.
 
 ## Packaging Goal
 
