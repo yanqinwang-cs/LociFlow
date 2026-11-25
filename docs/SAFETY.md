@@ -166,6 +166,7 @@ later release-hardening stages.
 - Fresh scan-generated web rows with new or stale memory state begin `undecided`; untouched findings must never become approved merely by saving a module.
 - CLI batch review (`--review-plans`) starts every new or stale row `undecided` as well; a remembered rejection whose file changed returns to `undecided`, never `approved`, and saving persists only decisions the user made.
 - The executor refuses a batch whose destinations collide, including names differing only in letter case or Unicode form, and creates each destination exclusively so a move never replaces an existing file. The operation log is rewritten after every move so a batch that stops partway still has a log for undo.
+- Review-state memory files written before this change (schema version 1) may hold approvals the tool saved automatically, so loading one keeps only its rejections; files are rewritten as version 2.
 - `--apply-organization-review` refuses approved rows whose source is a protected path such as `.git/` or `AI_Review/`.
 - Module saves include every row in the selected fixed category, advance only that module's saved baseline, and pass rows through existing review-state eligibility rules.
 - Guided handled/skipped state is generation-bound memory only. Skipped rows retain the existing `undecided` serialized value.
