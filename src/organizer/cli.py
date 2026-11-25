@@ -125,6 +125,9 @@ def main() -> int:
     parser.add_argument("--llm-model", default=None)
     parser.add_argument("--ollama-host", default=None)
     args = parser.parse_args()
+    # Logs record absolute paths, so undo works from any directory even when
+    # the folder was given as ".".
+    args.folder = args.folder.resolve()
 
     if args.report_output is not None and not args.report:
         parser.error("--report-output requires --report")

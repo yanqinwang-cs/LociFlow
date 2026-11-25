@@ -48,7 +48,7 @@ class ReviewStateLoadSaveTests(unittest.TestCase):
                 load_review_state(root)
 
         data = valid_state_data()
-        data["schema_version"] = 2
+        data["schema_version"] = 3
         with self.assertRaises(ValueError):
             review_state_from_json_data(data)
 
@@ -64,6 +64,35 @@ class ReviewStateLoadSaveTests(unittest.TestCase):
                 data["decisions"][0]["fingerprint"][field] = True
                 with self.assertRaises(ValueError):
                     review_state_from_json_data(data)
+
+    def test_version_1_file_keeps_rejections_and_drops_approvals(self) -> None:
+        data = valid_state_data()
+        approved = json.loads(json.dumps(data["decisions"][0]))
+        approved.update(
+            decision="approved",
+            category="organization",
+            source="b.txt",
+            destination="Organized/b.txt",
+            decision_id="20260709T120000000000Z-002",
+        )
+        data["decisions"].append(approved)
+
+        state = review_state_from_json_data(data)
+
+        self.assertEqual(
+            [(record.source, record.decision) for record in state.decisions],
+            [(Path("a.txt"), "rejected")],
+        )
+
+    def test_version_2_file_keeps_approvals(self) -> None:
+        data = valid_state_data()
+        data["schema_version"] = 2
+        data["decisions"][0]["decision"] = "approved"
+        data["decisions"][0]["category"] = "organization"
+
+        state = review_state_from_json_data(data)
+
+        self.assertEqual([record.decision for record in state.decisions], ["approved"])
 
     def test_invalid_decision_category_and_review_category_are_rejected(self) -> None:
         cases = [
@@ -107,7 +136,7 @@ class ReviewStateLoadSaveTests(unittest.TestCase):
             data = json.loads(path.read_text(encoding="utf-8"))
 
             self.assertEqual(path, root.resolve() / "AI_Review" / "review_state" / "review_decisions.json")
-            self.assertEqual(data["schema_version"], 1)
+            self.assertEqual(data["schema_version"], 2)
             self.assertEqual(len(data["decisions"]), 1)
             self.assertTrue(path.read_text(encoding="utf-8").endswith("\n"))
             self.assertFalse((root / "AI_Review" / "operation_logs").exists())

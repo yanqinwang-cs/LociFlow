@@ -9,6 +9,7 @@ from pathlib import Path
 import shutil
 import stat
 import sys
+import unicodedata
 from typing import Protocol
 
 from organizer.executor_identity import (
@@ -813,6 +814,7 @@ def apply_move_plan(
     validated_items = [
         _validate_plan_item(item, resolved_root) for item in plan_items
     ]
+    _reject_colliding_batch_paths(validated_items)
 
     operations: list[MoveResult] = []
     log_path = _next_log_path(resolved_root, log_dir_name, "operation_log")
@@ -828,9 +830,9 @@ def apply_move_plan(
                 recorder.before_move(index, item)
             except Exception as error:
                 raise MovementRecordingError("before_move") from error
-        item.destination.parent.mkdir(parents=True, exist_ok=True)
         try:
-            shutil.move(str(item.source), str(item.destination))
+            item.destination.parent.mkdir(parents=True, exist_ok=True)
+            _move_without_replacing(item.source, item.destination)
         except Exception as error:
             result = MoveResult(
                 source=item.source,
@@ -839,6 +841,7 @@ def apply_move_plan(
                 message=f"move failed: {error}",
             )
             operations.append(result)
+            _write_operation_log(log_path, operations)
             if recorder is not None:
                 try:
                     recorder.after_failure(index, item, result)
@@ -857,6 +860,9 @@ def apply_move_plan(
             message="moved",
         )
         operations.append(result)
+        # Written after every move so an interrupted batch still leaves a
+        # log that undo can read.
+        _write_operation_log(log_path, operations)
         if recorder is not None:
             try:
                 recorder.after_success(index, item, result)
@@ -1053,9 +1059,9 @@ def undo_operation_log(
             continue
 
         _validate_destination_path(result.source, resolved_root)
-        result.source.parent.mkdir(parents=True, exist_ok=True)
         try:
-            shutil.move(str(result.destination), str(result.source))
+            result.source.parent.mkdir(parents=True, exist_ok=True)
+            _move_without_replacing(result.destination, result.source)
         except Exception as error:
             undo_result = MoveResult(
                 source=result.destination,
@@ -1119,6 +1125,51 @@ def _record_undo_failure(
             operation_log=operation_log,
             filesystem_changed=any(current.success for current in results),
         ) from error
+
+
+def _collision_key(path: Path) -> str:
+    # macOS and Windows volumes are case-insensitive and may store names in a
+    # different Unicode form than the one requested, so two spellings can be
+    # one file there.
+    return unicodedata.normalize("NFC", str(path)).casefold()
+
+
+def _reject_colliding_batch_paths(items: list[MovePlanItem]) -> None:
+    destinations: dict[str, Path] = {}
+    for item in items:
+        key = _collision_key(item.destination)
+        if key in destinations:
+            raise ValueError(
+                f"destination collides with another move: {item.destination}"
+            )
+        destinations[key] = item.destination
+
+
+def _move_without_replacing(source: Path, destination: Path) -> None:
+    """Move a file, refusing to replace anything already at destination.
+
+    shutil.move renames over an existing file on POSIX, so the destination
+    is first claimed with an exclusive create, which fails if anything (a
+    case-variant spelling included) is already there. The move then replaces
+    only our own empty placeholder.
+    """
+    try:
+        descriptor = os.open(
+            destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600
+        )
+    except FileExistsError:
+        raise FileExistsError(f"destination already exists: {destination}") from None
+    os.close(descriptor)
+    try:
+        shutil.move(str(source), str(destination))
+    except BaseException:
+        if os.path.lexists(source):
+            # Nothing was moved, so the placeholder is still ours to remove.
+            try:
+                os.unlink(destination)
+            except OSError:
+                pass
+        raise
 
 
 def _validate_plan_item(item: MovePlanItem, root: Path) -> MovePlanItem:
@@ -1203,9 +1254,20 @@ def _write_operation_log(log_path: Path, operations: list[MoveResult]) -> Operat
             for result in operations
         ]
     }
-    with log_path.open("w", encoding="utf-8") as file:
-        json.dump(log_data, file, indent=2, sort_keys=True)
-        file.write("\n")
+    # The log is rewritten after every move, so an interrupt must never see a
+    # half-written file: write beside it and swap it in atomically.
+    temporary_path = log_path.with_name(f".{log_path.name}.tmp")
+    try:
+        with temporary_path.open("w", encoding="utf-8") as file:
+            json.dump(log_data, file, indent=2, sort_keys=True)
+            file.write("\n")
+        os.replace(temporary_path, log_path)
+    except BaseException:
+        try:
+            temporary_path.unlink()
+        except OSError:
+            pass
+        raise
     return OperationLog(log_path=log_path, operations=operations)
 
 

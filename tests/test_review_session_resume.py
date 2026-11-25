@@ -322,7 +322,7 @@ class ResumeReviewedPlanTests(unittest.TestCase):
             validate_apply.assert_called_once()
             validated_path = validate_apply.call_args.args[0]
             self.assertEqual(validated_path.name, "reviewed_plan_1.json")
-            apply_items.assert_called_once_with([expected_plan], root)
+            apply_items.assert_called_once_with([expected_plan], root.resolve())
 
 
 def reviewed_plan_data() -> dict[str, object]:

@@ -15,6 +15,8 @@ from organizer.organization_review import (
     resolve_organization_review_path,
 )
 from organizer.reports import validate_report_output_path
+from organizer.scanner import scan_directory
+from organizer.scope import is_actionable_source_path
 
 CONFIRM_APPLY_ORGANIZATION_REVIEW = "APPLY ORGANIZATION REVIEW"
 ORGANIZATION_REVIEW_APPLY_SCHEMA_VERSION = 1
@@ -73,6 +75,7 @@ def apply_approved_organization_review(
     ]
 
     _validate_approved_conflicts(approved_rows, resolved_root)
+    _validate_approved_paths_not_protected(approved_rows, resolved_root)
     plan_items = [_row_to_plan_item(row, resolved_root) for row in approved_rows]
     result_path = _next_result_path(resolved_root)
     validate_report_output_path(result_path, resolved_root)
@@ -98,6 +101,25 @@ def apply_approved_organization_review(
     )
     _write_apply_result(result_path, result)
     return _outcome(result_path, operation_log, result)
+
+
+def _validate_approved_paths_not_protected(
+    approved_rows: list[dict[str, Any]],
+    root: Path,
+) -> None:
+    # The review file is hand-editable, so approved sources get the same
+    # actionable-source rule that suggestions are filtered by (protected
+    # folders and code-project, submission and shared folders). Destinations
+    # are already limited to Organized/ by the review loader.
+    if not approved_rows:
+        return
+    all_metadata = scan_directory(root)
+    for row in approved_rows:
+        source = Path(_normalized_root_relative_path(str(row["source"]), root))
+        if not is_actionable_source_path(source, all_metadata):
+            raise ValueError(
+                f"approved source is in a protected location: {source.as_posix()}"
+            )
 
 
 def _validate_approved_conflicts(

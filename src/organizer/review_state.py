@@ -10,7 +10,11 @@ from organizer.json_values import is_json_integer, is_json_version
 from organizer.models import ReviewedPlanItem
 from organizer.safety import validate_under_root
 
-REVIEW_STATE_SCHEMA_VERSION = 1
+# Version 2 marks files written after untouched rows stopped being saved as
+# approvals. Version 1 files hold automatic approvals that cannot be told
+# apart from real ones, so loading drops them and keeps only rejections.
+REVIEW_STATE_SCHEMA_VERSION = 2
+LEGACY_REVIEW_STATE_SCHEMA_VERSION = 1
 REVIEW_STATE_FOLDER_NAME = "review_state"
 REVIEW_STATE_FILE_NAME = "review_decisions.json"
 
@@ -72,19 +76,29 @@ def load_review_state(root: Path, review_folder_name: str = "AI_Review") -> Revi
 def review_state_from_json_data(data: object) -> ReviewState:
     if not isinstance(data, dict):
         raise ValueError("review state must contain a JSON object")
-    if not is_json_version(data.get("schema_version"), REVIEW_STATE_SCHEMA_VERSION):
-        raise ValueError("review state schema_version must be 1")
+    schema_version = data.get("schema_version")
+    if not any(
+        is_json_version(schema_version, version)
+        for version in (
+            LEGACY_REVIEW_STATE_SCHEMA_VERSION,
+            REVIEW_STATE_SCHEMA_VERSION,
+        )
+    ):
+        raise ValueError("review state schema_version must be 1 or 2")
 
     decisions = data.get("decisions")
     if not isinstance(decisions, list):
         raise ValueError("review state decisions must be a list")
 
-    return ReviewState(
-        decisions=[
-            _record_from_json(record, index)
-            for index, record in enumerate(decisions, start=1)
-        ],
-    )
+    records = [
+        _record_from_json(record, index)
+        for index, record in enumerate(decisions, start=1)
+    ]
+    if schema_version == LEGACY_REVIEW_STATE_SCHEMA_VERSION:
+        records = [
+            record for record in records if record.decision == DECISION_REJECTED
+        ]
+    return ReviewState(decisions=records)
 
 
 def save_review_state(
