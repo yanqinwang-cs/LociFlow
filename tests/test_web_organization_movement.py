@@ -4,7 +4,6 @@ from datetime import datetime, timezone
 import json
 from pathlib import Path
 import re
-import shutil
 import tempfile
 import unittest
 import uuid

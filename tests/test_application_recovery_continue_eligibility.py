@@ -15,7 +15,6 @@ from organizer.application.filesystem_operation_admission import (
 from organizer.application.organization_operation_models import (
     MOVE_ATTEMPTING,
     MOVE_FAILED,
-    MOVE_MOVED,
     MOVE_PENDING,
     MOVE_UNATTEMPTED,
     ORGANIZATION_OPERATION_SCHEMA_VERSION,

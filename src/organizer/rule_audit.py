@@ -15,7 +15,6 @@ from organizer.grouping import (
 from organizer.models import FileMetadata, ProjectGroup, RuleAudit, RuleEffect
 from organizer.organization_rules import (
     ORGANIZATION_RULES_RELATIVE_PATH,
-    OrganizationRules,
     OrganizationRulesLoadResult,
     STANDARD_KEEP_MATCHING_FILES_TOGETHER,
     STANDARD_LEGACY_ALIAS,

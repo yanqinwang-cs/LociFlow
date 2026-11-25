@@ -10,7 +10,6 @@ import uuid
 
 from organizer.application.content_identity import RegularFileContentIdentity
 from organizer.application.execution_coordinator import (
-    OrganizationExecutionCoordinator,
     approved_plan_identity,
 )
 from organizer.application.file_identity_capture import (
@@ -173,7 +172,6 @@ class OrganizationIdentityIntentTests(unittest.TestCase):
             root = Path(directory)
             plan, authorization, moves, captures, root_identity = _inputs(root)
             repository = OrganizationOperationRepository(root)
-            coordinator = OrganizationExecutionCoordinator()
             original = authorization
 
             with (

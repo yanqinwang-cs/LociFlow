@@ -17,7 +17,6 @@ from organizer.application.filesystem_operation_admission import (
     FilesystemOperationBlockedError,
 )
 from organizer.application.organization_decision_service import (
-    OrganizationDecisionError,
     approve_organization_plan,
     create_organization_decision_session,
     update_organization_decision,

@@ -9,7 +9,7 @@ import re
 from typing import Any, Iterable
 
 from organizer.json_values import is_json_integer, is_json_version
-from organizer.models import RuleCandidate, RuleDecision, RuleReviewResult
+from organizer.models import RuleCandidate, RuleDecision
 from organizer.organization_rules import (
     ORGANIZATION_RULES_RELATIVE_PATH,
     ORGANIZATION_RULES_VERSION,
@@ -176,29 +176,6 @@ def load_reviewed_rule_file(path: Path, root: Path) -> tuple[dict[str, RuleCandi
         candidates[candidate.candidate_id] = candidate
         decisions[candidate.candidate_id] = decision
     return candidates, decisions
-
-
-def summarize_rule_decisions(decisions: Iterable[RuleDecision]) -> RuleReviewResult:
-    accepted: list[RuleDecision] = []
-    rejected: list[RuleDecision] = []
-    ignored: list[RuleDecision] = []
-    undecided: list[RuleDecision] = []
-    for decision in decisions:
-        if decision.decision == DECISION_ACCEPT:
-            accepted.append(decision)
-        elif decision.decision == DECISION_REJECT:
-            rejected.append(decision)
-        elif decision.decision == DECISION_IGNORE_CANDIDATE:
-            ignored.append(decision)
-        else:
-            undecided.append(decision)
-    return RuleReviewResult(
-        accepted=tuple(accepted),
-        rejected=tuple(rejected),
-        ignored=tuple(ignored),
-        undecided=tuple(undecided),
-        warnings=(),
-    )
 
 
 def apply_rule_decisions(reviewed_path: Path, root: Path) -> Path:

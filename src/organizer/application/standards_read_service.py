@@ -19,7 +19,6 @@ from organizer.organization_rules import (
     OrganizationRulesLoadResult,
     STANDARD_KEEP_FOLDER_UNCHANGED,
     STANDARD_KEEP_MATCHING_FILES_TOGETHER,
-    STANDARD_LEGACY_ALIAS,
     STANDARD_LEGACY_IGNORED_TERM,
     StandardRecord,
     canonical_anchor,

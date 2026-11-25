@@ -14,7 +14,7 @@ from organizer.executor import (
     apply_move_plan,
     undo_operation_log,
 )
-from organizer.models import MovePlanItem, MoveResult
+from organizer.models import MovePlanItem
 
 
 def make_plan_item(source: Path, destination: Path) -> MovePlanItem:

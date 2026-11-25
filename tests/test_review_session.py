@@ -12,7 +12,6 @@ from organizer.executor import apply_move_plan
 from organizer.models import MovePlanItem, MoveResult, OperationLog, ReviewedPlanItem
 from organizer.review_session import (
     approve_items,
-    approved_plan_items,
     build_review_session_items as build_review_session_items_from_rules_snapshot,
     find_approved_move_conflicts,
     get_item,

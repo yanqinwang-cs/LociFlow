@@ -40,7 +40,6 @@ from organizer.application.organization_operation_models import (
     STATUS_VERIFICATION_FAILED,
     STATUS_VERIFIED,
     VERIFICATION_FAILED,
-    VERIFICATION_NOT_RUN,
     VERIFICATION_PASSED,
     MovementAuthorization,
     OrganizationExpectedMove,

@@ -18,8 +18,6 @@ PATTERN_PERSON_OR_STUDENT_FOLDERING = "person_or_student_foldering"
 PATTERN_ROLE_FOLDERING = "role_foldering"
 PATTERN_YEAR_FOLDERING = "year_foldering"
 PATTERN_FORMAT_FOLDERING = "format_foldering"
-PATTERN_MIXED_OR_UNCLEAR_FOLDERING = "mixed_or_unclear_foldering"
-
 RULE_LOCK_ANCHOR_CANDIDATE = "lock_anchor_candidate"
 RULE_IGNORE_TERM_CANDIDATE = "ignore_term_candidate"
 RULE_ALIAS_CANDIDATE = "alias_candidate"
@@ -535,31 +533,7 @@ def _affected_course_anchors(
     ]
 
 
-def _matching_needs_decision_anchors(
-    needs_decision_anchors: dict[str, str],
-    observed_anchors: dict[str, str],
-) -> list[str]:
-    return [
-        display
-        for normalized, display in needs_decision_anchors.items()
-        if normalized in observed_anchors
-    ]
-
-
 def _project_style_anchors(
-    needs_decision_anchors: dict[str, str],
-    observed_anchors: dict[str, str],
-) -> list[str]:
-    if not observed_anchors:
-        return []
-    return [
-        display
-        for normalized, display in needs_decision_anchors.items()
-        if normalized in observed_anchors
-    ]
-
-
-def _person_style_anchors(
     needs_decision_anchors: dict[str, str],
     observed_anchors: dict[str, str],
 ) -> list[str]:

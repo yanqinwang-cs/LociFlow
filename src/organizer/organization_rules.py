@@ -348,18 +348,6 @@ def organization_rules_from_data(data: object) -> tuple[OrganizationRules, list[
     )
 
 
-def organization_rules_to_data(rules: OrganizationRules) -> dict[str, Any]:
-    return {
-        "version": ORGANIZATION_RULES_VERSION,
-        "locked_anchors": sorted(rules.locked_anchors),
-        "ignored_terms": sorted(
-            term for term in rules.ignored_terms if term not in DEFAULT_IGNORED_TERMS
-        ),
-        "anchor_aliases": dict(sorted(rules.anchor_aliases.items())),
-        "preferred_granularities": sorted(rules.preferred_granularities),
-    }
-
-
 def organization_rules_from_catalog(catalog: StandardsCatalog) -> OrganizationRules:
     locked: set[str] = set()
     ignored = set(DEFAULT_IGNORED_TERMS)

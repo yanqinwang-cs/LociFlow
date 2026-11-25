@@ -17,7 +17,6 @@ from organizer.review_session import (
     DECISION_UNDECIDED,
     ReviewViewState,
     apply_page_decision_change,
-    build_review_view,
     preview_page_decision_change,
     set_review_filter,
     set_review_page,

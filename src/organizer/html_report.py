@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import html
 from pathlib import Path
-from typing import Any
 
 from organizer.reports import default_report_path, validate_report_output_path
 

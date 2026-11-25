@@ -5,7 +5,6 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest import mock
-import uuid
 
 from organizer.application.content_identity import RegularFileContentIdentity
 from organizer.application.organization_undo_identity_eligibility import (
@@ -14,9 +13,6 @@ from organizer.application.organization_undo_identity_eligibility import (
 from organizer.application.organization_undo_identity_intent import (
     OrganizationUndoIdentityCapture,
     build_v2_organization_undo_intent,
-)
-from organizer.application.organization_undo_repository import (
-    OrganizationUndoRepository,
 )
 from tests.test_application_undo_identity_eligibility import _stored_parent
 

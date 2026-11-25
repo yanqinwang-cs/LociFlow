@@ -5,7 +5,6 @@ import tempfile
 import unittest
 
 from organizer.application.review_service import (
-    get_review_view,
     update_review_filter,
     update_review_page_size,
 )

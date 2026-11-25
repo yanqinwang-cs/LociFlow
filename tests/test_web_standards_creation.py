@@ -302,7 +302,7 @@ class WebStandardsCreationTests(unittest.IsolatedAsyncioTestCase):
 
         async with _client(self.app) as client:
             csrf = await _authenticate(client, self.token)
-            listed = await client.get("/api/standards")
+            await client.get("/api/standards")
             context = await self._issue_context(client, csrf)
             root_choice = next(
                 item for item in context["scope_choices"] if item["kind"] == "root"
@@ -364,7 +364,7 @@ class WebStandardsCreationTests(unittest.IsolatedAsyncioTestCase):
         async with _client(self.app) as client:
             unauthenticated = await client.post("/api/standards/preview")
             csrf = await _authenticate(client, self.token)
-            listed = await client.get("/api/standards")
+            await client.get("/api/standards")
             context = await self._issue_context(client, csrf)
             scope_id = context["scope_choices"][0]["id"]
             valid = {
@@ -445,7 +445,7 @@ class WebStandardsCreationTests(unittest.IsolatedAsyncioTestCase):
         self._complete_scan("scan-old")
         async with _client(self.app) as client:
             csrf = await _authenticate(client, self.token)
-            listed = await client.get("/api/standards")
+            await client.get("/api/standards")
             context = await self._issue_context(client, csrf)
             scope_id = context["scope_choices"][0]["id"]
             first = await client.post(
@@ -590,7 +590,7 @@ class WebStandardsCreationTests(unittest.IsolatedAsyncioTestCase):
         self._complete_scan("scan-v1")
         async with _client(self.app) as client:
             csrf = await _authenticate(client, self.token)
-            listed = await client.get("/api/standards")
+            await client.get("/api/standards")
             context = await self._issue_context(client, csrf)
             scope_id = next(
                 item["id"]

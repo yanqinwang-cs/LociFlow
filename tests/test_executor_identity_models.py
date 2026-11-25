@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import FrozenInstanceError, replace
-import os
 from pathlib import Path
 import tempfile
 import unittest

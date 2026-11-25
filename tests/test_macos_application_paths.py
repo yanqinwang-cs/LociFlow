@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from contextlib import chdir
 from pathlib import Path
-import os
 import stat
 import tempfile
 import unittest

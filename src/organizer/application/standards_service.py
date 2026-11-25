@@ -31,7 +31,6 @@ from organizer.application.duplicate_bin_restore_models import RESTORE_TERMINAL
 from organizer.models import FileMetadata
 from organizer.organization_rules import (
     DEFAULT_IGNORED_TERMS,
-    ORGANIZATION_RULES_STATUS_LOADED,
     STANDARD_KEEP_FOLDER_UNCHANGED,
     STANDARD_KEEP_MATCHING_FILES_TOGETHER,
     STANDARD_LEGACY_ALIAS,

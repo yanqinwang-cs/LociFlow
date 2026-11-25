@@ -13,7 +13,6 @@ from organizer.application.content_identity import RegularFileContentIdentity
 from organizer.application.organization_operation_models import (
     MOVE_FAILED,
     MOVE_MOVED,
-    MOVE_UNATTEMPTED,
     ORGANIZATION_OPERATION_SCHEMA_VERSION_V2,
     STATUS_INTERRUPTED,
     STATUS_MOVEMENT_FAILED,

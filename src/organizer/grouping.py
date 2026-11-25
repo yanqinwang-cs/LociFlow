@@ -91,15 +91,6 @@ LECTURE_TOKENS = {"lecture", "lec", "lesson"}
 ASSIGNMENT_TOKENS = {"assignment", "homework", "pset"}
 ADMIN_TOKENS = {"syllabus", "schedule", "rubric", "briefing", "form"}
 NOTE_TOKENS = {"note", "notes", "summary", "cheatsheet", "guide"}
-NARROW_ROLE_TOKENS = (
-    EXAM_TOKENS
-    | RECITATION_TOKENS
-    | TUTORIAL_TOKENS
-    | PRACTICAL_TOKENS
-    | LECTURE_TOKENS
-    | ASSIGNMENT_TOKENS
-    | {"slide", "slides", "project"}
-)
 QUESTION_SOLUTION_TOKENS = {"solution", "solutions", "answer", "answers", "key"}
 TITLE_VARIANT_TOKENS = {
     "copy",
@@ -856,53 +847,6 @@ def _anchor_decision_sort_rank(decision: str) -> int:
 def _unique_sorted_files(files: list[FileMetadata]) -> list[FileMetadata]:
     by_path = {file.relative_path.as_posix(): file for file in files}
     return [by_path[path] for path in sorted(by_path)]
-
-
-def _find_named_anchor_groups(
-    files: list[FileMetadata],
-    min_group_size: int,
-) -> list[ProjectGroup]:
-    anchor_to_files: dict[str, list[FileMetadata]] = {}
-    file_to_anchors: dict[Path, set[str]] = {}
-    anchor_display_names: dict[str, str] = {}
-
-    for file in files:
-        anchors = _named_anchor_candidates(file)
-        file_to_anchors[file.relative_path] = {anchor for anchor, _display in anchors}
-        for anchor, display_name in anchors:
-            anchor_to_files.setdefault(anchor, []).append(file)
-            anchor_display_names.setdefault(anchor, display_name)
-
-    valid_anchors = {
-        anchor
-        for anchor, anchor_files in anchor_to_files.items()
-        if len(anchor_files) >= min_group_size
-    }
-    assigned_by_anchor: dict[str, list[FileMetadata]] = {}
-    for file in files:
-        candidate_anchors = file_to_anchors[file.relative_path] & valid_anchors
-        if not candidate_anchors:
-            continue
-        chosen_anchor = sorted(
-            candidate_anchors,
-            key=lambda anchor: (-len(anchor_to_files[anchor]), -len(anchor), anchor),
-        )[0]
-        assigned_by_anchor.setdefault(chosen_anchor, []).append(file)
-
-    groups: list[ProjectGroup] = []
-    for anchor, group_files in sorted(assigned_by_anchor.items()):
-        if len(group_files) < min_group_size:
-            continue
-        display_name = anchor_display_names[anchor]
-        groups.append(
-            ProjectGroup(
-                group_name=display_name,
-                files=_sort_files(group_files),
-                reason=f"files share strong filename anchor {anchor}; evidence {GROUP_EVIDENCE_NAMED_PROJECT}",
-                confidence=80,
-            )
-        )
-    return groups
 
 
 def _named_anchor_candidates(file: FileMetadata) -> list[tuple[str, str]]:

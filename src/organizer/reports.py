@@ -36,7 +36,6 @@ from organizer.organization_rules import (
     load_organization_rules,
 )
 from organizer.pattern_inference import (
-    InferredRuleCandidate,
     OrganizationPattern,
     PatternInferenceResult,
     infer_organization_patterns,
@@ -419,9 +418,6 @@ def validate_report_output_path(path: Path, root: Path) -> Path:
         raise ValueError(f"report output parent is not a directory: {existing_parent}")
     return resolved_path
 
-
-_default_report_path = default_report_path
-_validate_report_output_path = validate_report_output_path
 
 
 def _nearest_existing_parent(path: Path) -> Path:
