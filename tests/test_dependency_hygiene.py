@@ -14,7 +14,7 @@ class DependencyHygieneTests(unittest.TestCase):
         project = data["project"]
         dependencies = [dependency.lower() for dependency in project["dependencies"]]
 
-        self.assertEqual(project["name"], "bootai")
+        self.assertEqual(project["name"], "loci-flow")
         self.assertNotEqual(project["description"], "Add your description here")
         self.assertEqual(project["requires-python"], ">=3.13")
         self.assertFalse(any("openai" in dependency for dependency in dependencies))
@@ -38,7 +38,7 @@ class DependencyHygieneTests(unittest.TestCase):
         lock = (REPOSITORY_ROOT / "uv.lock").read_text(encoding="utf-8").lower()
         self.assertNotIn('name = "openai"', lock)
         self.assertNotIn('name = "python-dotenv"', lock)
-        self.assertIn('name = "bootai"', lock)
+        self.assertIn('name = "loci-flow"', lock)
 
     def test_course_code_assistant_is_removed_from_the_repository(self) -> None:
         self.assertFalse((REPOSITORY_ROOT / "legacy").exists())

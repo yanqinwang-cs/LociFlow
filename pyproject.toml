@@ -1,5 +1,5 @@
 [project]
-name = "bootai"
+name = "loci-flow"
 version = "0.1.0"
 description = "A cautious local file organizer with review-first, reversible workflows"
 readme = "README.md"

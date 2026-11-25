@@ -42,54 +42,6 @@ wheels = [
 ]
 
 [[package]]
-name = "bootai"
-version = "0.1.0"
-source = { virtual = "." }
-
-[package.optional-dependencies]
-macos-build = [
-    { name = "pillow" },
-    { name = "pyinstaller" },
-]
-macos-launcher = [
-    { name = "pyobjc-core", marker = "sys_platform == 'darwin'" },
-    { name = "pyobjc-framework-cocoa", marker = "sys_platform == 'darwin'" },
-]
-web = [
-    { name = "fastapi" },
-    { name = "itsdangerous" },
-    { name = "jinja2" },
-    { name = "starlette" },
-    { name = "uvicorn" },
-]
-web-test = [
-    { name = "httpx" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "ruff" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "fastapi", marker = "extra == 'web'", specifier = "==0.139.0" },
-    { name = "httpx", marker = "extra == 'web-test'", specifier = "==0.28.1" },
-    { name = "itsdangerous", marker = "extra == 'web'", specifier = "==2.2.0" },
-    { name = "jinja2", marker = "extra == 'web'", specifier = "==3.1.6" },
-    { name = "pillow", marker = "extra == 'macos-build'", specifier = "==12.3.0" },
-    { name = "pyinstaller", marker = "extra == 'macos-build'", specifier = "==6.16.0" },
-    { name = "pyobjc-core", marker = "sys_platform == 'darwin' and extra == 'macos-launcher'", specifier = "==12.2.1" },
-    { name = "pyobjc-framework-cocoa", marker = "sys_platform == 'darwin' and extra == 'macos-launcher'", specifier = "==12.2.1" },
-    { name = "starlette", marker = "extra == 'web'", specifier = "==1.3.1" },
-    { name = "uvicorn", marker = "extra == 'web'", specifier = "==0.50.2" },
-]
-provides-extras = ["web", "web-test", "macos-launcher", "macos-build"]
-
-[package.metadata.requires-dev]
-dev = [{ name = "ruff", specifier = "==0.17.6" }]
-
-[[package]]
 name = "certifi"
 version = "2026.6.17"
 source = { registry = "https://pypi.org/simple" }
@@ -201,6 +153,54 @@ sdist = { url = "https://files.pythonhosted.org/packages/df/bf/f7da0350254c0ed7c
 wheels = [
     { url = "https://files.pythonhosted.org/packages/62/a1/3d680cbfd5f4b8f15abc1d571870c5fc3e594bb582bc3b64ea099db13e56/jinja2-3.1.6-py3-none-any.whl", hash = "sha256:85ece4451f492d0c13c5dd7c13a64681a86afae63a5f347908daf103ce6d2f67", size = 134899, upload-time = "2025-03-05T20:05:00.369Z" },
 ]
+
+[[package]]
+name = "loci-flow"
+version = "0.1.0"
+source = { virtual = "." }
+
+[package.optional-dependencies]
+macos-build = [
+    { name = "pillow" },
+    { name = "pyinstaller" },
+]
+macos-launcher = [
+    { name = "pyobjc-core", marker = "sys_platform == 'darwin'" },
+    { name = "pyobjc-framework-cocoa", marker = "sys_platform == 'darwin'" },
+]
+web = [
+    { name = "fastapi" },
+    { name = "itsdangerous" },
+    { name = "jinja2" },
+    { name = "starlette" },
+    { name = "uvicorn" },
+]
+web-test = [
+    { name = "httpx" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "ruff" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "fastapi", marker = "extra == 'web'", specifier = "==0.139.0" },
+    { name = "httpx", marker = "extra == 'web-test'", specifier = "==0.28.1" },
+    { name = "itsdangerous", marker = "extra == 'web'", specifier = "==2.2.0" },
+    { name = "jinja2", marker = "extra == 'web'", specifier = "==3.1.6" },
+    { name = "pillow", marker = "extra == 'macos-build'", specifier = "==12.3.0" },
+    { name = "pyinstaller", marker = "extra == 'macos-build'", specifier = "==6.16.0" },
+    { name = "pyobjc-core", marker = "sys_platform == 'darwin' and extra == 'macos-launcher'", specifier = "==12.2.1" },
+    { name = "pyobjc-framework-cocoa", marker = "sys_platform == 'darwin' and extra == 'macos-launcher'", specifier = "==12.2.1" },
+    { name = "starlette", marker = "extra == 'web'", specifier = "==1.3.1" },
+    { name = "uvicorn", marker = "extra == 'web'", specifier = "==0.50.2" },
+]
+provides-extras = ["web", "web-test", "macos-launcher", "macos-build"]
+
+[package.metadata.requires-dev]
+dev = [{ name = "ruff", specifier = "==0.17.6" }]
 
 [[package]]
 name = "macholib"
